@@ -1,0 +1,9 @@
+*.code-workspace
+.DS_Store
+.venv
+__pycache__/
+*.pyc
+.pytest_cache/
+server/data/
+data/
+nightcord.toml

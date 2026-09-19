@@ -1,0 +1,15 @@
+# Copy to nightcord.toml and run: python nightcord_server.py --config nightcord.toml
+server_name = "My Nightcord"
+host = "0.0.0.0"
+port = 8765
+data_dir = "data"          # relative to this file
+tls = true                 # self-signed cert generated on first run
+
+# Extra hostnames / IPs clients will use to reach you; baked into the cert.
+public_hostnames = ["203.0.113.7"]
+
+# Browser origins allowed to connect. Add your GitHub Pages origin.
+allowed_origins = [
+  "https://YOUR-USERNAME.github.io",
+  "http://localhost:8000",
+]

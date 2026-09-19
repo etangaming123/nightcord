@@ -1,0 +1,1 @@
+"""Nightcord server package."""

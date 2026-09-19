@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Nightcord</title>
+  <meta name="description" content="Nightcord — chat on servers you run yourself.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%237aa2f7'/%3E%3Cpath d='M20.5 7a9 9 0 1 0 4.5 16.8A10 10 0 0 1 20.5 7z' fill='%231a1b26'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/styles.css">
+  <script type="module" src="js/main.js"></script>
+</head>
+<body>
+  <noscript>Nightcord needs JavaScript.</noscript>
+
+  <!-- Pick / add a server -->
+  <section id="screen-connect" class="screen" hidden>
+    <div class="card">
+      <h1 class="brand"><span class="brand-mark" aria-hidden="true"></span>Nightcord</h1>
+      <p class="muted">Connect to a Nightcord server.</p>
+      <ul id="saved-servers" class="saved-servers"></ul>
+      <form id="connect-form" class="stack" autocomplete="on">
+        <label>Server address
+          <input name="address" placeholder="chat.example.com:8765" required spellcheck="false" autocapitalize="off">
+        </label>
+        <button type="submit" class="btn primary">Connect</button>
+      </form>
+      <div id="connect-error" class="error-box" hidden></div>
+    </div>
+  </section>
+
+  <!-- Log in / register on the chosen server -->
+  <section id="screen-auth" class="screen" hidden>
+    <div class="card">
+      <button id="auth-back" class="btn link" type="button">← Servers</button>
+      <h1 id="auth-server-name" class="server-title"></h1>
+      <p id="auth-server-url" class="muted small mono"></p>
+      <div id="auth-tabs" class="tabs" role="tablist"></div>
+      <form id="auth-form" class="stack">
+        <label>Username
+          <input name="username" autocomplete="username" required minlength="3" maxlength="32" spellcheck="false" autocapitalize="off">
+        </label>
+        <label>Password
+          <input name="password" type="password" autocomplete="current-password" required minlength="8">
+        </label>
+        <label id="auth-note-field" hidden>Note for the server owner <span class="muted">(optional)</span>
+          <textarea name="note" rows="2" maxlength="500"></textarea>
+        </label>
+        <button type="submit" class="btn primary" id="auth-submit">Log in</button>
+      </form>
+      <div id="auth-message" class="error-box" hidden></div>
+    </div>
+  </section>
+
+  <!-- Main app -->
+  <div id="app" hidden>
+    <nav id="guild-rail" aria-label="Guilds"></nav>
+    <aside id="channel-sidebar" aria-label="Channels">
+      <header id="guild-header"></header>
+      <div id="channel-list" class="scroll"></div>
+      <footer id="user-panel"></footer>
+    </aside>
+    <main id="chat">
+      <header id="chat-header"></header>
+      <div id="status-banner" hidden></div>
+      <div id="messages" class="scroll" tabindex="0" aria-live="polite"></div>
+      <form id="composer" autocomplete="off"></form>
+    </main>
+    <aside id="member-list" class="scroll" aria-label="Members"></aside>
+    <div id="drawer-scrim" hidden></div>
+  </div>
+
+  <div id="modal-root"></div>
+  <div id="toast-root" aria-live="polite"></div>
+</body>
+</html>
