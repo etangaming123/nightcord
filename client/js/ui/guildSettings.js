@@ -1,13 +1,18 @@
 // Guild Settings (full screen). Tabs appear according to the viewer's
-// permissions: Overview, Roles, Members, Invites, Bans, Audit log, Delete.
+// permissions: Overview, Roles, Emoji, Stickers, Members, Invites, Bans,
+// Audit log, Delete.
 
 import { LIMITS, PERMS, T } from "../protocol.js";
 import { can, currentGuild, isGuildOwner, memberRoles, nameOf, state, userById } from "../state.js";
-import { add, avatar, clear, displayName, fmtDate, fmtDateTime, h, iconBtn } from "./dom.js";
+import { add, avatar, clear, displayName, fmtDate, fmtDateTime, h, iconBtn, imageEl } from "./dom.js";
+import { emojiTab, stickersTab } from "./expressionSettings.js";
 import { guildIcon, invitesTab } from "./invites.js";
 import { closeFullscreen, confirmModal, openFullscreen, openMenu, refreshFullscreen, toast } from "./modals.js";
 import { copyText } from "./profile.js";
-import { blobToBase64, resizeAvatar } from "./settings.js";
+import { guildCan } from "../perks.js";
+import { openEmojiPicker } from "./emoji.js";
+import { pickImage, uploadImage } from "./images.js";
+import { roleIconOf, roleSwatch } from "./names.js";
 
 export const PERM_INFO = [
   { heading: "General" },
@@ -15,6 +20,7 @@ export const PERM_INFO = [
   ["MANAGE_CHANNELS", "Manage channels", "Create, edit, reorder and delete channels."],
   ["MANAGE_ROLES", "Manage roles", "Create and edit roles below their highest role, assign them, and edit channel permissions."],
   ["MANAGE_GUILD", "Manage guild", "Change the guild's name, icon, listing, system messages and public invite link, and see every invite."],
+  ["MANAGE_EXPRESSIONS", "Manage expressions", "Add, rename and delete this guild's custom emoji and stickers."],
   ["VIEW_AUDIT_LOG", "View audit log", "Read the record of changes made in this guild."],
   { heading: "Membership" },
   ["CREATE_INVITE", "Create invite", "Invite new people to this guild."],
@@ -58,6 +64,12 @@ const ACTION_TEXT = {
   "invite.revoke": "revoked an invite by",
   "channel.reorder": "reordered channels",
   "guild.transfer": "became the guild owner",
+  "emoji.create": "added an emoji",
+  "emoji.update": "renamed an emoji",
+  "emoji.delete": "deleted an emoji",
+  "sticker.create": "added a sticker",
+  "sticker.update": "edited a sticker",
+  "sticker.delete": "deleted a sticker",
 };
 
 export function guildSettings(actions, initial) {
@@ -72,6 +84,8 @@ export function guildSettings(actions, initial) {
       { heading: g.name },
       any("MANAGE_GUILD") ? { id: "overview", label: "Overview", render: (el) => overview(el, actions) } : null,
       any("MANAGE_ROLES") ? { id: "roles", label: "Roles", render: (el) => roles(el, actions) } : null,
+      any("MANAGE_EXPRESSIONS") ? { id: "emoji", label: "Emoji", render: (el) => emojiTab(el, actions) } : null,
+      any("MANAGE_EXPRESSIONS") ? { id: "stickers", label: "Stickers", render: (el) => stickersTab(el, actions) } : null,
       any("MANAGE_ROLES", "KICK_MEMBERS", "BAN_MEMBERS", "MODERATE_MEMBERS") ? { id: "members", label: "Members", render: (el) => members(el, actions) } : null,
       any("CREATE_INVITE", "MANAGE_GUILD") ? { id: "invites", label: "Invites", render: (el) => invitesTab(el, actions) } : null,
       any("BAN_MEMBERS") ? { id: "bans", label: "Bans", render: (el) => bans(el, actions) } : null,
@@ -87,19 +101,24 @@ function overview(el, actions) {
   const listedNote = state.info.guild_list_visible
     ? "Anyone on this server can find and join it from Browse."
     : "The server owner has turned off the public list, so this has no effect right now.";
-  const fileInput = h("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif", hidden: true });
-  fileInput.addEventListener("change", async () => {
-    const file = fileInput.files[0];
-    fileInput.value = "";
-    if (!file) return;
-    try {
-      await actions.setGuildIcon(await blobToBase64(await resizeAvatar(file)));
-      toast("Icon updated");
-      refreshFullscreen();
-    } catch (e) {
-      toast(e.message, { error: true });
-    }
-  });
+  const animated = guildCan("animated_media", g);
+  const upload = (kind, apply, ok) => (e) => {
+    const btn = e.currentTarget;
+    pickImage(async (file) => {
+      btn.disabled = true;
+      try {
+        const media = await uploadImage(file, kind, { still: !animated });
+        await apply(media.media_id);
+        toast(ok);
+        refreshFullscreen();
+      } catch (err) {
+        toast(err.message, { error: true });
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  };
+  const bannerAllowed = guildCan("guild_banner", g);
   const texts = state.channels.filter((c) => c.kind === "text");
   const sysChannel = h("select", { name: "system_channel_id" },
     h("option", { value: "" }, "No system messages"),
@@ -111,10 +130,20 @@ function overview(el, actions) {
       guildIcon(g, "lg"),
       h("div", { class: "stack" },
         h("div", { class: "row" },
-          h("button", { class: "btn primary", type: "button", on: { click: () => fileInput.click() } }, "Upload icon"),
+          h("button", { class: "btn primary", type: "button", on: { click: upload("guild_icon", (id) => actions.setGuildIconMedia(id), "Icon updated") } }, "Upload icon"),
           g.icon_id ? h("button", { class: "btn", type: "button", on: { click: async () => { try { await actions.setGuildIcon(null); refreshFullscreen(); } catch (e) { toast(e.message, { error: true }); } } } }, "Remove") : null),
-        h("span", { class: "muted small" }, "Square images work best; it's shrunk to 128×128.")),
-      fileInput),
+        h("span", { class: "muted small" }, animated ? "Square images work best. GIFs stay animated." : "Square images work best."))),
+    h("div", { class: "field" },
+      h("span", { class: "field-label" }, "Banner"),
+      g.banner_id && bannerAllowed ? h("div", { class: "guild-banner-preview" }, imageEl(g.banner_id, { animate: animated, alt: "" })) : null,
+      bannerAllowed
+        ? h("div", { class: "row" },
+          h("button", { class: "btn", type: "button", on: { click: upload("guild_banner", (id) => actions.updateGuild({ banner_media_id: id }), "Banner updated") } }, g.banner_id ? "Change banner" : "Upload banner"),
+          g.banner_id ? h("button", { class: "btn", type: "button", on: { click: async () => { try { await actions.updateGuild({ banner_media_id: null }); refreshFullscreen(); } catch (e) { toast(e.message, { error: true }); } } } }, "Remove") : null,
+          h("span", { class: "muted small" }, "Shown above the channel list and on invites (16:9)."))
+        : h("div", { class: "locked-note" }, "🔒 ", state.info.customization_mode === "allowlist"
+          ? "Guild banners need the guild owner to have perks on this server."
+          : "Guild banners are turned off on this server.")),
     h("label", {}, "Guild name", h("input", { name: "name", required: true, maxLength: LIMITS.GUILD_NAME_MAX, value: g.name })),
     h("label", { class: "check" }, h("input", { type: "checkbox", name: "listed", checked: g.listed }), h("span", {}, "List in the public guild directory", h("span", { class: "muted small block" }, listedNote))),
     h("h3", {}, "System messages"),
@@ -179,8 +208,9 @@ function roles(el, actions) {
             contextmenu: (e) => { if (!r.is_everyone && editable) { e.preventDefault(); menu({ x: e.clientX, y: e.clientY }); } },
           },
         },
-        h("span", { class: "role-dot", style: `background:${r.color || "var(--muted)"}` }),
+        roleSwatch(r),
         h("span", { class: "name" }, r.name),
+        roleIconOf(r),
         r.hoist ? h("span", { class: "muted small", title: "Displayed separately" }, "▤") : null,
         editable ? null : h("span", { class: "lock", title: "Above your highest role" }, "🔒"),
         !r.is_everyone && editable ? iconBtn("⋯", `More options for ${r.name}`, (e) => menu(e.currentTarget)) : null);
@@ -249,6 +279,64 @@ function roles(el, actions) {
     const form = h("form", { class: "stack" });
     const color = h("input", { type: "color", name: "color", value: role.color || "#99aab5", disabled: role.is_everyone || !editable });
     let useColor = !!role.color;
+    const g = currentGuild();
+    const gradAllowed = guildCan("gradient_roles", g);
+    let gradOn = gradAllowed && role.colors?.length > 1;
+    const stop2 = h("input", { type: "color", value: role.colors?.[1] || "#f7768e", disabled: !editable, "aria-label": "Second colour" });
+    let third = role.colors?.length > 2;
+    const stop3 = h("input", { type: "color", value: role.colors?.[2] || "#e0af68", disabled: !editable, "aria-label": "Third colour" });
+    const gradPreview = h("span", { class: "grad-sample" }, role.name);
+    const drawGrad = () => {
+      const stops = [color.value, stop2.value, ...(third ? [stop3.value] : [])];
+      gradPreview.className = gradOn ? "grad-sample grad-name" : "grad-sample";
+      gradPreview.style.cssText = gradOn ? `--grad:linear-gradient(90deg, ${stops.join(", ")}, ${stops[0]})` : `color:${useColor ? color.value : "inherit"}`;
+      stop2.hidden = !gradOn;
+      stop3.hidden = !gradOn || !third;
+      thirdBtn.hidden = !gradOn;
+      thirdBtn.textContent = third ? "− Third colour" : "+ Third colour";
+    };
+    const thirdBtn = h("button", { class: "btn link", type: "button", disabled: !editable, on: { click: () => { third = !third; drawGrad(); form.dispatchEvent(new Event("input")); } } });
+    for (const input of [color, stop2, stop3]) input.addEventListener("input", drawGrad);
+    const iconAllowed = guildCan("role_icons", g);
+    const setIcon = async (payload, btn) => {
+      if (btn) btn.disabled = true;
+      try {
+        await actions.req(T.ROLE_UPDATE, { role_id: role.role_id, ...payload });
+        toast("Role icon updated");
+      } catch (err) {
+        toast(err.message, { error: true });
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    };
+    const iconField = role.is_everyone ? null : h("div", { class: "field" },
+      h("span", { class: "field-label" }, "Role icon"),
+      iconAllowed
+        ? h("div", { class: "row" },
+          h("span", { class: "role-icon-preview" }, roleIconOf(role) || h("span", { class: "muted small" }, "None")),
+          h("button", {
+            class: "btn", type: "button", disabled: !editable,
+            on: {
+              click: (e) => {
+                const btn = e.currentTarget;
+                pickImage(async (file) => {
+                  try {
+                    const media = await uploadImage(file, "role_icon", { still: !guildCan("animated_media", g) });
+                    await setIcon({ icon_media_id: media.media_id }, btn);
+                  } catch (err) { toast(err.message, { error: true }); }
+                });
+              },
+            },
+          }, "Upload image"),
+          h("button", {
+            class: "btn", type: "button", disabled: !editable,
+            on: { click: (e) => openEmojiPicker(e.currentTarget, (emoji) => setIcon({ icon_emoji: emoji }), { custom: false, placement: "bottom" }) },
+          }, "Pick emoji"),
+          role.icon_id || role.icon_emoji ? h("button", {
+            class: "btn", type: "button", disabled: !editable,
+            on: { click: (e) => setIcon({ icon_media_id: null, icon_emoji: null }, e.currentTarget) },
+          }, "Remove") : null)
+        : h("div", { class: "locked-note" }, "🔒 Role icons ", state.info.customization_mode === "allowlist" ? "need the guild owner to have perks." : "are turned off on this server."));
     const bar = h("div", { class: "unsaved-bar", hidden: true },
       h("span", {}, "Careful — you have unsaved changes!"),
       h("button", { class: "btn link", type: "button", on: { click: () => { dirty = false; drawEditor(); } } }, "Reset"),
@@ -260,15 +348,27 @@ function roles(el, actions) {
       h("div", { class: "row" },
         h("label", { class: "grow" }, "Role name", h("input", { name: "name", maxLength: LIMITS.ROLE_NAME_MAX, value: role.name, disabled: role.is_everyone || !editable })),
         role.is_everyone ? null : h("div", { class: "field" }, h("span", { class: "field-label" }, "Color"),
-          h("div", { class: "row" }, color, h("label", { class: "check" }, h("input", {
-            type: "checkbox", checked: !useColor, disabled: !editable, on: { change: (e) => { useColor = !e.currentTarget.checked; } },
+          h("div", { class: "row" }, color, stop2, stop3, h("label", { class: "check" }, h("input", {
+            type: "checkbox", class: "no-color", checked: !useColor, disabled: !editable, on: { change: (e) => { useColor = !e.currentTarget.checked; drawGrad(); } },
           }), "None")))),
+      role.is_everyone ? null : h("div", { class: "field" },
+        h("span", { class: "field-label" }, "Gradient"),
+        gradAllowed
+          ? h("div", { class: "row" },
+            h("label", { class: "check" }, h("input", {
+              type: "checkbox", checked: gradOn, disabled: !editable,
+              on: { change: (e) => { gradOn = e.currentTarget.checked; if (gradOn) { useColor = true; form.querySelector(".no-color").checked = false; } drawGrad(); } },
+            }), "Gradient name"),
+            thirdBtn, gradPreview)
+          : h("div", { class: "locked-note" }, "🔒 Gradient roles ", state.info.customization_mode === "allowlist" ? "need the guild owner to have perks." : "are turned off on this server.")),
+      iconField,
       role.is_everyone ? h("p", { class: "muted small" }, "@everyone applies to every member of the guild.") : null,
       role.is_everyone ? null : h("label", { class: "perm-row" },
         h("span", { class: "meta" }, h("span", { class: "name" }, "Display role members separately"), h("span", { class: "sub" }, "Online members with this role get their own group in the member list.")),
         h("input", { type: "checkbox", class: "switch", name: "hoist", checked: role.hoist, disabled: !editable })),
       editable ? null : h("p", { class: "error-box info" }, "This role is at or above your highest role, so you can't edit it."));
-    color.addEventListener("input", () => { useColor = true; form.querySelector(".check input").checked = false; });
+    color.addEventListener("input", () => { useColor = true; form.querySelector(".no-color").checked = false; drawGrad(); });
+    if (!role.is_everyone) drawGrad();
     const permBox = h("div", { class: "perm-list" });
     for (const item of PERM_INFO) {
       if (item.heading) { add(permBox, h("div", { class: "perm-heading" }, item.heading)); continue; }
@@ -293,6 +393,7 @@ function roles(el, actions) {
       if (!role.is_everyone) {
         patch.name = String(fd.get("name")).trim() || role.name;
         patch.color = useColor ? color.value : null;
+        if (gradOn && useColor) patch.colors = [color.value, stop2.value, ...(third ? [stop3.value] : [])];
         patch.hoist = fd.get("hoist") === "on";
       }
       try {
@@ -337,14 +438,14 @@ function members(el, actions) {
             m.invited_by ? ` · invited by ${nameOf(userById(m.invited_by) || { username: "someone" })}` : m.invite_code ? " · via the public link" : "",
             m.invite_code ? h("span", { class: "mono" }, ` (${m.invite_code})`) : null),
           h("span", { class: "role-chips" }, memberRoles(m).map((r) => h("span", { class: "role-chip" },
-            h("span", { class: "role-dot", style: `background:${r.color || "var(--muted)"}` }), r.name)))),
+            roleSwatch(r), r.name)))),
         h("span", { class: "row" },
           assignable.length && (u.user_id === state.user.user_id || actions.outranks(u.user_id)) ? h("button", {
             class: "btn", type: "button",
             on: {
               click: (e) => openMenu(e.currentTarget, assignable.map((r) => ({
                 label: r.name, checked: m.role_ids.includes(r.role_id),
-                icon: h("span", { class: "role-dot", style: `background:${r.color || "var(--muted)"}` }),
+                icon: roleSwatch(r),
                 onClick: () => actions.setMemberRoles(u.user_id, m.role_ids.includes(r.role_id)
                   ? m.role_ids.filter((id) => id !== r.role_id) : [...m.role_ids, r.role_id]),
               }))),

@@ -357,6 +357,7 @@ async function enterApp({ session_token, user, legal_update_required }) {
   state.user = user;
   state.users.set(user.user_id, user);
   state.connected = true;
+  applyPrefs(); // themes depend on this server's customisation settings
   showScreen("app");
   invalidate();
   flush();
@@ -461,6 +462,7 @@ function wireConnection(conn) {
       const ok = await req(T.AUTH_RESUME, { session_token: token, device_id: store.getDeviceId(state.url) });
       state.user = ok.user;
       state.connected = true;
+      applyPrefs();
       setBanner(null);
       if (state.afk) req(T.PRESENCE_SET, { afk: true }).catch(() => {});
       await resync();

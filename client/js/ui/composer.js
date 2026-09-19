@@ -1,13 +1,15 @@
-// Message composer: drafts per channel, reply bar, @mention autocomplete,
-// emoji button, attachments (button, paste, drag and drop), slowmode,
-// typing notifications, ↑ to edit your last message.
+// Message composer: drafts per channel, reply bar, @mention and :emoji:
+// autocomplete, emoji and sticker buttons, attachments (button, paste, drag
+// and drop), slowmode, typing notifications, ↑ to edit your last message.
 
+import { emojiByName, emojiToken, searchEmojis, usableStickerGroups } from "../perks.js";
 import { LIMITS } from "../protocol.js";
 import { can, currentChannel, currentGuild, isDm, memberById, mutedUntil, nameOf, state as appState, userById } from "../state.js";
 import { addFiles, removePending, uploading } from "../uploads.js";
 import { $, add, avatar, clear, fmtBytes, h } from "./dom.js";
-import { openEmojiPicker } from "./emoji.js";
+import { UNICODE_EMOJI, customOf, emojiGlyph, openEmojiPicker } from "./emoji.js";
 import { toast } from "./modals.js";
+import { openStickerPicker } from "./stickers.js";
 
 const drafts = new Map(); // channel_id -> text
 const TYPING_EVERY_MS = 5000;
@@ -21,21 +23,27 @@ function candidates() {
   return appState.members.map((m) => userById(m.user.user_id) || m.user);
 }
 
-// "@alice" -> "<@id>" for users who can be mentioned here.
+// Custom emoji are typed as :name: and sent as <:name:id> (PROTOCOL.md §4 Emoji).
+const EMOJI_NAME_TOKEN = /(?<![<\w]|<a):([A-Za-z0-9_]{2,32}):(?!\d)/g;
+
+// "@alice" -> "<@id>" for users who can be mentioned here; ":name:" -> <:name:id>.
 export function toWire(text) {
   const byName = new Map(candidates().map((u) => [u.username.toLowerCase(), u.user_id]));
   return text.replace(MENTION_TOKEN, (all, name) => {
     const id = byName.get(name.toLowerCase());
     return id ? `<@${id}>` : all;
+  }).replace(EMOJI_NAME_TOKEN, (all, name) => {
+    const e = emojiByName(name);
+    return e ? emojiToken(e) : all;
   });
 }
 
-// "<@id>" -> "@username" for editing.
+// "<@id>" -> "@username" and <:name:id> -> ":name:" (when it maps back) for editing.
 export function fromWire(content) {
   return content.replace(/<@(\d{1,20})>/g, (all, id) => {
     const u = userById(id) || memberById(id)?.user;
     return u ? `@${u.username}` : all;
-  });
+  }).replace(/<a?:([A-Za-z0-9_]{2,32}):(\d{1,20})>/g, (all, name, id) => (emojiByName(name)?.emoji_id === id ? `:${name}:` : all));
 }
 
 export function clearDraft(channelId) {
@@ -154,7 +162,7 @@ export function renderComposer(state, actions) {
     if (!ac) return;
     const before = input.value.slice(0, ac.start);
     const after = input.value.slice(input.selectionStart);
-    const insert = `@${item.username} `;
+    const insert = ac.kind === "emoji" ? `${item.custom ? `:${item.name}:` : item.emoji} ` : `@${item.username} `;
     input.value = before + insert + after;
     const pos = before.length + insert.length;
     input.setSelectionRange(pos, pos);
@@ -166,6 +174,16 @@ export function renderComposer(state, actions) {
     clear(popup);
     popup.hidden = !ac?.items.length;
     if (!ac) return;
+    if (ac.kind === "emoji") {
+      add(popup, h("div", { class: "ac-title" }, `Emoji matching :${ac.query}`));
+      ac.items.forEach((e, i) => add(popup, h("div", {
+        class: `ac-item ${i === ac.index ? "active" : ""}`, role: "option", "aria-selected": String(i === ac.index),
+        on: { mousedown: (ev) => { ev.preventDefault(); pickAc(e); } },
+      }, emojiGlyph(e.custom ? emojiToken(e) : e.emoji, { cls: "ac-emoji" }),
+      h("span", { class: "ac-name" }, `:${e.name}:`),
+      h("span", { class: "ac-sub" }, e.custom ? e.guildName : ""))));
+      return;
+    }
     add(popup, h("div", { class: "ac-title" }, "Members"));
     ac.items.forEach((u, i) => add(popup, h("div", {
       class: `ac-item ${i === ac.index ? "active" : ""}`, role: "option", "aria-selected": String(i === ac.index),
@@ -176,6 +194,16 @@ export function renderComposer(state, actions) {
   };
   const updateAc = () => {
     const pos = input.selectionStart;
+    const em = /(^|\s):([A-Za-z0-9_]{2,32})$/.exec(input.value.slice(0, pos));
+    if (em) {
+      const q = em[2].toLowerCase();
+      const custom = searchEmojis(q, 8).map((e) => ({ ...e, custom: true }));
+      const unicode = UNICODE_EMOJI.filter((e) => e.words.split(" ").some((w) => w.startsWith(q)))
+        .slice(0, 10 - custom.length).map((e) => ({ emoji: e.emoji, name: e.words.split(" ")[0] }));
+      ac = { kind: "emoji", query: em[2], start: pos - em[2].length - 1, items: [...custom, ...unicode], index: 0 };
+      drawAc();
+      return;
+    }
     const m = /(^|\s)@([A-Za-z0-9_.-]{0,32})$/.exec(input.value.slice(0, pos));
     if (!m) { closeAc(); return; }
     const q = m[2].toLowerCase();
@@ -186,7 +214,7 @@ export function renderComposer(state, actions) {
     if (!isDm(channel) && can("MENTION_EVERYONE", channel) && "everyone".startsWith(q)) {
       list.push({ everyone: true, username: "everyone", user_id: "everyone" });
     }
-    ac = { start: pos - m[2].length - 1, items: list, index: 0 };
+    ac = { kind: "user", start: pos - m[2].length - 1, items: list, index: 0 };
     drawAc();
   };
 
@@ -259,7 +287,9 @@ export function renderComposer(state, actions) {
   const emojiBtn = h("button", {
     class: "icon-btn emoji-btn", type: "button", title: "Emoji", "aria-label": "Insert emoji",
     on: {
-      click: (e) => openEmojiPicker(e.currentTarget, (emoji) => {
+      click: (e) => openEmojiPicker(e.currentTarget, (picked) => {
+        const c = customOf(picked);
+        const emoji = c ? `:${c.name}: ` : picked;
         const pos = input.selectionStart ?? input.value.length;
         input.value = input.value.slice(0, pos) + emoji + input.value.slice(input.selectionEnd ?? pos);
         input.setSelectionRange(pos + emoji.length, pos + emoji.length);
@@ -268,6 +298,16 @@ export function renderComposer(state, actions) {
       }, { placement: "top" }),
     },
   }, "☺");
+  const stickerBtn = usableStickerGroups().length ? h("button", {
+    class: "icon-btn sticker-btn", type: "button", title: "Send a sticker", "aria-label": "Send a sticker",
+    disabled: !state.connected,
+    on: {
+      click: (e) => openStickerPicker(e.currentTarget, async (sticker) => {
+        if (slow && slowmodeLeft(channel)) return;
+        try { await actions.sendSticker(sticker); } catch (err) { toast(err.message, { error: true }); }
+      }),
+    },
+  }, "🗒") : null;
 
   const fileInput = h("input", { type: "file", multiple: true, hidden: true });
   fileInput.addEventListener("change", () => { addFiles([...fileInput.files]); fileInput.value = ""; input.focus(); });
@@ -292,7 +332,7 @@ export function renderComposer(state, actions) {
   }
 
   const tray = uploadTray(state);
-  add(form, ...[popup, replyBar, tray, h("div", { class: `box ${replyBar || tray ? "with-reply" : ""}` }, attachBtn, fileInput, input, emojiBtn, send), slowNote, count].filter(Boolean));
+  add(form, ...[popup, replyBar, tray, h("div", { class: `box ${replyBar || tray ? "with-reply" : ""}` }, attachBtn, fileInput, input, stickerBtn, emojiBtn, send), slowNote, count].filter(Boolean));
   autosize();
   if (state.connected && matchMedia("(pointer: fine)").matches && !state.editingId) input.focus();
 }

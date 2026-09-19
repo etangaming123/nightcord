@@ -1,6 +1,6 @@
 # Nightcord Protocol
 
-Version: `0.4`
+Version: `0.5`
 
 This document is the single source of truth for the wire format between the
 Nightcord client (GitHub Pages, vanilla JS) and a Nightcord server (Python).
@@ -17,6 +17,7 @@ Each protocol version arrived with one commit on `main`, named in the middle col
 | 0.2 | Chat server and web client | Accounts, guilds, text channels and messages over one WebSocket. |
 | 0.3 | Roles, moderation, DMs, profiles and first-run setup | First-run setup, an admin API, profiles, avatars and status, direct messages, roles and permissions with channel overwrites, moderation, message edits, deletes, replies, reactions and mentions, typing, synced read state and notification preferences. |
 | 0.4 | Server staff, attachments, invites, categories and search | Server admins and moderators with global mutes, account deletion and IP/device bans; Terms of Service and Privacy Policy documents; file attachments over HTTP; invites with use limits, expiry and vanity links; join/leave messages; categories, topics and slowmode; pins and search; guild icons; nicknames; hoisted roles; a voice-channel placeholder. |
+| 0.5 | Custom emoji and stickers, image uploads and customisation | Custom emoji and stickers (per guild, usable everywhere); image uploads over HTTP (`/media`) with animated images; profile banners and colours, guild banners, gradient role colours and role icons; server-wide customisation settings with an allow-list (§8d). |
 
 ---
 
@@ -102,6 +103,19 @@ Besides `/ws`, the server answers:
   (png/jpeg/gif/webp), video (mp4/webm) and audio are served inline with
   their type; text files as `text/plain; charset=utf-8`; everything else
   (including SVG and HTML) as an `application/octet-stream` download.
+- `POST /media?kind=…` — upload one image for an emoji, sticker, avatar,
+  banner, guild icon, guild banner or role icon. Raw body, `Authorization:
+  Bearer <session_token>` and CORS as for `/upload`. PNG (including APNG),
+  JPEG, GIF and WebP only, checked from the bytes; size and dimension caps
+  depend on `kind` (§4 Limits). Success: `200 { media: Media }`. Failure:
+  `not_authenticated` (401), `forbidden` / `ip_banned` (403),
+  `file_too_large` (413), `media_invalid` (400/415: wrong type, unreadable
+  or too many pixels), `rate_limited` (429, more than 20 unused uploads).
+  The image is used by passing its `media_id` to a WebSocket request
+  (`emoji.create`, `user.avatar.set`, …) — once; unused uploads are deleted
+  after an hour. Uploading needs no customisation perks; using an image
+  may (§8d).
+- `GET /media/{media_id}` — a stored image. Public and immutable.
 
 ---
 
@@ -163,9 +177,15 @@ plain JSON numbers.
   "custom_status": "string | null",
   "is_server_owner": false,
   "server_role": "owner | admin | moderator | none",
-  "deleted": false
+  "deleted": false,
+  "perks": false,
+  "banner_id": "string | null",
+  "profile_colors": ["#rrggbb", "#rrggbb"]
 }
 ```
+`perks` is the customisation allow-list flag (§8d). `banner_id` is the
+profile banner image and `profile_colors` (or null) the two colours of a
+gradient profile card.
 The user's own view (`auth.ok`'s `user`, `user.updated` sent to
 themselves) adds `bio`, `created_at`, `presence`
 (`online | idle | dnd | invisible`, their chosen status), `muted_until`
@@ -177,9 +197,17 @@ A `deleted` user's profile fields are cleared and their `username` is a
 placeholder; clients show "Deleted User". Their messages stay.
 
 Clients show a guild member's `nickname` (§4 Member) inside that guild,
-else `display_name` when set, else `username`. An avatar image is
-at `GET /avatars/{avatar_id}`; without one, clients draw initials on
-`avatar_color` (or a color derived from the username).
+else `display_name` when set, else `username`. Without an avatar, clients
+draw initials on `avatar_color` (or a color derived from the username).
+
+**Image references.** `avatar_id`, a guild's `icon_id` and `banner_id`, a
+user's `banner_id` and a role's `icon_id` name an image:
+- `123….png|jpg|webp` (with an extension) — a small v0.4-style upload at
+  `GET /avatars/{id}`;
+- `123…` (digits) — a `/media` upload at `GET /media/{id}`;
+- `a_123…` — the same for an **animated** image: `GET /media/123…`.
+Clients show an animated image still (first frame) where the matching
+feature is off (§8d) and animate it otherwise.
 
 Password is never sent to the client; the server stores only a bcrypt hash.
 
@@ -191,12 +219,19 @@ Password is never sent to the client; the server stores only a bcrypt hash.
   "account_creation": "off | request | on",
   "guild_list_visible": true,
   "max_upload_bytes": 26214400,
-  "voice_enabled": false
+  "voice_enabled": false,
+  "customization_mode": "off | allowlist | on",
+  "customization_features": {
+    "profile_banner": true, "profile_colors": true, "animated_media": true,
+    "guild_banner": true, "gradient_roles": true, "role_icons": true,
+    "client_themes": true
+  }
 }
 ```
 Defaults: `guild_creation: "on"`, `account_creation: "on"`,
 `guild_list_visible: true`, `max_upload_bytes` 25 MB (1 MB – 1 GB),
-`voice_enabled: false`, `server_name` from the server's config file
+`voice_enabled: false`, `customization_mode: "on"` with every feature
+on, `server_name` from the server's config file
 until the owner sets one. `guild_list_visible` gates whether a server-wide
 "open guild list" can exist at all — a guild's own `listed` flag still needs
 to be true for it to appear.
@@ -212,15 +247,18 @@ to be true for it to appear.
   "icon_id": "string | null",
   "system_channel_id": "string | null",
   "system_flags": 0,
-  "vanity_code": "string | null"
+  "vanity_code": "string | null",
+  "banner_id": "string | null"
 }
 ```
-`icon_id` is an image at `GET /avatars/{icon_id}`. `system_channel_id` and
+`icon_id` and `banner_id` are image references (§4 User). `system_channel_id` and
 `system_flags` control join/leave messages (§5 System messages); new
 guilds preselect `#general` with the flags off. `vanity_code` is the
 guild's permanent public invite code, if any.
 Guild objects sent to a member (`guild.list`, `guild.create` and the join
-results) also carry `ghost: bool` and `my_permissions` (guild-wide, §5a).
+results) also carry `ghost: bool`, `my_permissions` (guild-wide, §5a),
+`emojis: [Emoji]` and `stickers: [Sticker]`. `guild.updated` events don't
+repeat the emoji and sticker lists; those change with their own events.
 `guild.public_list` entries carry `member_count`.
 
 ### Role
@@ -233,9 +271,15 @@ results) also carry `ghost: bool` and `my_permissions` (guild-wide, §5a).
   "permissions": 0,
   "position": 0,
   "is_everyone": false,
-  "hoist": false
+  "hoist": false,
+  "colors": ["#rrggbb", "#rrggbb"],
+  "icon_id": "string | null",
+  "icon_emoji": "string | null"
 }
 ```
+`colors` (2–3 colours, or null) makes a gradient name; `color` is then its
+first colour. A role has at most one icon: an image (`icon_id`) or a
+unicode emoji (`icon_emoji`); clients show it after member names.
 Every guild has an `@everyone` role with `role_id == guild_id`, position 0,
 which applies to all members. Higher `position` = higher rank. Clients
 group online members under their highest `hoist` role ("display role
@@ -316,9 +360,11 @@ only ever sent to users who have `VIEW_CHANNEL` in it.
   "reactions": [{ "emoji": "string", "user_ids": ["string"] }],
   "type": "default | member_join | member_leave | pin",
   "pinned": false,
-  "attachments": ["Attachment"]
+  "attachments": ["Attachment"],
+  "stickers": [{ "sticker_id": "string", "name": "string", "animated": false, "guild_id": "string" }]
 }
 ```
+A sticker deleted since is `{ sticker_id, deleted: true }`.
 `reply_to` is null when there's no reply or the original was deleted
 (`reply_to_id` is kept either way); its `content` is cut to 120
 characters. Message events also carry `guild_id` (null in DMs).
@@ -345,6 +391,28 @@ to and deleted with `MANAGE_MESSAGES`.
 `image/*` inline, play `video/*` and `audio/*` inline, open `text/plain`
 in a viewer, and offer everything else as a download.
 
+### Media
+```json
+{ "media_id": "string", "kind": "emoji | sticker | avatar | banner | guild_icon | guild_banner | role_icon",
+  "content_type": "image/png | image/jpeg | image/gif | image/webp", "size": 0, "width": 0, "height": 0, "animated": false }
+```
+
+### Emoji
+```json
+{ "emoji_id": "string", "guild_id": "string", "name": "string", "animated": false, "creator_id": "string", "created_at": "ISO8601" }
+```
+A custom emoji. Its image is `GET /media/{emoji_id}`. In message content
+it is written `<:name:emoji_id>` (`<a:name:emoji_id>` when animated);
+clients render the image, or `:name:` if it fails to load (deleted). A
+message made of only emoji (at most 27, no other text) is shown large.
+
+### Sticker
+```json
+{ "sticker_id": "string", "guild_id": "string", "name": "string", "description": "string | null",
+  "tag_emoji": "string | null", "animated": false, "creator_id": "string", "created_at": "ISO8601" }
+```
+Its image is `GET /media/{sticker_id}`; clients show it at up to 160 px.
+
 ### Invite
 ```json
 {
@@ -363,7 +431,8 @@ are 8 characters and case-insensitive.
 Content is plain text with a small markdown subset rendered by clients:
 `**bold**`, `*italic*`, `__underline__`, `~~strike~~`, `` `code` ``,
 ```` ```code blocks``` ````, `> quotes`, `||spoilers||` and links. Mentions
-are written `<@user_id>` and `@everyone`. The server never renders HTML.
+are written `<@user_id>` and `@everyone`, custom emoji `<:name:id>` (§4
+Emoji). The server never renders HTML.
 
 ### Read state
 ```json
@@ -402,7 +471,7 @@ only mention counts.
 | `bio` | up to 190 chars |
 | `custom_status` | up to 128 chars |
 | avatar | PNG, JPEG or WebP, at most 40 KB (clients downscale to 128×128) |
-| reaction `emoji` | one unicode emoji, at most 32 UTF-16 units; at most 20 distinct emoji per message |
+| reaction `emoji` | one unicode emoji (at most 32 UTF-16 units) or a custom emoji `<:name:id>`; at most 20 distinct emoji per message |
 | group DM | at most 10 people; name up to 64 chars |
 | history `limit` | default 50, max 100 |
 | timeout | 1 s – 28 days |
@@ -418,6 +487,11 @@ only mention counts.
 | `vanity_code` | 3–32 chars, `[a-z0-9-]` (stored lowercase) |
 | pins | at most 50 per channel |
 | legal documents | each up to 30000 chars of Markdown |
+| custom emoji | at most 200 per guild; `name` 2–32 chars `[A-Za-z0-9_]`, unique per guild (case-insensitive); image ≤ 256 KB and ≤ 256×256 |
+| stickers | at most 60 per guild; `name` 2–30 chars; `description` up to 100; one per message; image ≤ 512 KB and ≤ 320×320 |
+| `/media` images | avatar and guild icon ≤ 1 MB; banner and guild banner ≤ 2 MB; role icon ≤ 256 KB |
+| `profile_colors` | exactly 2 colours |
+| role `colors` | 2–3 colours |
 
 ---
 
@@ -492,28 +566,30 @@ target's server role to be strictly below the actor's.
 | `admin.audit_log` | C→S | `{ before?, limit? }` — mod. Server-wide actions, newest first |
 | `admin.audit_log.result` | S→C | `{ entries: [{ entry_id, actor: PublicUser, action, target_id, details, created_at }], has_more }` |
 | `admin.stats` | C→S | `{}` — admin |
-| `admin.stats.result` | S→C | `{ users, guilds, messages, attachments: { count, bytes } }` |
+| `admin.stats.result` | S→C | `{ users, guilds, messages, attachments: { count, bytes }, media: { count, bytes } }` |
 | `admin.legal.set` | C→S | `{ terms?: markdown \| null, privacy?: markdown \| null }` — owner. Empty or null removes a document |
 | `admin.legal.set.result` | S→C | `{ legal_version, has_terms, has_privacy }` |
 | `admin.guilds.list` | C→S | `{}` — admin |
 | `admin.guilds.list.result` | S→C | `{ guilds: [Guild + { member_count, owner: PublicUser }] }` |
 | `admin.guilds.delete` | C→S | `{ guild_id }` — admin |
 | `admin.guilds.delete.result` | S→C | `{}` |
+| `admin.users.set_perks` | C→S | `{ user_id, perks: bool }` — admin. The customisation allow-list (§8d) |
+| `admin.users.set_perks.result` | S→C | `{ user: AdminUser }` |
 | `admin.account_requested` | S→C | `{ user: AdminUser }` — event to every moderator and above when someone requests an account |
 
 Server audit `action` values: `user.status`, `user.reset_password`,
 `user.mute`, `user.delete`, `user.delete_self`, `staff.set`,
 `ip_ban.add`, `ip_ban.remove`, `device_ban.add`, `device_ban.remove`,
-`guild.delete`, `config.update`, `legal.update`.
+`guild.delete`, `config.update`, `legal.update`, `user.perks`.
 
 ### Users
 | type | direction | payload |
 |---|---|---|
 | `user.profile` | C→S | `{ user_id }` |
 | `user.profile.result` | S→C | `{ user: PublicUser + { bio, created_at }, status }` |
-| `user.update` | C→S | `{ display_name?, bio?, avatar_color?, custom_status? }` — `null` or `""` clears a field |
+| `user.update` | C→S | `{ display_name?, bio?, avatar_color?, custom_status?, banner_media_id?, profile_colors? }` — `null` or `""` clears a field. `banner_media_id` is a `banner` upload (needs `profile_banner`, and `animated_media` if animated); `profile_colors` needs `profile_colors` (§8d) |
 | `user.update.result` | S→C | `{ user }` (self view) |
-| `user.avatar.set` | C→S | `{ data_b64 }` — base64 image, or `null` to remove |
+| `user.avatar.set` | C→S | `{ data_b64 }` — base64 image, or `null` to remove; or `{ media_id }` — an `avatar` upload (animated needs `animated_media`, §8d) |
 | `user.avatar.set.result` | S→C | `{ user }` (self view) |
 | `user.password.change` | C→S | `{ current_password, new_password }` — revokes every other session |
 | `user.password.change.result` | S→C | `{}` |
@@ -563,9 +639,9 @@ visible status changes. Ghost memberships never produce presence (§7).
 | `guild.delete.result` | S→C | `{}` |
 | `guild.members` | C→S | `{ guild_id }` |
 | `guild.members.result` | S→C | `{ members: [Member] }` |
-| `guild.config.update` | C→S | `{ guild_id, name?, listed?, system_channel_id?, system_flags?, vanity_code? }` — needs `MANAGE_GUILD`. `system_channel_id` must be a text channel (or null); `vanity_code` null removes it |
+| `guild.config.update` | C→S | `{ guild_id, name?, listed?, system_channel_id?, system_flags?, vanity_code?, banner_media_id? }` — needs `MANAGE_GUILD`. `system_channel_id` must be a text channel (or null); `vanity_code` null removes it; `banner_media_id` is a `guild_banner` upload (the guild owner needs `guild_banner`, §8d), null removes it |
 | `guild.config.update.result` | S→C | `{ guild: Guild }` |
-| `guild.icon.set` | C→S | `{ guild_id, data_b64 }` — needs `MANAGE_GUILD`; same rules as `user.avatar.set`; `null` removes |
+| `guild.icon.set` | C→S | `{ guild_id, data_b64 }` or `{ guild_id, media_id }` — needs `MANAGE_GUILD`; same rules as `user.avatar.set` (a `guild_icon` upload; animated needs the guild owner to have `animated_media`); `data_b64: null` removes |
 | `guild.icon.set.result` | S→C | `{ guild: Guild }` |
 | `guild.invite.create` | C→S | `{ guild_id, max_uses?, max_age_seconds? }` — needs `CREATE_INVITE` |
 | `guild.invite.create.result` | S→C | `{ invite_code, invite: Invite }` |
@@ -574,7 +650,7 @@ visible status changes. Ghost memberships never produce presence (§7).
 | `guild.invite.revoke` | C→S | `{ invite_code }` — your own invites, or any with `MANAGE_GUILD` |
 | `guild.invite.revoke.result` | S→C | `{}` |
 | `guild.invite.resolve` | C→S | `{ invite_code }` — preview before joining |
-| `guild.invite.resolve.result` | S→C | `{ guild: { guild_id, name, icon_id }, member_count, online_count, inviter: PublicUser \| null, expires_at, is_member }` |
+| `guild.invite.resolve.result` | S→C | `{ guild: { guild_id, name, icon_id, banner_id }, member_count, online_count, inviter: PublicUser \| null, expires_at, is_member }` |
 | `guild.bans.list` | C→S | `{ guild_id }` — needs `BAN_MEMBERS` |
 | `guild.bans.list.result` | S→C | `{ bans: [{ user: PublicUser, reason, created_at }] }` |
 | `guild.audit_log` | C→S | `{ guild_id, before?, limit? }` — needs `VIEW_AUDIT_LOG`; newest first, `limit` ≤ 100 |
@@ -585,6 +661,8 @@ visible status changes. Ghost memberships never produce presence (§7).
 | `guild.member_left` | S→C | `{ guild_id, user_id, reason: "left"\|"kicked"\|"banned" }` — never sent for ghosts |
 | `guild.member_updated` | S→C | `{ guild_id, member: Member }` — roles or timeout changed |
 | `guild.permissions_changed` | S→C | `{ guild_id }` — roles or overwrites changed; refetch `guild.list` / `channel.list` for fresh `my_permissions` |
+| `guild.emojis_updated` | S→C | `{ guild_id, emojis: [Emoji] }` — to guild members after any emoji change |
+| `guild.stickers_updated` | S→C | `{ guild_id, stickers: [Sticker] }` — to guild members after any sticker change |
 
 Audit log `action` values: `guild.update`, `channel.create`,
 `channel.update`, `channel.delete`, `role.create`, `role.update`,
@@ -592,7 +670,32 @@ Audit log `action` values: `guild.update`, `channel.create`,
 `member.unban`, `member.timeout`, `member.nickname` (someone else's),
 `message.delete` (someone else's message), `message.pin`, `invite.revoke`,
 `channel.reorder`, `guild.transfer` (ownership passed on after account
-deletion).
+deletion), `emoji.create`, `emoji.update`, `emoji.delete`,
+`sticker.create`, `sticker.update`, `sticker.delete`.
+
+### Emoji and stickers
+| type | direction | payload |
+|---|---|---|
+| `emoji.create` | C→S | `{ guild_id, name, media_id }` — needs `MANAGE_EXPRESSIONS`; `media_id` is an `emoji` upload and becomes the `emoji_id` |
+| `emoji.create.result` | S→C | `{ emoji: Emoji }` |
+| `emoji.update` | C→S | `{ emoji_id, name }` — needs `MANAGE_EXPRESSIONS` |
+| `emoji.update.result` | S→C | `{ emoji: Emoji }` |
+| `emoji.delete` | C→S | `{ emoji_id }` — needs `MANAGE_EXPRESSIONS`; deletes the image |
+| `emoji.delete.result` | S→C | `{}` |
+| `emoji.info` | C→S | `{ emoji_id }` — any user; where an emoji seen in a message comes from |
+| `emoji.info.result` | S→C | `{ emoji: Emoji, guild: { guild_id, name, icon_id } \| null, is_member }` — `guild` is null unless you're in it or it's in the public list |
+| `sticker.create` | C→S | `{ guild_id, name, description?, tag_emoji?, media_id }` — needs `MANAGE_EXPRESSIONS`; `media_id` is a `sticker` upload and becomes the `sticker_id`; `tag_emoji` is a unicode emoji |
+| `sticker.create.result` | S→C | `{ sticker: Sticker }` |
+| `sticker.update` | C→S | `{ sticker_id, name?, description?, tag_emoji? }` — needs `MANAGE_EXPRESSIONS` |
+| `sticker.update.result` | S→C | `{ sticker: Sticker }` |
+| `sticker.delete` | C→S | `{ sticker_id }` — needs `MANAGE_EXPRESSIONS`; messages that used it show it as deleted |
+| `sticker.delete.result` | S→C | `{}` |
+
+Unlike Discord, anyone may use a guild's emoji and stickers in any guild
+or DM — as long as they are a (non-ghost) member of the guild they come
+from. Reacting with a custom emoji or sending a sticker from a guild you
+aren't in fails with `forbidden`; adding yourself to an existing reaction
+always works.
 
 ### System messages
 With `system_channel_id` set, the server posts `member_join` when someone
@@ -606,9 +709,9 @@ message's channel regardless of the flags.
 |---|---|---|
 | `role.list` | C→S | `{ guild_id }` |
 | `role.list.result` | S→C | `{ roles: [Role] }` — highest first, `@everyone` last |
-| `role.create` | C→S | `{ guild_id, name?, color?, permissions?, hoist? }` — needs `MANAGE_ROLES`; placed just below the creator's highest role |
+| `role.create` | C→S | `{ guild_id, name?, color?, permissions?, hoist?, colors?, icon_media_id?, icon_emoji? }` — needs `MANAGE_ROLES`; placed just below the creator's highest role |
 | `role.create.result` | S→C | `{ role: Role }` |
-| `role.update` | C→S | `{ role_id, name?, color?, permissions?, hoist? }` — needs `MANAGE_ROLES` and the role below your highest (any member may edit `@everyone`'s permissions with `MANAGE_ROLES`) |
+| `role.update` | C→S | `{ role_id, name?, color?, permissions?, hoist?, colors?, icon_media_id?, icon_emoji? }` — needs `MANAGE_ROLES` and the role below your highest (any member may edit `@everyone`'s permissions with `MANAGE_ROLES`). `color` alone removes a gradient; `colors` (2–3, or null) needs the guild owner to have `gradient_roles`; `icon_media_id` (a `role_icon` upload) or `icon_emoji` need `role_icons` (§8d); setting one icon clears the other, null removes |
 | `role.update.result` | S→C | `{ role: Role }` |
 | `role.reorder` | C→S | `{ guild_id, role_ids }` — every role except `@everyone`, highest first; only roles below yours may move |
 | `role.reorder.result` | S→C | `{ roles: [Role] }` |
@@ -710,7 +813,7 @@ requests and message requests are deferred (§10).
 ### Messaging
 | type | direction | payload |
 |---|---|---|
-| `message.send` | C→S | `{ channel_id, content, reply_to_id?, mention_reply?, attachment_ids? }` — needs `SEND_MESSAGES` (and `ATTACH_FILES` with attachments); text channels and DMs only. Rate-limited to 5 per 5 s per connection (shared with edits). Replying mentions the original author unless `mention_reply: false`. `content` may be empty when there are attachments (up to 10, from your own `/upload`s to this channel, each usable once). Slowmode: `slowmode` with `retry_after` seconds; `MANAGE_MESSAGES` or `MANAGE_CHANNELS` bypass it |
+| `message.send` | C→S | `{ channel_id, content, reply_to_id?, mention_reply?, attachment_ids?, sticker_ids? }` — needs `SEND_MESSAGES` (and `ATTACH_FILES` with attachments); text channels and DMs only. `sticker_ids`: at most one sticker from a guild you're a member of; `content` may then be empty. Rate-limited to 5 per 5 s per connection (shared with edits). Replying mentions the original author unless `mention_reply: false`. `content` may be empty when there are attachments (up to 10, from your own `/upload`s to this channel, each usable once). Slowmode: `slowmode` with `retry_after` seconds; `MANAGE_MESSAGES` or `MANAGE_CHANNELS` bypass it |
 | `message.send.result` | S→C | `{ message_id, message: Message }` |
 | `message.edit` | C→S | `{ message_id, content }` — your own messages only |
 | `message.edit.result` | S→C | `{ message: Message }` |
@@ -733,7 +836,7 @@ mentioned users' read state (everyone who can view the channel for
 ### Reactions
 | type | direction | payload |
 |---|---|---|
-| `reaction.add` | C→S | `{ message_id, emoji }` — needs `ADD_REACTIONS` |
+| `reaction.add` | C→S | `{ message_id, emoji }` — needs `ADD_REACTIONS`. A custom emoji `<:name:id>` must exist and come from a guild you're in; the stored reaction uses its current name (or the key already on the message for that emoji id) |
 | `reaction.add.result` | S→C | `{}` |
 | `reaction.remove` | C→S | `{ message_id, emoji }` — your own reaction |
 | `reaction.remove.result` | S→C | `{}` |
@@ -794,6 +897,7 @@ joined; closing it leaves the channel.
 | `CONNECT` | 65536 | join voice channels |
 | `CHANGE_NICKNAME` | 131072 | set your own nickname |
 | `MANAGE_NICKNAMES` | 262144 | set other members' nicknames |
+| `MANAGE_EXPRESSIONS` | 524288 | add, rename and delete the guild's custom emoji and stickers |
 
 `@everyone` starts with `VIEW_CHANNEL | SEND_MESSAGES | READ_HISTORY |
 ADD_REACTIONS | CREATE_INVITE | ATTACH_FILES | CONNECT | CHANGE_NICKNAME`
@@ -945,6 +1049,32 @@ own, and never on themselves.
   new device id. It only applies to this server.
 - **Account deletion** — see `user.delete`.
 
+## 8d. Customisation
+
+Profile banners and colours, animated images, guild banners, gradient role
+colours, role icons and client themes are **perks** the server owner
+controls with two `ServerConfig` settings:
+
+- `customization_mode` — `off` (nobody), `allowlist` (users an admin gave
+  `perks` with `admin.users.set_perks`, plus all server staff), or `on`
+  (everyone).
+- `customization_features` — each feature on or off, for everyone
+  (`server.config.update` may send just the features that change).
+
+A user can use a feature when it is on and the mode lets them. Personal
+features (`profile_banner`, `profile_colors`, `animated_media` for
+avatars and banners, `client_themes`) check the user; guild features
+(`guild_banner`, `gradient_roles`, `role_icons`, and `animated_media` for
+a guild's icon, banner and role icons) check the **guild owner**, like a
+boosted server.
+
+Setting a perk field without the right fails with `feature_disabled`;
+clearing one always works. Stored cosmetics are kept when a feature is
+switched off or a user loses perks: clients stop showing them (they know
+the config, and each `PublicUser`'s `perks` and `server_role`) and show
+them again if it's switched back on. Themes live in the client only, so
+their gating is a client rule.
+
 ---
 
 ## 9. Errors
@@ -965,7 +1095,9 @@ server-side failure; safe to retry), `setup_required`,
 `timed_out`, `avatar_invalid`, `too_many_reactions`, `dm_limit`,
 `invalid_current_password`, `file_too_large`, `muted` (server mute,
 §8c), `ip_banned`, `device_banned`, `slowmode` (the payload also has `retry_after` seconds),
-`invite_expired`, `legal_required`, `voice_disabled`, `pin_limit`.
+`invite_expired`, `legal_required`, `voice_disabled`, `pin_limit`,
+`feature_disabled` (customisation isn't allowed, §8d), `media_invalid`
+(an image upload that isn't a usable image, or an unknown or used media id).
 This list will grow — append here rather than inventing undocumented codes.
 
 ---
@@ -978,9 +1110,7 @@ Documented so the schema leaves room, without being built yet:
 - Link embeds / previews
 - Per-member channel overwrites
 - Voice/video audio (voice channels are placeholders, §5 Voice)
-- Custom emoji and stickers
-- Profile and guild banners, gradient role colors, themes (a server
-  setting will gate these)
+- Server-wide emoji packs (emoji belong to guilds)
 - Guild ownership transfer by hand
 - Read receipts — **permanently out of scope** (read state in §4 is
   private to each user)

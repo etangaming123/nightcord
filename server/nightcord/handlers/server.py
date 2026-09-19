@@ -18,7 +18,7 @@ def public_config(ctx) -> dict:
     return {**cfg, "server_name": cfg["server_name"] or ctx.config.server_name}
 
 
-def apply_config_updates(payload: dict) -> dict:
+def apply_config_updates(ctx, payload: dict) -> dict:
     """Validates a partial ServerConfig; returns the updates to store."""
     updates = {}
     for key, val in payload.items():
@@ -33,6 +33,17 @@ def apply_config_updates(payload: dict) -> dict:
                 raise ProtocolError(P.BAD_REQUEST, "'max_upload_bytes' must be between 1 MB and 1 GB")
         elif key == "server_name":
             val = P.validate_server_name(val)
+        elif key == "customization_mode":
+            if val not in P.CUSTOMIZATION_MODES:
+                raise ProtocolError(P.BAD_REQUEST, f"'{key}' must be one of {P.CUSTOMIZATION_MODES}")
+        elif key == "customization_features":
+            # Partial: only the given features change.
+            if not isinstance(val, dict) or not val:
+                raise ProtocolError(P.BAD_REQUEST, "'customization_features' must be an object of feature: bool")
+            for feature, on in val.items():
+                if feature not in P.CUSTOMIZATION_FEATURES or not isinstance(on, bool):
+                    raise ProtocolError(P.BAD_REQUEST, f"Unknown customisation feature or value: {feature}")
+            val = {**ctx.db.get_server_config()["customization_features"], **val}
         else:
             raise ProtocolError(P.BAD_REQUEST, f"'{key}' is not an editable server setting")
         updates[key] = val
@@ -56,7 +67,7 @@ async def info(ctx, conn, payload):
 @handles(P.SERVER_CONFIG_UPDATE)
 async def config_update(ctx, conn, payload):
     require_server_owner(conn)
-    updates = apply_config_updates(payload)
+    updates = apply_config_updates(ctx, payload)
     ctx.db.set_server_config(updates)
     if updates:
         ctx.db.add_server_audit(conn.user_id, "config.update", None, updates)

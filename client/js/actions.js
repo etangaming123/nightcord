@@ -19,7 +19,8 @@ import { $, displayName, h, idGt } from "./ui/dom.js";
 import { openEmojiPicker } from "./ui/emoji.js";
 import { guildSettings } from "./ui/guildSettings.js";
 import { render as renderMarkdown } from "./ui/markdown.js";
-import { closeFullscreen, closeModal, confirmModal, fullscreenOpen, openMenu, openModal, refreshFullscreen, toast } from "./ui/modals.js";
+import { uploadImage } from "./ui/images.js";
+import { closeFullscreen, closeModal, confirmModal, fullscreenOpen, openMenu, openModal, openPopover, refreshFullscreen, toast } from "./ui/modals.js";
 import { inviteDialog, invitePreview } from "./ui/invites.js";
 import { openPins } from "./ui/pins.js";
 import { copyText, openProfile } from "./ui/profile.js";
@@ -439,12 +440,78 @@ export function deleteMessage(m, skipConfirm = false) {
 export const react = (m, emoji) => req(T.REACTION_ADD, { message_id: m.message_id, emoji }).catch(fail);
 export const unreact = (m, emoji) => req(T.REACTION_REMOVE, { message_id: m.message_id, emoji }).catch(fail);
 
+// Same reaction: same unicode emoji, or the same custom emoji id (names can change).
+const sameEmoji = (a, b) => a === b || (/:(\d+)>$/.exec(a)?.[1] ?? a) === (/:(\d+)>$/.exec(b)?.[1] ?? b);
+
 export function pickReaction(m, anchor) {
   openEmojiPicker(anchor, (emoji) => {
-    const mine = m.reactions?.find((r) => r.emoji === emoji)?.user_ids.includes(state.user.user_id);
+    const mine = m.reactions?.find((r) => sameEmoji(r.emoji, emoji))?.user_ids.includes(state.user.user_id);
     if (!mine) react(m, emoji);
   }, { placement: "left" });
 }
+
+export async function sendSticker(sticker) {
+  const channelId = state.channelId;
+  const channel = currentChannel();
+  let res;
+  try {
+    res = await req(T.MESSAGE_SEND, { channel_id: channelId, content: "", sticker_ids: [sticker.sticker_id] });
+  } catch (e) {
+    if (e.code === ERR.SLOWMODE) startSlowmode(channel, e.data.retry_after);
+    throw e;
+  }
+  if (state.channelId !== channelId) return;
+  if (channel.slowmode_seconds && !can("MANAGE_MESSAGES", channel) && !can("MANAGE_CHANNELS", channel)) {
+    startSlowmode(channel, channel.slowmode_seconds);
+  }
+  if (state.hasMoreAfter) { jumpToPresent(); return; }
+  if (addMessage(res.message)) invalidate("chat");
+  state.scrollTo = "bottom";
+  const rs = state.readStates.get(channelId);
+  if (rs) { rs.last_message_id = res.message_id; markRead(channelId, res.message_id); }
+}
+
+// Where a custom emoji in a message comes from (PROTOCOL.md §5 emoji.info).
+export async function emojiInfo(emoji, anchor) {
+  const body = h("div", { class: "emoji-info" },
+    h("img", { class: "cemoji huge", src: anchor.src, alt: `:${emoji.name}:` }),
+    h("div", {}, h("strong", {}, `:${emoji.name}:`), h("p", { class: "muted small" }, "Loading…")));
+  openPopover(anchor, body, { placement: "top" });
+  try {
+    const info = await req(T.EMOJI_INFO, { emoji_id: emoji.id });
+    const note = info.is_member
+      ? `From ${info.guild.name}. You can use it anywhere.`
+      : info.guild ? `From ${info.guild.name}. Join that guild to use this emoji anywhere.` : "This emoji is from a guild you're not in.";
+    body.lastChild.lastChild.textContent = note;
+  } catch (e) {
+    body.lastChild.lastChild.textContent = e.code === ERR.NOT_FOUND ? "This emoji was deleted." : e.message;
+  }
+}
+
+// --- guild emoji and stickers (Server Settings) ------------------------------------
+
+function setGuildList(guildId, key, list) {
+  const g = state.guilds.get(guildId);
+  if (g) state.guilds.set(guildId, { ...g, [key]: list });
+  invalidate("chat", "composer");
+  if (fullscreenOpen()) refreshFullscreen();
+}
+export const applyGuildEmojis = ({ guild_id: guildId, emojis }) => setGuildList(guildId, "emojis", emojis);
+export const applyGuildStickers = ({ guild_id: guildId, stickers }) => setGuildList(guildId, "stickers", stickers);
+
+export async function createEmoji(file, name) {
+  const media = await uploadImage(file, "emoji");
+  return (await req(T.EMOJI_CREATE, { guild_id: state.guildId, name, media_id: media.media_id })).emoji;
+}
+export const renameEmoji = (emojiId, name) => req(T.EMOJI_UPDATE, { emoji_id: emojiId, name });
+export const deleteEmoji = (emojiId) => req(T.EMOJI_DELETE, { emoji_id: emojiId });
+
+export async function createSticker(file, fields) {
+  const media = await uploadImage(file, "sticker");
+  return (await req(T.STICKER_CREATE, { guild_id: state.guildId, ...fields, media_id: media.media_id })).sticker;
+}
+export const updateSticker = (stickerId, fields) => req(T.STICKER_UPDATE, { sticker_id: stickerId, ...fields });
+export const deleteSticker = (stickerId) => req(T.STICKER_DELETE, { sticker_id: stickerId });
 
 // Scroll to a message, loading the history around it if needed.
 export async function jumpTo(messageId, channelId = state.channelId, guildId = undefined) {
@@ -612,6 +679,12 @@ export async function openInvite(code) {
 
 export async function setGuildIcon(dataB64) {
   const res = await req(T.GUILD_ICON_SET, { guild_id: state.guildId, data_b64: dataB64 });
+  state.guilds.set(res.guild.guild_id, { ...state.guilds.get(res.guild.guild_id), ...res.guild });
+  invalidate("rail", "sidebar");
+}
+
+export async function setGuildIconMedia(mediaId) {
+  const res = await req(T.GUILD_ICON_SET, { guild_id: state.guildId, media_id: mediaId });
   state.guilds.set(res.guild.guild_id, { ...state.guilds.get(res.guild.guild_id), ...res.guild });
   invalidate("rail", "sidebar");
 }
@@ -996,9 +1069,10 @@ export const actions = {
   openGuild, openHome, openDm, openChannel, loadOlder, loadNewer, jumpToPresent, seenBottom,
   sendMessage, typing, reply, cancelReply, rerenderComposer, startEdit, cancelEdit, saveEdit, deleteMessage,
   react, unreact, pickReaction, jumpTo, showTopic, pinMessage, unpinMessage, showPins, showSearch, showSwitcher,
-  inviteLink, openInviteDialog, openInvite, createInvite, setGuildIcon,
+  inviteLink, openInviteDialog, openInvite, createInvite, setGuildIcon, setGuildIconMedia,
   reorderChannels, sidebarOrder, toggleCategory, isCollapsed, joinVoice, leaveVoice, setVoiceFlags,
   changeNickname, staffItems, nameOf,
+  sendSticker, emojiInfo, createEmoji, renameEmoji, deleteEmoji, createSticker, updateSticker, deleteSticker,
   toggleNav, toggleMembers, refreshChrome,
   req, rememberUser, setSelf, setServerInfo, messageUser, statusMenu,
   openProfile: openProfileAction,

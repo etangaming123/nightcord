@@ -130,6 +130,22 @@ async def staff_set(ctx, conn, payload):
     return {"user": ctx.db.admin_user(row["user_id"])}
 
 
+@handles(P.ADMIN_USERS_SET_PERKS)
+async def users_set_perks(ctx, conn, payload):
+    """Customisation allow-list (§8d): admins hand out perks, like Nitro."""
+    require_staff(conn, ADMIN)
+    perks = P.opt_bool(payload, "perks")
+    if perks is None:
+        raise ProtocolError(P.BAD_REQUEST, "'perks' is required")
+    row = ctx.db.get_user_row(P.req_id(payload, "user_id"))
+    if row is None or row["status"] == "deleted":
+        raise ProtocolError(P.NOT_FOUND, "User not found")
+    ctx.db.update_profile(row["user_id"], {"perks": perks})
+    _audit(ctx, conn, "user.perks", row["user_id"], {"username": row["username"], "perks": perks})
+    await _refresh_user(ctx, row["user_id"])
+    return {"user": ctx.db.admin_user(row["user_id"])}
+
+
 # --- IP and device bans -------------------------------------------------------
 
 

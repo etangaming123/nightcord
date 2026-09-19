@@ -31,6 +31,16 @@ DEFAULT_SERVER_CONFIG = {
     "guild_list_visible": True,
     "max_upload_bytes": 25 * 1024 * 1024,
     "voice_enabled": False,
+    "customization_mode": "on",
+    "customization_features": {
+        "profile_banner": True,
+        "profile_colors": True,
+        "animated_media": True,
+        "guild_banner": True,
+        "gradient_roles": True,
+        "role_icons": True,
+        "client_themes": True,
+    },
 }
 
 STAFF_LEVELS = {"none": 0, "moderator": 1, "admin": 2, "owner": 3}
@@ -192,6 +202,50 @@ MIGRATIONS: list[str] = [
     """,
     # 2 — Nightcord v3 (see _migration_2).
     "_migration_2",
+    # 3 — Nightcord v4: uploaded media, custom emoji, stickers and customisation.
+    """
+    ALTER TABLE users ADD COLUMN perks INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN banner_id TEXT;
+    ALTER TABLE users ADD COLUMN profile_colors TEXT;
+    ALTER TABLE guilds ADD COLUMN banner_id TEXT;
+    ALTER TABLE roles ADD COLUMN colors TEXT;
+    ALTER TABLE roles ADD COLUMN icon_id TEXT;
+    ALTER TABLE roles ADD COLUMN icon_emoji TEXT;
+    ALTER TABLE messages ADD COLUMN sticker_ids TEXT NOT NULL DEFAULT '[]';
+    CREATE TABLE media (
+        media_id      TEXT PRIMARY KEY,
+        uploader_id   TEXT NOT NULL,
+        kind          TEXT NOT NULL,
+        content_type  TEXT NOT NULL,
+        size          INTEGER NOT NULL,
+        width         INTEGER NOT NULL,
+        height        INTEGER NOT NULL,
+        animated      INTEGER NOT NULL DEFAULT 0,
+        claimed       INTEGER NOT NULL DEFAULT 0,
+        created_at    TEXT NOT NULL
+    );
+    -- emoji_id / sticker_id are the media_id of their image.
+    CREATE TABLE emojis (
+        emoji_id    TEXT PRIMARY KEY,
+        guild_id    TEXT NOT NULL REFERENCES guilds(guild_id) ON DELETE CASCADE,
+        name        TEXT NOT NULL,
+        animated    INTEGER NOT NULL DEFAULT 0,
+        creator_id  TEXT NOT NULL,
+        created_at  TEXT NOT NULL,
+        UNIQUE (guild_id, name)
+    );
+    CREATE TABLE stickers (
+        sticker_id   TEXT PRIMARY KEY,
+        guild_id     TEXT NOT NULL REFERENCES guilds(guild_id) ON DELETE CASCADE,
+        name         TEXT NOT NULL,
+        description  TEXT,
+        tag_emoji    TEXT,
+        animated     INTEGER NOT NULL DEFAULT 0,
+        creator_id   TEXT NOT NULL,
+        created_at   TEXT NOT NULL
+    );
+    CREATE INDEX stickers_by_guild ON stickers(guild_id)
+    """,
 ]
 
 MIGRATION_2 = """
@@ -335,6 +389,9 @@ def _public_user(row: sqlite3.Row) -> dict:
         "is_server_owner": bool(row["is_server_owner"]),
         "server_role": staff_role(row),
         "deleted": row["deleted_at"] is not None,
+        "perks": bool(row["perks"]),
+        "banner_id": row["banner_id"],
+        "profile_colors": json.loads(row["profile_colors"]) if row["profile_colors"] else None,
     }
 
 
@@ -360,6 +417,7 @@ def _guild(row: sqlite3.Row) -> dict:
         "system_channel_id": row["system_channel_id"],
         "system_flags": row["system_flags"],
         "vanity_code": row["vanity_code"],
+        "banner_id": row["banner_id"],
     }
 
 
@@ -373,6 +431,9 @@ def _role(row: sqlite3.Row) -> dict:
         "position": row["position"],
         "is_everyone": row["role_id"] == row["guild_id"],
         "hoist": bool(row["hoist"]),
+        "colors": json.loads(row["colors"]) if row["colors"] else None,
+        "icon_id": row["icon_id"],
+        "icon_emoji": row["icon_emoji"],
     }
 
 
@@ -430,9 +491,11 @@ class Database:
     # --- server config -----------------------------------------------------
 
     def get_server_config(self) -> dict:
-        cfg = dict(DEFAULT_SERVER_CONFIG)
+        cfg = {**DEFAULT_SERVER_CONFIG, "customization_features": dict(DEFAULT_SERVER_CONFIG["customization_features"])}
         for row in self._all("SELECT key, value FROM server_config"):
-            if row["key"] in cfg:
+            if row["key"] == "customization_features":
+                cfg["customization_features"] = {**cfg["customization_features"], **json.loads(row["value"])}
+            elif row["key"] in cfg:
                 cfg[row["key"]] = json.loads(row["value"])
         return cfg
 
@@ -526,11 +589,15 @@ class Database:
     def update_profile(self, user_id: str, fields: dict) -> dict:
         allowed = {
             "display_name", "bio", "avatar_color", "custom_status", "avatar_id", "presence_pref",
-            "server_role", "muted_until", "legal_version",
+            "server_role", "muted_until", "legal_version", "perks", "banner_id", "profile_colors",
         }
         with self._tx():
             for key, val in fields.items():
                 assert key in allowed, key
+                if key == "profile_colors" and val is not None:
+                    val = json.dumps(val)
+                elif key == "perks":
+                    val = int(val)
                 self._exec(f"UPDATE users SET {key} = ? WHERE user_id = ?", val, user_id)
         return self.get_user(user_id)
 
@@ -588,7 +655,7 @@ class Database:
     def anonymize_user(self, user_id: str) -> dict:
         """Account deletion: keeps messages (shown as Deleted User), frees the
         username and drops everything else. Returns what the caller must clean
-        up on disk: {avatar_id, attachment_ids}."""
+        up on disk: {avatar_id, banner_id, attachment_ids}."""
         row = self.get_user_row(user_id)
         attachment_ids = [
             r["attachment_id"] for r in self._all("SELECT attachment_id FROM attachments WHERE uploader_id = ?", user_id)
@@ -597,7 +664,8 @@ class Database:
             self._exec(
                 "UPDATE users SET username = ?, username_lower = ?, password_hash = '!', status = 'deleted', "
                 "deleted_at = ?, display_name = NULL, bio = NULL, avatar_id = NULL, avatar_color = NULL, "
-                "custom_status = NULL, note = NULL, server_role = 'none', muted_until = NULL WHERE user_id = ?",
+                "custom_status = NULL, note = NULL, server_role = 'none', muted_until = NULL, perks = 0, banner_id = NULL, "
+                "profile_colors = NULL WHERE user_id = ?",
                 f"deleted-{user_id}", f"deleted-{user_id}", now_iso(), user_id,
             )
             self._exec("DELETE FROM sessions WHERE user_id = ?", user_id)
@@ -605,7 +673,7 @@ class Database:
             self._exec("DELETE FROM reactions WHERE user_id = ?", user_id)
             self._exec("DELETE FROM notify_prefs WHERE user_id = ?", user_id)
             self._exec("DELETE FROM read_states WHERE user_id = ?", user_id)
-        return {"avatar_id": row["avatar_id"], "attachment_ids": attachment_ids}
+        return {"avatar_id": row["avatar_id"], "banner_id": row["banner_id"], "attachment_ids": attachment_ids}
 
     def search_users(self, query: str, *, exclude: str, limit: int = 20) -> list[dict]:
         like = _like_escape(query.lower()) + "%"
@@ -750,7 +818,9 @@ class Database:
         return self.get_guild(guild_id), self.list_channels(guild_id)
 
     def update_guild(self, guild_id: str, fields: dict) -> dict:
-        allowed = {"name", "listed", "icon_id", "system_channel_id", "system_flags", "vanity_code", "owner_user_id"}
+        allowed = {
+            "name", "listed", "icon_id", "system_channel_id", "system_flags", "vanity_code", "owner_user_id", "banner_id",
+        }
         with self._tx():
             for key, val in fields.items():
                 assert key in allowed, key
@@ -978,7 +1048,7 @@ class Database:
 
     def create_role(
         self, guild_id: str, *, name: str, color: str | None, permissions: int,
-        position: int | None = None, hoist: bool = False,
+        position: int | None = None, hoist: bool = False, extra: dict | None = None,
     ) -> dict:
         role_id = new_id()
         with self._tx():
@@ -993,14 +1063,18 @@ class Database:
                 "VALUES (?,?,?,?,?,?,?,?)",
                 role_id, guild_id, name, color, permissions, pos, now_iso(), int(hoist),
             )
+        if extra:
+            return self.update_role(role_id, extra)
         return self.get_role(role_id)
 
     def update_role(self, role_id: str, fields: dict) -> dict:
         with self._tx():
             for key, val in fields.items():
-                assert key in ("name", "color", "permissions", "hoist"), key
+                assert key in ("name", "color", "permissions", "hoist", "colors", "icon_id", "icon_emoji"), key
                 if key == "hoist":
                     val = int(val)
+                elif key == "colors" and val is not None:
+                    val = json.dumps(val)
                 self._exec(f"UPDATE roles SET {key} = ? WHERE role_id = ?", val, role_id)
         return self.get_role(role_id)
 
@@ -1302,7 +1376,8 @@ class Database:
         reactions: dict[int, list[dict]] = {}
         for r in self._all(
             f"SELECT message_id, emoji, user_id FROM reactions WHERE message_id IN ({marks}) "
-            "ORDER BY created_at, user_id",
+            # rowid keeps reactions added in the same millisecond in the order they arrived.
+            "ORDER BY created_at, rowid",
             *ids,
         ):
             lst = reactions.setdefault(r["message_id"], [])
@@ -1324,6 +1399,8 @@ class Database:
         users = self.public_users(
             [r["author_user_id"] for r in rows] + [r["author_user_id"] for r in replies.values()]
         )
+        sticker_ids = {r["message_id"]: json.loads(r["sticker_ids"] or "[]") for r in rows}
+        stickers = self.stickers_by_id({sid for ids_ in sticker_ids.values() for sid in ids_})
         attachments: dict[int, list[dict]] = {}
         for a in self._all(
             f"SELECT * FROM attachments WHERE message_id IN ({marks}) ORDER BY attachment_id", *ids
@@ -1351,6 +1428,9 @@ class Database:
                 "type": r["type"],
                 "pinned": r["pinned_at"] is not None,
                 "attachments": attachments.get(r["message_id"], []),
+                "stickers": [
+                    stickers.get(sid) or {"sticker_id": sid, "deleted": True} for sid in sticker_ids[r["message_id"]]
+                ],
             })
         return out
 
@@ -1432,14 +1512,15 @@ class Database:
         mention_everyone: bool = False,
         type_: str = "default",
         attachment_ids: list[str] | None = None,
+        sticker_ids: list[str] | None = None,
     ) -> dict:
         message_id = int(new_id())
         with self._tx():
             self._exec(
                 "INSERT INTO messages(message_id, channel_id, author_user_id, content, sent_at, "
-                "reply_to_id, mentions, mention_everyone, type) VALUES (?,?,?,?,?,?,?,?,?)",
+                "reply_to_id, mentions, mention_everyone, type, sticker_ids) VALUES (?,?,?,?,?,?,?,?,?,?)",
                 message_id, channel_id, author_user_id, content, now_iso(),
-                reply_to_id, json.dumps(mentions or []), int(mention_everyone), type_,
+                reply_to_id, json.dumps(mentions or []), int(mention_everyone), type_, json.dumps(sticker_ids or []),
             )
             for aid in attachment_ids or []:
                 self._exec("UPDATE attachments SET message_id = ? WHERE attachment_id = ?", message_id, aid)
@@ -1886,7 +1967,164 @@ class Database:
             "guilds": n("SELECT COUNT(*) AS n FROM guilds"),
             "messages": n("SELECT COUNT(*) AS n FROM messages"),
             "attachments": self.storage_stats(),
+            "media": self.media_stats(),
         }
+
+    # --- media (images uploaded over HTTP: emoji, stickers, banners, ...) -------
+
+    def create_media(
+        self, media_id: str, *, uploader_id: str, kind: str, content_type: str, size: int, width: int, height: int,
+        animated: bool,
+    ) -> dict:
+        self._exec(
+            "INSERT INTO media(media_id, uploader_id, kind, content_type, size, width, height, animated, claimed, "
+            "created_at) VALUES (?,?,?,?,?,?,?,?,0,?)",
+            media_id, uploader_id, kind, content_type, size, width, height, int(animated), now_iso(),
+        )
+        return self.media(media_id)
+
+    def media_row(self, media_id: str) -> sqlite3.Row | None:
+        return self._one("SELECT * FROM media WHERE media_id = ?", media_id)
+
+    def media(self, media_id: str) -> dict | None:
+        r = self.media_row(media_id)
+        if r is None:
+            return None
+        return {
+            "media_id": r["media_id"], "kind": r["kind"], "content_type": r["content_type"], "size": r["size"],
+            "width": r["width"], "height": r["height"], "animated": bool(r["animated"]),
+        }
+
+    def claim_media(self, media_id: str, uploader_id: str, kind: str) -> sqlite3.Row | None:
+        """Marks an unclaimed upload of `kind` by `uploader_id` as used; None if there's no such upload."""
+        cur = self._exec(
+            "UPDATE media SET claimed = 1 WHERE media_id = ? AND uploader_id = ? AND kind = ? AND claimed = 0",
+            media_id, uploader_id, kind,
+        )
+        return self.media_row(media_id) if cur.rowcount else None
+
+    def delete_media(self, media_id: str) -> None:
+        self._exec("DELETE FROM media WHERE media_id = ?", media_id)
+
+    def pending_media_count(self, user_id: str) -> int:
+        return self._one("SELECT COUNT(*) AS n FROM media WHERE uploader_id = ? AND claimed = 0", user_id)["n"]
+
+    def stale_media_ids(self, older_than_iso: str) -> list[str]:
+        ids = [
+            r["media_id"]
+            for r in self._all("SELECT media_id FROM media WHERE claimed = 0 AND created_at < ?", older_than_iso)
+        ]
+        if ids:
+            with self._tx():
+                for mid in ids:
+                    self._exec("DELETE FROM media WHERE media_id = ?", mid)
+        return ids
+
+    def all_media_ids(self) -> set[str]:
+        return {r["media_id"] for r in self._all("SELECT media_id FROM media")}
+
+    def media_stats(self) -> dict:
+        r = self._one("SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS bytes FROM media WHERE claimed = 1")
+        return {"count": r["n"], "bytes": r["bytes"]}
+
+    def guild_media_ids(self, guild_id: str) -> list[str]:
+        """Every image a guild owns (icon, banner, role icons, emoji, stickers), for deleting with it."""
+        g = self._one("SELECT icon_id, banner_id FROM guilds WHERE guild_id = ?", guild_id)
+        ids = [g["icon_id"], g["banner_id"]] if g else []
+        ids += [r["icon_id"] for r in self._all("SELECT icon_id FROM roles WHERE guild_id = ?", guild_id)]
+        ids += [r["emoji_id"] for r in self._all("SELECT emoji_id FROM emojis WHERE guild_id = ?", guild_id)]
+        ids += [r["sticker_id"] for r in self._all("SELECT sticker_id FROM stickers WHERE guild_id = ?", guild_id)]
+        return [i for i in ids if i]
+
+    # --- custom emoji and stickers --------------------------------------------
+
+    @staticmethod
+    def _emoji(r: sqlite3.Row) -> dict:
+        return {
+            "emoji_id": r["emoji_id"], "guild_id": r["guild_id"], "name": r["name"], "animated": bool(r["animated"]),
+            "creator_id": r["creator_id"], "created_at": r["created_at"],
+        }
+
+    @staticmethod
+    def _sticker(r: sqlite3.Row) -> dict:
+        return {
+            "sticker_id": r["sticker_id"], "guild_id": r["guild_id"], "name": r["name"],
+            "description": r["description"], "tag_emoji": r["tag_emoji"], "animated": bool(r["animated"]),
+            "creator_id": r["creator_id"], "created_at": r["created_at"],
+        }
+
+    def list_emojis(self, guild_id: str) -> list[dict]:
+        return [self._emoji(r) for r in self._all("SELECT * FROM emojis WHERE guild_id = ? ORDER BY emoji_id", guild_id)]
+
+    def get_emoji(self, emoji_id: str) -> dict | None:
+        r = self._one("SELECT * FROM emojis WHERE emoji_id = ?", emoji_id)
+        return self._emoji(r) if r else None
+
+    def emoji_name_taken(self, guild_id: str, name: str, exclude: str | None = None) -> bool:
+        return self._one(
+            "SELECT 1 FROM emojis WHERE guild_id = ? AND lower(name) = lower(?) AND emoji_id != ?",
+            guild_id, name, exclude or "",
+        ) is not None
+
+    def count_emojis(self, guild_id: str) -> int:
+        return self._one("SELECT COUNT(*) AS n FROM emojis WHERE guild_id = ?", guild_id)["n"]
+
+    def create_emoji(self, emoji_id: str, guild_id: str, name: str, animated: bool, creator_id: str) -> dict:
+        self._exec(
+            "INSERT INTO emojis(emoji_id, guild_id, name, animated, creator_id, created_at) VALUES (?,?,?,?,?,?)",
+            emoji_id, guild_id, name, int(animated), creator_id, now_iso(),
+        )
+        return self.get_emoji(emoji_id)
+
+    def rename_emoji(self, emoji_id: str, name: str) -> dict:
+        self._exec("UPDATE emojis SET name = ? WHERE emoji_id = ?", name, emoji_id)
+        return self.get_emoji(emoji_id)
+
+    def delete_emoji(self, emoji_id: str) -> None:
+        self._exec("DELETE FROM emojis WHERE emoji_id = ?", emoji_id)
+
+    def list_stickers(self, guild_id: str) -> list[dict]:
+        return [
+            self._sticker(r) for r in self._all("SELECT * FROM stickers WHERE guild_id = ? ORDER BY sticker_id", guild_id)
+        ]
+
+    def get_sticker(self, sticker_id: str) -> dict | None:
+        r = self._one("SELECT * FROM stickers WHERE sticker_id = ?", sticker_id)
+        return self._sticker(r) if r else None
+
+    def stickers_by_id(self, ids: Iterable[str]) -> dict[str, dict]:
+        ids = list(ids)
+        if not ids:
+            return {}
+        marks = ",".join("?" * len(ids))
+        return {r["sticker_id"]: self._sticker(r) for r in self._all(f"SELECT * FROM stickers WHERE sticker_id IN ({marks})", *ids)}
+
+    def count_stickers(self, guild_id: str) -> int:
+        return self._one("SELECT COUNT(*) AS n FROM stickers WHERE guild_id = ?", guild_id)["n"]
+
+    def create_sticker(
+        self, sticker_id: str, guild_id: str, *, name: str, description: str | None, tag_emoji: str | None,
+        animated: bool, creator_id: str,
+    ) -> dict:
+        self._exec(
+            "INSERT INTO stickers(sticker_id, guild_id, name, description, tag_emoji, animated, creator_id, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            sticker_id, guild_id, name, description, tag_emoji, int(animated), creator_id, now_iso(),
+        )
+        return self.get_sticker(sticker_id)
+
+    def update_sticker(self, sticker_id: str, fields: dict) -> dict:
+        with self._tx():
+            for key, val in fields.items():
+                assert key in ("name", "description", "tag_emoji"), key
+                self._exec(f"UPDATE stickers SET {key} = ? WHERE sticker_id = ?", val, sticker_id)
+        return self.get_sticker(sticker_id)
+
+    def delete_sticker(self, sticker_id: str) -> None:
+        self._exec("DELETE FROM stickers WHERE sticker_id = ?", sticker_id)
+
+    def perk_users(self) -> list[dict]:
+        return [_public_user(r) for r in self._all("SELECT * FROM users WHERE perks = 1 ORDER BY username_lower")]
 
     # --- audit log -----------------------------------------------------------
 

@@ -135,5 +135,8 @@ def with_perms(ctx, channel: dict, user_id: str) -> dict:
 
 
 def guild_for(ctx, guild: dict, user_id: str, *, ghost: bool) -> dict:
-    """Guild object as sent to its member: adds `ghost` and `my_permissions`."""
-    return {**guild, "ghost": ghost, "my_permissions": ctx.perms.guild_perms(guild["guild_id"], user_id)}
+    """Guild object as sent to its member: adds `ghost`, `my_permissions`, `emojis` and `stickers`."""
+    return {
+        **guild, "ghost": ghost, "my_permissions": ctx.perms.guild_perms(guild["guild_id"], user_id),
+        "emojis": ctx.db.list_emojis(guild["guild_id"]), "stickers": ctx.db.list_stickers(guild["guild_id"]),
+    }

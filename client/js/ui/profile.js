@@ -5,6 +5,7 @@ import { T } from "../protocol.js";
 import { STAFF_LABEL, can, memberById, memberRoles, state, statusOf, userById } from "../state.js";
 import { add, avatar, clear, displayName, fmtDate, h, statusLabel } from "./dom.js";
 import { closePopover, openMenu, openPopover, repositionPopover, toast } from "./modals.js";
+import { nameAttrs, profileBanner, profileThemeAttrs, roleIconOf, roleSwatch } from "./names.js";
 
 export function openProfile(userId, anchor, actions, { placement = "right" } = {}) {
   const cached = userById(userId) || memberById(userId)?.user;
@@ -14,6 +15,8 @@ export function openProfile(userId, anchor, actions, { placement = "right" } = {
     const member = state.view === "guild" ? memberById(user.user_id) : null;
     const me = user.user_id === state.user?.user_id;
     if (user.deleted) {
+      body.className = "profile";
+      body.style.cssText = "";
       clear(body,
         h("div", { class: "profile-banner", style: "background:var(--muted)" }),
         h("div", { class: "profile-avatar" }, avatar(user, { size: "xl" })),
@@ -22,11 +25,14 @@ export function openProfile(userId, anchor, actions, { placement = "right" } = {
       repositionPopover();
       return;
     }
+    const theme = profileThemeAttrs(user);
+    body.className = theme.class;
+    body.style.cssText = theme.style || "";
     clear(body,
-      h("div", { class: "profile-banner", style: `background:${user.avatar_color || "var(--accent)"}` }),
+      profileBanner(user),
       h("div", { class: "profile-avatar" }, avatar(user, { size: "xl", status })),
       h("div", { class: "profile-card" },
-        h("div", { class: "profile-name" }, member?.nickname || displayName(user)),
+        h("div", member ? nameAttrs(user.user_id, "profile-name") : { class: "profile-name" }, member?.nickname || displayName(user)),
         h("div", { class: "profile-username" }, member?.nickname ? `${displayName(user)} · ${user.username}` : user.username,
           STAFF_LABEL[user.server_role] ? h("span", { class: `tag staff ${user.server_role}` }, STAFF_LABEL[user.server_role].toUpperCase()) : null),
         user.custom_status ? h("div", { class: "profile-status" }, user.custom_status) : null,
@@ -65,7 +71,8 @@ function rolesSection(member, actions) {
   const roles = memberRoles(member);
   const editable = actions.assignableRoles();
   const chips = roles.map((r) => h("span", { class: "role-chip" },
-    h("span", { class: "role-dot", style: `background:${r.color || "var(--muted)"}` }),
+    roleSwatch(r),
+    roleIconOf(r),
     r.name,
     editable.some((e) => e.role_id === r.role_id)
       ? h("button", {
@@ -80,7 +87,7 @@ function rolesSection(member, actions) {
       on: {
         click: (e) => openMenu(e.currentTarget, addable.map((r) => ({
           label: r.name,
-          icon: h("span", { class: "role-dot", style: `background:${r.color || "var(--muted)"}` }),
+          icon: roleSwatch(r),
           onClick: () => actions.setMemberRoles(member.user.user_id, [...member.role_ids, r.role_id]),
         })), { placement: "right" }),
       },

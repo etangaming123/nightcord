@@ -3,10 +3,11 @@
 // Offline — like Discord. Ghost memberships never reach here: the server
 // leaves them out (§7). In a group DM it lists the recipients.
 
-import { currentChannel, hoistedRole, isDm, memberCanView, memberRoles, nameOf, statusOf, userById } from "../state.js";
+import { currentChannel, hoistedRole, isDm, memberCanView, nameOf, statusOf, userById } from "../state.js";
 import { $, add, avatar, clear, displayName, h, statusLabel } from "./dom.js";
+import { nameAttrs, profileBanner, profileThemeAttrs, roleIconEl } from "./names.js";
 
-function row(state, actions, user, { crown = false, color = null, guild = false } = {}) {
+function row(state, actions, user, { crown = false, guild = false } = {}) {
   const status = statusOf(user.user_id);
   return h("button", {
     class: `member ${status === "offline" ? "offline" : ""}`, type: "button",
@@ -17,7 +18,9 @@ function row(state, actions, user, { crown = false, color = null, guild = false 
   },
   avatar(user, { status }),
   h("span", { class: "member-meta" },
-    h("span", { class: "name", style: color ? `color:${color}` : null }, guild ? nameOf(user) : displayName(user)),
+    h("span", { class: "name-line" },
+      h("span", guild ? nameAttrs(user.user_id, "name") : { class: "name" }, guild ? nameOf(user) : displayName(user)),
+      guild ? roleIconEl(user.user_id) : null),
     user.custom_status ? h("span", { class: "sub" }, user.custom_status) : null),
   crown ? h("span", { class: "crown", title: "Guild owner", "aria-label": "Guild owner" }, "♛") : null);
 }
@@ -25,8 +28,8 @@ function row(state, actions, user, { crown = false, color = null, guild = false 
 // 1:1 DMs show the other person's profile instead of a member list.
 function dmProfile(user, actions) {
   const status = statusOf(user.user_id);
-  return h("div", { class: "profile dm-profile" },
-    h("div", { class: "profile-banner", style: `background:${user.avatar_color || "var(--accent)"}` }),
+  return h("div", profileThemeAttrs(user, "profile dm-profile"),
+    profileBanner(user),
     h("div", { class: "profile-avatar" }, avatar(user, { size: "xl", status })),
     h("div", { class: "profile-card" },
       h("div", { class: "profile-name" }, displayName(user)),
@@ -70,8 +73,7 @@ export function renderMembers(state, actions) {
   for (const g of ordered) {
     add(el, h("div", { class: "section-label" }, `${g.label} — ${g.members.length}`));
     for (const m of g.members) {
-      const color = memberRoles(m).find((r) => r.color)?.color || null;
-      add(el, row(state, actions, m.user, { crown: m.is_owner, color, guild: true }));
+      add(el, row(state, actions, m.user, { crown: m.is_owner, guild: true }));
     }
   }
   if (!members.length) add(el, h("p", { class: "muted small pad" }, "Nobody else can see this channel."));

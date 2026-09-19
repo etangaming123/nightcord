@@ -123,3 +123,25 @@ export async function readyAttachments() {
 }
 
 export const uploading = () => state.pending.some((p) => !p.attachment && !p.error);
+
+// Uploads an image for an emoji, sticker, avatar, banner or icon
+// (PROTOCOL.md §2 HTTP: POST /media); resolves to the Media object whose
+// media_id is then passed to the WebSocket request that uses it.
+export async function uploadMedia(kind, blob) {
+  const cap = LIMITS.MEDIA_KINDS[kind];
+  if (cap && blob.size > cap.maxBytes) {
+    throw new Error(`That image is too large — at most ${fmtBytes(cap.maxBytes)} here.`);
+  }
+  let res;
+  try {
+    res = await fetch(serverUrl(`/media?kind=${encodeURIComponent(kind)}`), {
+      method: "POST", body: blob, headers: { Authorization: `Bearer ${store.getToken(state.url)}` },
+    });
+  } catch {
+    throw new Error("Upload failed — check your connection");
+  }
+  let body = {};
+  try { body = await res.json(); } catch { /* not JSON */ }
+  if (!res.ok || !body.media) throw new Error(body.error?.message || `Upload failed (HTTP ${res.status})`);
+  return body.media;
+}

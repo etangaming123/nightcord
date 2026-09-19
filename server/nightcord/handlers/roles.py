@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .. import perks
 from .. import permissions as perm
 from .. import protocol as P
 from ..protocol import ProtocolError
@@ -36,6 +37,39 @@ def _require_below(ctx, conn, role: dict) -> None:
         raise ProtocolError(P.FORBIDDEN, "That role is not below your highest role")
 
 
+def _cosmetics(ctx, conn, guild: dict, payload: dict, role: dict | None) -> dict:
+    """Gradient colours and icon fields from a role.create / role.update payload."""
+    fields: dict = {}
+    owner = perks.guild_owner(ctx, guild)
+    if "colors" in payload:
+        colors = P.validate_colors(payload["colors"], min_len=2, max_len=P.MAX_ROLE_COLORS, key="colors")
+        if colors is not None:
+            if role is not None and role["is_everyone"]:
+                raise ProtocolError(P.BAD_REQUEST, "@everyone has no color")
+            perks.require(ctx, "gradient_roles", owner, guild=True)
+            fields["color"] = colors[0]
+        fields["colors"] = colors
+    if "icon_emoji" in payload:
+        emoji = payload["icon_emoji"]
+        if emoji is not None:
+            emoji = P.validate_emoji(emoji, allow_custom=False)
+            perks.require(ctx, "role_icons", owner, guild=True)
+        fields["icon_emoji"] = emoji
+        fields.setdefault("icon_id", None)
+    if "icon_media_id" in payload:
+        from .users import claim_image
+
+        fields["icon_id"] = None
+        if payload["icon_media_id"] is not None:
+            fields["icon_id"] = claim_image(
+                ctx, conn.user_id, payload["icon_media_id"], "role_icon", "role_icons", owner, guild=True
+            )
+            fields["icon_emoji"] = None
+    if (fields.get("icon_id") or fields.get("icon_emoji")) and role is not None and role["is_everyone"]:
+        raise ProtocolError(P.BAD_REQUEST, "@everyone can't have an icon")
+    return fields
+
+
 async def roles_changed(ctx, guild_id: str) -> None:
     ctx.perms.invalidate_guild(guild_id)
     await ctx.hub.send_to_guild(guild_id, P.frame(P.GUILD_PERMISSIONS_CHANGED, {"guild_id": guild_id}))
@@ -58,11 +92,12 @@ async def create(ctx, conn, payload):
     permissions = _perm_bits(payload, "permissions") or 0
     hoist = P.opt_bool(payload, "hoist") or False
     _check_grantable(ctx, guild_id, conn.user_id, 0, permissions)
+    extra = _cosmetics(ctx, conn, guild, payload, None)
     my_rank = rank(ctx, guild_id, conn.user_id)
     # New roles go just below the creator's highest role (the top for the owner).
     role = ctx.db.create_role(
         guild_id, name=name, color=color, permissions=permissions,
-        position=None if my_rank == perm.OWNER_RANK else my_rank, hoist=hoist,
+        position=None if my_rank == perm.OWNER_RANK else my_rank, hoist=hoist, extra=extra,
     )
     ctx.db.add_audit(guild_id, conn.user_id, "role.create", role["role_id"], {"name": name})
     await ctx.hub.send_to_guild(guild_id, P.frame(P.ROLE_CREATED, role))
@@ -89,6 +124,8 @@ async def update(ctx, conn, payload):
         fields["name"] = name
     if "color" in payload:
         fields["color"] = P.validate_color(payload["color"])
+        if "colors" not in payload:
+            fields["colors"] = None  # a plain color replaces a gradient
     hoist = P.opt_bool(payload, "hoist")
     if hoist is not None:
         if role["is_everyone"]:
@@ -98,10 +135,19 @@ async def update(ctx, conn, payload):
     if permissions is not None:
         _check_grantable(ctx, guild["guild_id"], conn.user_id, role["permissions"], permissions)
         fields["permissions"] = permissions
+    old_icon = role["icon_id"]
+    fields.update(_cosmetics(ctx, conn, guild, payload, role))
     if not fields:
         raise ProtocolError(P.BAD_REQUEST, "Nothing to update")
     role = ctx.db.update_role(role["role_id"], fields)
-    ctx.db.add_audit(guild["guild_id"], conn.user_id, "role.update", role["role_id"], {"name": role["name"], **{k: v for k, v in fields.items() if k != "name"}})
+    if "icon_id" in fields and fields["icon_id"] != old_icon:
+        from .users import drop_image
+
+        drop_image(ctx, old_icon)
+    ctx.db.add_audit(
+        guild["guild_id"], conn.user_id, "role.update", role["role_id"],
+        {"name": role["name"], **{k: v for k, v in fields.items() if k not in ("name", "icon_id")}},
+    )
     await ctx.hub.send_to_guild(guild["guild_id"], P.frame(P.ROLE_UPDATED, role))
     if "permissions" in fields:
         await roles_changed(ctx, guild["guild_id"])
@@ -140,6 +186,10 @@ async def delete(ctx, conn, payload):
     guild_id = guild["guild_id"]
     before = {r["role_id"]: r["position"] for r in ctx.db.list_roles(guild_id)}
     ctx.db.delete_role(role["role_id"])
+    if role["icon_id"]:
+        from .users import drop_image
+
+        drop_image(ctx, role["icon_id"])
     ctx.db.add_audit(guild_id, conn.user_id, "role.delete", role["role_id"], {"name": role["name"]})
     await ctx.hub.send_to_guild(guild_id, P.frame(P.ROLE_DELETED, {"guild_id": guild_id, "role_id": role["role_id"]}))
     for r in ctx.db.list_roles(guild_id):

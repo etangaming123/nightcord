@@ -1,6 +1,8 @@
 // Per-device client preferences (appearance, notifications). Stored locally;
 // server-synced preferences live in notify.prefs (PROTOCOL.md §5).
 
+import { DEFAULT_CUSTOM, applyTheme } from "./themes.js";
+
 const KEY = "nightcord.prefs";
 
 const DEFAULTS = {
@@ -10,6 +12,8 @@ const DEFAULTS = {
   desktopNotifications: false,
   sound: true,
   frequentEmoji: [],
+  themePreset: "default", // themes.js PRESETS id (needs the server's client_themes perk)
+  customTheme: DEFAULT_CUSTOM,
 };
 
 let prefs = load();
@@ -39,6 +43,7 @@ export function applyPrefs() {
   const root = document.documentElement;
   let theme = prefs.theme;
   if (theme === "system") theme = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  theme = applyTheme(prefs, theme);
   root.dataset.theme = theme;
   root.style.setProperty("--font-size", `${prefs.fontSize}px`);
   root.classList.toggle("compact", !!prefs.compact);

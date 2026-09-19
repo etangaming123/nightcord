@@ -1,6 +1,6 @@
 // Message markdown (PROTOCOL.md §4 Message): **bold**, *italic*, __underline__,
 // ~~strike~~, `code`, ```blocks```, > quotes, ||spoilers||, links, <@id>
-// mentions and @everyone. Documents (Terms of Service, Privacy Policy;
+// mentions, @everyone and custom emoji <:name:id>. Documents (Terms of Service, Privacy Policy;
 // PROTOCOL.md §8b) also get headings, paragraphs, lists, rules and
 // [label](https://…) links.
 //
@@ -8,7 +8,7 @@
 // tested in node); render() builds DOM nodes from it with text nodes only —
 // never innerHTML — so message content can't inject markup.
 
-import { h } from "./dom.js";
+import { h, mediaUrl } from "./dom.js";
 
 const MAX_DEPTH = 6;
 
@@ -25,6 +25,7 @@ const INLINE = new RegExp(
     "<@(\\d{1,20})>", // 10: user mention
     "(?<![\\w`@])(@everyone)\\b", // 11: @everyone
     "(https?:\\/\\/[^\\s<>\"']+[^\\s<>\"'.,;:!?)\\]])", // 12: link
+    "<(a?):([A-Za-z0-9_]{2,32}):(\\d{1,20})>", // 13,14,15: custom emoji
   ].join("|"),
   "g",
 );
@@ -57,6 +58,7 @@ export function parseInline(text, depth = 0) {
     else if (m[10] !== undefined) push({ type: "mention", id: m[10] });
     else if (m[11] !== undefined) push({ type: "everyone" });
     else if (m[12] !== undefined) push({ type: "link", href: m[12] });
+    else if (m[15] !== undefined) push({ type: "emoji", animated: m[13] === "a", name: m[14], id: m[15] });
   }
   pushText(text.slice(last));
   return out;
@@ -161,6 +163,21 @@ function renderToken(t, ctx) {
     }
     case "everyone":
       return h("span", { class: "mention everyone" }, "@everyone");
+    case "emoji": {
+      const label = `:${t.name}:`;
+      const src = ctx.emojiUrl ? ctx.emojiUrl(t.id) : mediaUrl(t.id);
+      if (!src) return document.createTextNode(label);
+      const img = h("img", {
+        class: "cemoji", src, alt: label, title: label, draggable: "false", loading: "lazy",
+        tabindex: ctx.onEmoji ? "0" : null, role: ctx.onEmoji ? "button" : null,
+        on: {
+          // A deleted emoji's image is gone: show its name instead.
+          error: () => img.replaceWith(document.createTextNode(label)),
+          click: (e) => { if (ctx.onEmoji) { e.stopPropagation(); ctx.onEmoji(t, img); } },
+        },
+      });
+      return img;
+    }
     case "link":
       return h("a", { href: t.href, target: "_blank", rel: "noopener noreferrer nofollow" },
         t.children ? renderTokens(t.children, ctx) : t.href);
@@ -185,6 +202,7 @@ export function plainText(content, ctx = {}) {
       case "text": case "code": case "codeblock": return t.text;
       case "link": return t.href;
       case "everyone": return "@everyone";
+      case "emoji": return `:${t.name}:`;
       case "mention": {
         const u = ctx.user?.(t.id);
         return u ? `@${u.display_name || u.username}` : "@unknown-user";
@@ -194,6 +212,23 @@ export function plainText(content, ctx = {}) {
     }
   }).join("");
   return walk(parse(content));
+}
+
+// Messages made only of emoji (up to 27, custom or unicode) are shown large.
+const EMOJI_RUN = /^(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|[\u200d\ufe0f\u20e3\u{1f3fb}-\u{1f3ff}\u{e0020}-\u{e007f}#*0-9])+$/u;
+export function jumboCount(content) {
+  const tokens = parse(content);
+  let count = 0;
+  for (const t of tokens) {
+    if (t.type === "emoji") { count++; continue; }
+    if (t.type !== "text") return 0;
+    for (const word of t.text.split(/\s+/).filter(Boolean)) {
+      if (!EMOJI_RUN.test(word) || /^[#*0-9]+$/.test(word)) return 0;
+      const seg = typeof Intl.Segmenter === "function" ? [...new Intl.Segmenter().segment(word)].length : [...word].length;
+      count += seg;
+    }
+  }
+  return count <= 27 ? count : 0;
 }
 
 // --- documents -------------------------------------------------------------

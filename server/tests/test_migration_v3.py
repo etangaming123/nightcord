@@ -26,7 +26,7 @@ def test_v2_database_upgrades(tmp_path):
     conn.close()
 
     d = Database(path)
-    assert d.conn.execute("PRAGMA user_version").fetchone()[0] == 2
+    assert d.conn.execute("PRAGMA user_version").fetchone()[0] == len(dbmod.MIGRATIONS)
     assert d.everyone_permissions("10") == 527 | (1 << 15) | (1 << 16) | (1 << 17)
     assert d.get_message(30)["content"] == "old pancakes" and d.get_message(30)["type"] == "default"
     assert d.get_user("1")["server_role"] == "none"

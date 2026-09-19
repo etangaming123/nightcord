@@ -4,8 +4,12 @@
 import { getPrefs, setPrefs } from "../prefs.js";
 import { LIMITS, T } from "../protocol.js";
 import { STAFF_LABEL, state } from "../state.js";
+import { lockedReason, userCan } from "../perks.js";
+import { MAX_THEME_COLORS, PRESETS, gradientCss, normalizeCustom } from "../themes.js";
 import { adminSections } from "./admin.js";
 import { add, avatar, clear, displayName, fmtDate, fmtDateTime, h } from "./dom.js";
+import { pickImage, uploadImage } from "./images.js";
+import { profileBanner, profileThemeAttrs } from "./names.js";
 import { closeFullscreen, confirmModal, openFullscreen, refreshFullscreen, toast } from "./modals.js";
 
 export function userSettings(actions, initial) {
@@ -133,6 +137,11 @@ function profile(el, actions) {
   const form = h("form", { class: "stack narrow" });
   const colorInput = h("input", { type: "color", name: "avatar_color", value: me.avatar_color || "#7aa2f7" });
   let useColor = !!me.avatar_color;
+  const themeLocked = lockedReason("profile_colors");
+  const bannerLocked = lockedReason("profile_banner");
+  let themeOn = !!me.profile_colors;
+  const theme1 = h("input", { type: "color", value: me.profile_colors?.[0] || "#5b21b6", "aria-label": "Profile colour, top" });
+  const theme2 = h("input", { type: "color", value: me.profile_colors?.[1] || "#db2777", "aria-label": "Profile colour, bottom" });
   const drawPreview = () => {
     const fd = new FormData(form);
     const draft = {
@@ -140,9 +149,13 @@ function profile(el, actions) {
       display_name: String(fd.get("display_name") || "").trim() || null,
       custom_status: String(fd.get("custom_status") || "").trim() || null,
       avatar_color: useColor ? colorInput.value : null,
+      profile_colors: themeOn && !themeLocked ? [theme1.value, theme2.value] : null,
     };
+    const attrs = profileThemeAttrs(draft, "profile-preview", { live: false });
+    preview.className = attrs.class;
+    preview.style.cssText = attrs.style || "";
     clear(preview,
-      h("div", { class: "profile-banner", style: `background:${draft.avatar_color || "var(--accent)"}` }),
+      profileBanner(draft, { live: false }),
       h("div", { class: "profile-avatar" }, avatar(draft, { size: "xl", status: "online" })),
       h("div", { class: "profile-card" },
         h("div", { class: "profile-name" }, displayName(draft)),
@@ -150,52 +163,87 @@ function profile(el, actions) {
         draft.custom_status ? h("div", { class: "profile-status" }, draft.custom_status) : null,
         String(fd.get("bio") || "").trim() ? h("div", { class: "profile-section" }, h("div", { class: "profile-section-title" }, "About me"), h("p", { class: "profile-bio" }, String(fd.get("bio")).trim())) : null));
   };
-  const fileInput = h("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif", hidden: true });
-  fileInput.addEventListener("change", async () => {
-    const file = fileInput.files[0];
-    fileInput.value = "";
-    if (!file) return;
+  const busy = async (btn, work, ok) => {
+    btn.disabled = true;
     try {
-      const blob = await resizeAvatar(file);
-      const res = await actions.req(T.USER_AVATAR_SET, { data_b64: await blobToBase64(blob) });
-      actions.setSelf(res.user);
-      toast("Avatar updated");
+      await work();
+      if (ok) toast(ok);
       refreshFullscreen();
     } catch (e) {
       toast(e.message, { error: true });
+    } finally {
+      btn.disabled = false;
     }
-  });
+  };
+  const still = () => !userCan("animated_media");
+  const changeAvatar = (e) => {
+    const btn = e.currentTarget;
+    pickImage((file) => busy(btn, async () => {
+      const media = await uploadImage(file, "avatar", { still: still() });
+      actions.setSelf((await actions.req(T.USER_AVATAR_SET, { media_id: media.media_id })).user);
+    }, "Avatar updated"));
+  };
+  const changeBanner = (e) => {
+    const btn = e.currentTarget;
+    pickImage((file) => busy(btn, async () => {
+      const media = await uploadImage(file, "banner", { still: still() });
+      actions.setSelf((await actions.req(T.USER_UPDATE, { banner_media_id: media.media_id })).user);
+    }, "Banner updated"));
+  };
   add(form,
     h("div", { class: "avatar-edit" },
       avatar(me, { size: "xl" }),
       h("div", { class: "row" },
-        h("button", { class: "btn primary", type: "button", on: { click: () => fileInput.click() } }, "Change avatar"),
+        h("button", { class: "btn primary", type: "button", on: { click: changeAvatar } }, "Change avatar"),
         me.avatar_id ? h("button", {
           class: "btn", type: "button",
-          on: { click: async () => { try { actions.setSelf((await actions.req(T.USER_AVATAR_SET, { data_b64: null })).user); refreshFullscreen(); } catch (e) { toast(e.message, { error: true }); } } },
+          on: { click: (e) => busy(e.currentTarget, async () => actions.setSelf((await actions.req(T.USER_AVATAR_SET, { data_b64: null })).user)) },
         }, "Remove") : null),
-      fileInput),
+      userCan("animated_media") ? h("p", { class: "muted small" }, "GIFs and animated WebPs stay animated.") : null),
     h("label", {}, "Display name", h("input", { name: "display_name", maxLength: LIMITS.DISPLAY_NAME_MAX, value: me.display_name || "", placeholder: me.username })),
     h("div", { class: "field" },
-      h("span", { class: "field-label" }, "Profile color"),
+      h("span", { class: "field-label" }, "Profile banner"),
+      bannerLocked
+        ? h("div", { class: "locked-note" }, "🔒 ", bannerLocked)
+        : h("div", { class: "row" },
+          h("button", { class: "btn", type: "button", on: { click: changeBanner } }, me.banner_id ? "Change banner" : "Upload banner"),
+          me.banner_id ? h("button", {
+            class: "btn", type: "button",
+            on: { click: (e) => busy(e.currentTarget, async () => actions.setSelf((await actions.req(T.USER_UPDATE, { banner_media_id: null })).user)) },
+          }, "Remove") : null,
+          h("span", { class: "muted small" }, "Wide images work best (5:2)."))),
+    h("div", { class: "field" },
+      h("span", { class: "field-label" }, "Banner colour"),
       h("div", { class: "row" }, colorInput,
         h("label", { class: "check" }, h("input", {
-          type: "checkbox", checked: !useColor,
+          type: "checkbox", checked: !useColor, class: "default-color",
           on: { change: (e) => { useColor = !e.currentTarget.checked; drawPreview(); } },
         }), "Default"))),
+    h("div", { class: "field" },
+      h("span", { class: "field-label" }, "Profile colours"),
+      themeLocked
+        ? h("div", { class: "locked-note" }, "🔒 ", themeLocked)
+        : h("div", { class: "row" },
+          h("label", { class: "check" }, h("input", {
+            type: "checkbox", checked: themeOn, on: { change: (e) => { themeOn = e.currentTarget.checked; drawPreview(); } },
+          }), "Use"),
+          theme1, theme2, h("span", { class: "muted small" }, "Tints your whole profile card."))),
     h("label", {}, "Custom status", h("input", { name: "custom_status", maxLength: LIMITS.CUSTOM_STATUS_MAX, value: me.custom_status || "" })),
     h("label", {}, "About me", h("textarea", { name: "bio", rows: 3, maxLength: LIMITS.BIO_MAX }, me.bio || "")),
     h("div", {}, h("button", { class: "btn primary", type: "submit" }, "Save profile")),
   );
-  colorInput.addEventListener("input", () => { useColor = true; form.querySelector(".check input").checked = false; drawPreview(); });
+  colorInput.addEventListener("input", () => { useColor = true; form.querySelector(".default-color").checked = false; drawPreview(); });
+  for (const input of [theme1, theme2]) input.addEventListener("input", () => { themeOn = true; form.querySelector(".check input:not(.default-color)").checked = true; drawPreview(); });
   form.addEventListener("input", drawPreview);
   formRow(form, async (fd) => {
-    const res = await actions.req(T.USER_UPDATE, {
+    const patch = {
       display_name: String(fd.get("display_name")).trim() || null,
       bio: String(fd.get("bio")).trim() || null,
       custom_status: String(fd.get("custom_status")).trim() || null,
       avatar_color: useColor ? colorInput.value : null,
-    });
+    };
+    if (!themeLocked) patch.profile_colors = themeOn ? [theme1.value, theme2.value] : null;
+    const res = await actions.req(T.USER_UPDATE, patch);
     actions.setSelf(res.user);
   }, { okText: "Profile saved" });
   add(el, h("div", { class: "split" }, form, h("div", {}, h("div", { class: "field-label" }, "Preview"), preview)));
@@ -241,13 +289,26 @@ function appearance(el) {
   const p = getPrefs();
   const radio = (name, value, label, current, onChange) => h("label", { class: "radio-card" },
     h("input", { type: "radio", name, value, checked: current === value, on: { change: () => onChange(value) } }), label);
+  const locked = lockedReason("client_themes");
+  const presetCards = h("div", { class: "theme-cards", role: "group", "aria-label": "Theme presets" }, PRESETS.map((t) => {
+    const swatch = t.id === "custom" ? gradientCss(normalizeCustom(p.customTheme)) : `linear-gradient(135deg, ${t.swatch[0]} 55%, ${t.swatch[1]} 55%)`;
+    return h("button", {
+      class: "theme-card", type: "button", "aria-pressed": String((p.themePreset || "default") === t.id), disabled: !!locked && t.id !== "default",
+      on: { click: () => { setPrefs({ themePreset: t.id }); refreshFullscreen(); } },
+    }, h("span", { class: "theme-swatch", style: `background:${swatch}` }), t.name);
+  }));
   add(el,
     h("p", { class: "muted" }, "These settings apply to this browser only."),
-    h("div", { class: "field" }, h("span", { class: "field-label" }, "Theme"),
+    h("div", { class: "field" }, h("span", { class: "field-label" }, "Light or dark"),
       h("div", { class: "radio-row" },
         radio("theme", "dark", "Dark", p.theme, (v) => setPrefs({ theme: v })),
         radio("theme", "light", "Light", p.theme, (v) => setPrefs({ theme: v })),
-        radio("theme", "system", "Sync with system", p.theme, (v) => setPrefs({ theme: v })))),
+        radio("theme", "system", "Sync with system", p.theme, (v) => setPrefs({ theme: v }))),
+      p.themePreset && p.themePreset !== "default" && !locked ? h("span", { class: "muted small" }, "Themes pick their own light or dark look.") : null),
+    h("div", { class: "field" }, h("span", { class: "field-label" }, "Theme"),
+      locked ? h("div", { class: "locked-note" }, "🔒 ", locked) : null,
+      presetCards),
+    p.themePreset === "custom" && !locked ? themeEditor() : null,
     h("label", {}, `Chat font size`,
       h("input", {
         type: "range", min: 12, max: 20, step: 1, value: p.fontSize,
@@ -257,6 +318,51 @@ function appearance(el) {
       type: "checkbox", checked: p.compact, on: { change: (e) => setPrefs({ compact: e.currentTarget.checked }) },
     }), "Compact message layout"),
   );
+}
+
+// Custom gradient theme: 1-5 colours, angle, how strongly it shows, base and accent.
+function themeEditor() {
+  const c = normalizeCustom(getPrefs().customTheme);
+  const box = h("div", { class: "theme-editor" });
+  const save = (patch, redraw = false) => {
+    Object.assign(c, patch);
+    setPrefs({ customTheme: { ...c, colors: [...c.colors] } });
+    preview.style.background = gradientCss(c);
+    if (redraw) draw();
+  };
+  const preview = h("div", { class: "theme-preview", style: `background:${gradientCss(c)}` });
+  const stops = h("div", { class: "theme-stops" });
+  const drawStops = () => clear(stops,
+    c.colors.map((color, i) => h("span", { class: "theme-stop" },
+      h("input", { type: "color", value: color, "aria-label": `Colour ${i + 1}`, on: { input: (e) => { c.colors[i] = e.currentTarget.value; save({}); } } }),
+      c.colors.length > 1 ? h("button", {
+        class: "icon-btn", type: "button", title: "Remove colour", "aria-label": `Remove colour ${i + 1}`,
+        on: { click: () => { c.colors.splice(i, 1); save({}, true); } },
+      }, "✕") : null)),
+    c.colors.length < MAX_THEME_COLORS ? h("button", {
+      class: "btn", type: "button",
+      on: { click: () => { c.colors.push(c.colors[c.colors.length - 1]); save({}, true); } },
+    }, "+ Add colour") : null,
+    h("span", { class: "muted small" }, `${c.colors.length} of ${MAX_THEME_COLORS}${c.colors.length === 1 ? " — one colour gives a flat tint" : ""}`));
+  const accentOn = h("input", { type: "checkbox", checked: !c.accent });
+  const accent = h("input", { type: "color", value: c.accent || c.colors[0], disabled: !c.accent, "aria-label": "Accent colour" });
+  accentOn.addEventListener("change", () => { accent.disabled = accentOn.checked; save({ accent: accentOn.checked ? null : accent.value }); });
+  accent.addEventListener("input", () => save({ accent: accent.value }));
+  const draw = () => clear(box,
+    drawStops() && null,
+    preview,
+    h("div", { class: "field" }, h("span", { class: "field-label" }, "Colours"), stops),
+    h("label", {}, "Direction", h("input", { type: "range", min: 0, max: 359, value: c.angle, on: { input: (e) => save({ angle: Number(e.currentTarget.value) }) } })),
+    h("label", {}, "Strength", h("input", { type: "range", min: 10, max: 90, value: c.strength, on: { input: (e) => save({ strength: Number(e.currentTarget.value) }) } }),
+      h("span", { class: "muted small block" }, "How much of the gradient shows through the app.")),
+    h("div", { class: "field" }, h("span", { class: "field-label" }, "Panels"),
+      h("div", { class: "radio-row" },
+        ...["dark", "light"].map((b) => h("label", { class: "radio-card" },
+          h("input", { type: "radio", name: "theme-base", checked: c.base === b, on: { change: () => save({ base: b }) } }), b === "dark" ? "Dark" : "Light")))),
+    h("div", { class: "field" }, h("span", { class: "field-label" }, "Accent"),
+      h("div", { class: "row" }, h("label", { class: "check" }, accentOn, "Match first colour"), accent)));
+  draw();
+  return box;
 }
 
 function notifications(el) {

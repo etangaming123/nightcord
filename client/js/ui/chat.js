@@ -3,13 +3,15 @@
 
 import { LIMITS } from "../protocol.js";
 import {
-  STAFF_LABEL, can, channelTitle, currentChannel, currentGuild, isDm, isPrivate, mentionsMe, nameOf, roleColor,
+  STAFF_LABEL, can, channelTitle, currentChannel, currentGuild, isDm, isPrivate, mentionsMe, nameOf,
   statusOf, userById,
 } from "../state.js";
 import { renderAttachments } from "./attachments.js";
 import { $, add, avatar, clear, h, iconBtn, idGt } from "./dom.js";
-import { QUICK_REACTIONS } from "./emoji.js";
-import { plainText, render as renderMarkdown } from "./markdown.js";
+import { QUICK_REACTIONS, customOf, emojiGlyph } from "./emoji.js";
+import { jumboCount, plainText, render as renderMarkdown } from "./markdown.js";
+import { nameAttrs, roleIconEl } from "./names.js";
+import { stickerImg } from "./stickers.js";
 
 const displayName = (u) => nameOf(u);
 
@@ -47,6 +49,7 @@ export function mdContext(state, actions) {
     user: userById,
     meId: state.user?.user_id,
     onMention: (id, el) => actions.openProfile(id, el),
+    onEmoji: (emoji, el) => actions.emojiInfo(emoji, el),
   };
 }
 
@@ -150,7 +153,7 @@ function replyPreview(m, state, actions) {
   },
   h("span", { class: "reply-spine", "aria-hidden": "true" }),
   avatar(author, { size: "xs" }),
-  h("span", { class: "reply-author", style: roleColor(author?.user_id) ? `color:${roleColor(author.user_id)}` : null }, displayName(author)),
+  h("span", nameAttrs(author?.user_id, "reply-author"), displayName(author)),
   h("span", { class: "reply-text" }, plainText(r.content, mdContext(state, actions)).replace(/\s+/g, " ")));
 }
 
@@ -164,12 +167,14 @@ function reactionsRow(m, state, actions) {
       const mine = r.user_ids.includes(me);
       const names = r.user_ids.slice(0, 10).map((id) => displayName(userById(id) || { username: "someone" }));
       const more = r.user_ids.length > 10 ? ` and ${r.user_ids.length - 10} more` : "";
+      const custom = customOf(r.emoji);
+      const label = custom ? `:${custom.name}:` : r.emoji;
       return h("button", {
         class: `reaction ${mine ? "mine" : ""}`, type: "button",
-        title: `${names.join(", ")}${more} reacted with ${r.emoji}`,
+        title: `${names.join(", ")}${more} reacted with ${label}`,
         "aria-pressed": String(mine), disabled: !mine && !canReact,
         on: { click: () => (mine ? actions.unreact(m, r.emoji) : actions.react(m, r.emoji)) },
-      }, h("span", { class: "emoji" }, r.emoji), h("span", { class: "count" }, String(r.user_ids.length)));
+      }, emojiGlyph(r.emoji), h("span", { class: "count" }, String(r.user_ids.length)));
     }),
     canReact ? h("button", {
       class: "reaction add", type: "button", title: "Add reaction", "aria-label": "Add reaction",
@@ -240,24 +245,28 @@ function messageNodes(m, prev, state, actions) {
   const continued = !newDay && !m.reply_to_id && prev.author?.user_id === m.author?.user_id
     && (!prev.type || prev.type === "default") && d - pd < GROUP_GAP_MS;
   const editing = state.editingId === m.message_id;
+  const jumbo = !editing && m.content && jumboCount(m.content) > 0;
   const body = editing
     ? editBox(m, state, actions)
-    : h("div", { class: "msg-body" },
+    : h("div", { class: `msg-body ${jumbo ? "jumbo" : ""}` },
       m.content ? renderMarkdown(m.content, mdContext(state, actions)) : null,
       m.edited_at ? h("span", { class: "edited", title: `Edited ${fullFmt.format(new Date(m.edited_at))}` }, " (edited)") : null);
-  const files = editing ? null : renderAttachments(m);
+  const files = editing ? null : [
+    renderAttachments(m),
+    m.stickers?.length ? h("div", { class: "msg-stickers" }, m.stickers.map((st) => stickerImg(st))) : null,
+  ];
   const cls = `msg ${mentionsMe(m) ? "mentioned" : ""} ${editing ? "editing" : ""} ${m.pinned ? "pinned" : ""}`;
   const profile = (e) => actions.openProfile(author.user_id, e.currentTarget);
   if (continued) {
     nodes.push(h("div", { class: `${cls} msg-line`, dataset: { id: m.message_id } },
       stamp(d, { short: true }), body, files, reactionsRow(m, state, actions), editing ? null : toolbar(m, state, actions)));
   } else {
-    const color = roleColor(author?.user_id);
     nodes.push(h("div", { class: `${cls} msg-group`, dataset: { id: m.message_id } },
       replyPreview(m, state, actions),
       h("button", { class: "avatar-btn", type: "button", "aria-label": `${displayName(author)}'s profile`, on: { click: profile } }, avatar(author, { size: "lg" })),
       h("div", { class: "msg-head" },
-        h("button", { class: "msg-author", type: "button", style: color ? `color:${color}` : null, on: { click: profile } }, displayName(author)),
+        h("button", { ...nameAttrs(author?.user_id, "msg-author"), type: "button", on: { click: profile } }, displayName(author)),
+        roleIconEl(author?.user_id),
         STAFF_LABEL[author?.server_role] ? h("span", { class: `tag staff ${author.server_role}`, title: STAFF_LABEL[author.server_role] },
           { owner: "OWNER", admin: "ADMIN", moderator: "MOD" }[author.server_role]) : null,
         stamp(d)),

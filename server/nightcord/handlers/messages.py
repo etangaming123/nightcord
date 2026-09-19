@@ -103,7 +103,15 @@ async def send(ctx, conn, payload):
         raise ProtocolError(P.BAD_REQUEST, "You can't send messages in that channel")
     check_muted(ctx, conn)
     attachment_ids = P.id_list(payload, "attachment_ids", max_len=P.MAX_ATTACHMENTS) if payload.get("attachment_ids") else []
-    content = P.validate_content(payload.get("content"), allow_empty=bool(attachment_ids))
+    sticker_ids = (
+        P.id_list(payload, "sticker_ids", max_len=P.MAX_STICKERS_PER_MESSAGE) if payload.get("sticker_ids") else []
+    )
+    content = P.validate_content(payload.get("content"), allow_empty=bool(attachment_ids or sticker_ids))
+    for sticker_id in sticker_ids:
+        sticker = ctx.db.get_sticker(sticker_id)
+        if sticker is None:
+            raise ProtocolError(P.NOT_FOUND, "Sticker not found")
+        require_expression_member(ctx, conn, sticker["guild_id"], "stickers")
     if attachment_ids:
         if not perms & perm.ATTACH_FILES:
             raise ProtocolError(P.FORBIDDEN, "You can't upload files here")
@@ -126,7 +134,7 @@ async def send(ctx, conn, payload):
     message = ctx.db.create_message(
         channel["channel_id"], conn.user_id, content,
         reply_to_id=int(reply_to) if reply_to else None, mentions=mentions, mention_everyone=everyone,
-        attachment_ids=attachment_ids,
+        attachment_ids=attachment_ids, sticker_ids=sticker_ids,
     )
     pinged = set(_audience_ids(ctx, channel)) if everyone else set(mentions)
     pinged.discard(conn.user_id)
@@ -191,6 +199,30 @@ async def _reaction_event(ctx, channel: dict, type_: str, row, emoji: str, user_
     )
 
 
+def require_expression_member(ctx, conn, guild_id: str, what: str) -> None:
+    """Custom emoji and stickers can be used anywhere by members of their guild."""
+    m = ctx.db.get_membership(guild_id, conn.user_id)
+    if m is None or m["ghost"]:
+        raise ProtocolError(P.FORBIDDEN, f"Join the guild these {what} are from to use them")
+
+
+def _custom_reaction(ctx, conn, row, emoji: str) -> str:
+    """Checks a <:name:id> reaction and returns the key to store: the one
+    already on the message for that emoji id, else <:current_name:id>."""
+    m = P.CUSTOM_EMOJI_RE.match(emoji)
+    if not m:
+        return emoji
+    emoji_id = m.group(3)
+    for existing in ctx.db.reaction_emoji(row["message_id"]):
+        if existing.endswith(f":{emoji_id}>"):
+            return existing
+    found = ctx.db.get_emoji(emoji_id)
+    if found is None:
+        raise ProtocolError(P.NOT_FOUND, "That emoji was deleted")
+    require_expression_member(ctx, conn, found["guild_id"], "emoji")
+    return f"<{'a' if found['animated'] else ''}:{found['name']}:{emoji_id}>"
+
+
 @handles(P.REACTION_ADD)
 async def reaction_add(ctx, conn, payload):
     row, channel, perms = _require_message(ctx, conn, payload)
@@ -200,6 +232,7 @@ async def reaction_add(ctx, conn, payload):
             check_timeout(ctx, channel["guild_id"], conn.user_id)
         raise ProtocolError(P.FORBIDDEN, "You can't add reactions here")
     check_muted(ctx, conn)
+    emoji = _custom_reaction(ctx, conn, row, emoji)
     existing = ctx.db.reaction_emoji(row["message_id"])
     if emoji not in existing and len(existing) >= P.MAX_REACTION_EMOJI:
         raise ProtocolError(P.TOO_MANY_REACTIONS, "This message has too many different reactions")

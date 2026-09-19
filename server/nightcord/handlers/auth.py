@@ -128,7 +128,7 @@ async def setup_claim(ctx, conn, payload):
     username = _check_new_username(ctx, payload.get("username"))
     password = P.validate_password(payload.get("password"))
     config = {k: payload[k] for k in ("server_name", "account_creation", "guild_creation", "guild_list_visible") if k in payload}
-    updates = apply_config_updates(config)
+    updates = apply_config_updates(ctx, config)
     user = ctx.db.create_user(username, await hash_password(password), is_server_owner=True)
     if user is None:
         raise ProtocolError(P.USERNAME_TAKEN, "That username is taken")

@@ -2,7 +2,7 @@
 // server/nightcord/protocol.py — edit that file, then regenerate. Both follow
 // docs/PROTOCOL.md; server/tests/test_protocol_sync.py checks all three agree.
 
-export const PROTOCOL_VERSION = "0.4";
+export const PROTOCOL_VERSION = "0.5";
 
 export const T = Object.freeze({
   SETUP_CLAIM: "setup.claim",
@@ -59,6 +59,8 @@ export const T = Object.freeze({
   ADMIN_STATS_RESULT: "admin.stats.result",
   ADMIN_LEGAL_SET: "admin.legal.set",
   ADMIN_LEGAL_SET_RESULT: "admin.legal.set.result",
+  ADMIN_USERS_SET_PERKS: "admin.users.set_perks",
+  ADMIN_USERS_SET_PERKS_RESULT: "admin.users.set_perks.result",
   USER_PROFILE: "user.profile",
   USER_PROFILE_RESULT: "user.profile.result",
   USER_UPDATE: "user.update",
@@ -116,6 +118,22 @@ export const T = Object.freeze({
   GUILD_MEMBER_LEFT: "guild.member_left",
   GUILD_MEMBER_UPDATED: "guild.member_updated",
   GUILD_PERMISSIONS_CHANGED: "guild.permissions_changed",
+  GUILD_EMOJIS_UPDATED: "guild.emojis_updated",
+  GUILD_STICKERS_UPDATED: "guild.stickers_updated",
+  EMOJI_CREATE: "emoji.create",
+  EMOJI_CREATE_RESULT: "emoji.create.result",
+  EMOJI_UPDATE: "emoji.update",
+  EMOJI_UPDATE_RESULT: "emoji.update.result",
+  EMOJI_DELETE: "emoji.delete",
+  EMOJI_DELETE_RESULT: "emoji.delete.result",
+  EMOJI_INFO: "emoji.info",
+  EMOJI_INFO_RESULT: "emoji.info.result",
+  STICKER_CREATE: "sticker.create",
+  STICKER_CREATE_RESULT: "sticker.create.result",
+  STICKER_UPDATE: "sticker.update",
+  STICKER_UPDATE_RESULT: "sticker.update.result",
+  STICKER_DELETE: "sticker.delete",
+  STICKER_DELETE_RESULT: "sticker.delete.result",
   ROLE_LIST: "role.list",
   ROLE_LIST_RESULT: "role.list.result",
   ROLE_CREATE: "role.create",
@@ -234,6 +252,7 @@ export const ERR = Object.freeze({
   CONTENT_TOO_LONG: "content_too_long",
   DEVICE_BANNED: "device_banned",
   DM_LIMIT: "dm_limit",
+  FEATURE_DISABLED: "feature_disabled",
   FILE_TOO_LARGE: "file_too_large",
   FORBIDDEN: "forbidden",
   GUILD_CREATION_DISABLED: "guild_creation_disabled",
@@ -247,6 +266,7 @@ export const ERR = Object.freeze({
   INVITE_INVALID: "invite_invalid",
   IP_BANNED: "ip_banned",
   LEGAL_REQUIRED: "legal_required",
+  MEDIA_INVALID: "media_invalid",
   MUTED: "muted",
   NOT_AUTHENTICATED: "not_authenticated",
   NOT_FOUND: "not_found",
@@ -289,6 +309,7 @@ export const PERMS = Object.freeze({
   CONNECT: 65536,
   CHANGE_NICKNAME: 131072,
   MANAGE_NICKNAMES: 262144,
+  MANAGE_EXPRESSIONS: 524288,
 });
 
 // Requests answered with auth.ok / auth.error rather than X.result / X.error.
@@ -326,4 +347,12 @@ export const LIMITS = Object.freeze({
   INVITE_MAX_AGES: Object.freeze([0, 1800, 3600, 21600, 43200, 86400, 604800]),
   SYSTEM_JOIN: 1,
   SYSTEM_LEAVE: 2,
+  EMOJI_NAME_RE: /^[A-Za-z0-9_]{2,32}$/,
+  MAX_GUILD_EMOJI: 200,
+  MAX_GUILD_STICKERS: 60,
+  STICKER_NAME_MAX: 30,
+  STICKER_DESCRIPTION_MAX: 100,
+  MAX_ROLE_COLORS: 3,
+  MEDIA_KINDS: Object.freeze({emoji: Object.freeze({ maxBytes: 262144, maxDim: 256 }), sticker: Object.freeze({ maxBytes: 524288, maxDim: 320 }), avatar: Object.freeze({ maxBytes: 1048576, maxDim: null }), guild_icon: Object.freeze({ maxBytes: 1048576, maxDim: null }), banner: Object.freeze({ maxBytes: 2097152, maxDim: null }), guild_banner: Object.freeze({ maxBytes: 2097152, maxDim: null }), role_icon: Object.freeze({ maxBytes: 262144, maxDim: null })}),
+  CUSTOMIZATION_FEATURES: Object.freeze(["profile_banner", "profile_colors", "animated_media", "guild_banner", "gradient_roles", "role_icons", "client_themes"]),
 });

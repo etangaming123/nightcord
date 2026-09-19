@@ -11,6 +11,8 @@
     python nightcord_server.py staff set <username> admin|moderator|none
     python nightcord_server.py ipban list
     python nightcord_server.py ipban add|remove <ip-or-cidr>
+    python nightcord_server.py perks list
+    python nightcord_server.py perks add|remove <username>
     python nightcord_server.py config show
     python nightcord_server.py config set <key> <value>
     python nightcord_server.py guilds
@@ -160,6 +162,7 @@ def cmd_config(db: Database, cfg: Config, action: str, key: str | None, value: s
         "account_creation": {"off", "request", "on"},
         "guild_list_visible": {"true", "false"},
         "voice_enabled": {"true", "false"},
+        "customization_mode": {"off", "allowlist", "on"},
     }
     if key == "server_name" and value and value.strip():
         db.set_server_config({"server_name": value.strip()[:64]})
@@ -233,6 +236,24 @@ def cmd_ipban(db: Database, action: str, cidr: str | None) -> int:
     return 0
 
 
+def cmd_perks(db: Database, action: str, username: str | None) -> int:
+    if action == "list":
+        users = db.perk_users()
+        mode = db.get_server_config()["customization_mode"]
+        print(f"customization_mode = {mode}" + ("" if mode == "allowlist" else " (the allow-list only matters in allowlist mode)"))
+        if not users:
+            print("Nobody has perks. Server staff always count as allowed.")
+        for u in users:
+            print(u["username"])
+        return 0
+    row = _user_row(db, username)
+    if row is None:
+        return 2 if not username else 1
+    db.update_profile(row["user_id"], {"perks": action == "add"})
+    print(f"{row['username']} {'now has' if action == 'add' else 'no longer has'} perks. Connected clients see it after reconnecting.")
+    return 0
+
+
 def cmd_guilds(db: Database) -> int:
     rows = db.admin_list_guilds()
     if not rows:
@@ -279,6 +300,9 @@ def build_parser() -> argparse.ArgumentParser:
     ipban = sub.add_parser("ipban", help="server-wide IP bans")
     ipban.add_argument("action", choices=["list", "add", "remove"])
     ipban.add_argument("cidr", nargs="?")
+    perks = sub.add_parser("perks", help="customisation allow-list")
+    perks.add_argument("action", choices=["list", "add", "remove"])
+    perks.add_argument("username", nargs="?")
     return p
 
 
@@ -317,6 +341,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_staff(db, args.action, args.username, args.role)
         if args.command == "ipban":
             return cmd_ipban(db, args.action, args.cidr)
+        if args.command == "perks":
+            return cmd_perks(db, args.action, args.username)
     finally:
         db.close()
     return 0

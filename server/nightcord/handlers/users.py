@@ -7,6 +7,7 @@ import binascii
 import logging
 import re
 
+from .. import perks
 from .. import protocol as P
 from ..ids import new_id
 from ..protocol import ProtocolError
@@ -60,11 +61,43 @@ async def update(ctx, conn, payload):
             fields[key] = val or None
     if "avatar_color" in payload:
         fields["avatar_color"] = P.validate_color(payload["avatar_color"])
+    if "profile_colors" in payload:
+        colors = P.validate_colors(
+            payload["profile_colors"], min_len=P.PROFILE_COLORS, max_len=P.PROFILE_COLORS, key="profile_colors"
+        )
+        if colors is not None:
+            perks.require(ctx, "profile_colors", conn.user)
+        fields["profile_colors"] = colors
+    old_banner = conn.user.get("banner_id")
+    if "banner_media_id" in payload:
+        fields["banner_id"] = None
+        if payload["banner_media_id"] is not None:
+            fields["banner_id"] = claim_image(ctx, conn.user_id, payload["banner_media_id"], "banner", "profile_banner", conn.user)
     if not fields:
         raise ProtocolError(P.BAD_REQUEST, "Nothing to update")
     user = ctx.db.update_profile(conn.user_id, fields)
+    if "banner_id" in fields and old_banner != fields["banner_id"]:
+        drop_image(ctx, old_banner)
     await broadcast_user(ctx, user)
     return {"user": user}
+
+
+def claim_image(ctx, user_id: str, media_id, kind: str, feature: str | None, owner: dict | None, *, guild=False) -> str:
+    """Claims an uploaded image for a profile/guild/role field and returns the
+    reference to store. `feature` (and animated_media for animated images)
+    must be allowed for `owner` — the user, or the guild's owner."""
+    from .media import claim, media_ref, unclaim
+
+    row = claim(ctx, user_id, media_id, kind)
+    try:
+        if feature:
+            perks.require(ctx, feature, owner, guild=guild)
+        if row["animated"]:
+            perks.require(ctx, "animated_media", owner, guild=guild)
+    except ProtocolError:
+        unclaim(ctx, row["media_id"])
+        raise
+    return media_ref(row)
 
 
 def store_image(ctx, data_b64) -> str:
@@ -88,7 +121,12 @@ def store_image(ctx, data_b64) -> str:
 
 
 def drop_image(ctx, image_id: str | None) -> None:
-    if image_id and AVATAR_ID_RE.match(image_id):
+    """Deletes an avatar/icon/banner: a base64 upload (/avatars/) or a media reference (/media/)."""
+    from .media import MEDIA_REF_RE, drop_media
+
+    if image_id and MEDIA_REF_RE.match(image_id):
+        drop_media(ctx, image_id)
+    elif image_id and AVATAR_ID_RE.match(image_id):
         try:
             (avatar_dir(ctx) / image_id).unlink(missing_ok=True)
         except OSError as e:
@@ -99,7 +137,10 @@ def drop_image(ctx, image_id: str | None) -> None:
 async def avatar_set(ctx, conn, payload):
     data_b64 = payload.get("data_b64")
     old = conn.user.get("avatar_id")
-    avatar_id = None if data_b64 is None else store_image(ctx, data_b64)
+    if payload.get("media_id") is not None:
+        avatar_id = claim_image(ctx, conn.user_id, payload["media_id"], "avatar", None, conn.user)
+    else:
+        avatar_id = None if data_b64 is None else store_image(ctx, data_b64)
     user = ctx.db.update_profile(conn.user_id, {"avatar_id": avatar_id})
     drop_image(ctx, old)
     await broadcast_user(ctx, user)
@@ -168,6 +209,7 @@ async def delete_account(ctx, user_id: str, *, keep=None) -> None:
     if keep is not None:
         await ctx.hub.deauthenticate(keep)
     drop_image(ctx, leftovers["avatar_id"])
+    drop_image(ctx, leftovers["banner_id"])
     delete_files(ctx, leftovers["attachment_ids"])
     await ctx.hub.send_to_users(audience, P.frame(P.USER_UPDATED, ctx.db.public_user(user_id)))
 

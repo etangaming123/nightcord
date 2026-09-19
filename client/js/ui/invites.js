@@ -3,7 +3,7 @@
 
 import { LIMITS, T } from "../protocol.js";
 import { can, currentGuild, state } from "../state.js";
-import { add, avatar, clear, displayName, fmtDateTime, h, initials, avatarUrl } from "./dom.js";
+import { add, avatar, avatarUrl, clear, displayName, fmtDateTime, h, imageEl, initials, mayAnimate } from "./dom.js";
 import { closeModal, openModal, toast } from "./modals.js";
 import { copyText } from "./profile.js";
 
@@ -26,7 +26,7 @@ export const usesLeft = (inv) => (inv.max_uses ? `${inv.max_uses - inv.uses} of 
 export function guildIcon(g, cls = "") {
   const url = avatarUrl(g.icon_id);
   return h("div", { class: `guild-icon static ${cls}`, "aria-hidden": "true" },
-    url ? h("img", { src: url, alt: "", draggable: "false" }) : initials(g.name));
+    url ? imageEl(g.icon_id, { animate: mayAnimate(g) }) : initials(g.name));
 }
 
 function linkBox(text, label) {
@@ -77,7 +77,8 @@ export function invitePreview(p, { onJoin }) {
   }, p.is_member ? "Open guild" : "Accept invite");
   openModal({
     title: p.inviter ? `${displayName(p.inviter)} invited you to join` : "You've been invited to join",
-    content: h("div", { class: "invite-card" },
+    content: h("div", { class: `invite-card ${p.guild.banner_id ? "has-banner" : ""}` },
+      p.guild.banner_id ? h("div", { class: "invite-banner", "aria-hidden": "true" }, imageEl(p.guild.banner_id, { lazy: false })) : null,
       guildIcon(p.guild, "lg"),
       h("div", { class: "invite-name" }, p.guild.name),
       h("div", { class: "invite-counts" },

@@ -25,6 +25,7 @@ export function adminSections(actions) {
     lvl >= ADMIN ? { id: "admin-overview", label: "Overview", render: (el) => overview(el, actions) } : null,
     lvl >= OWNER ? { id: "server", label: "Server settings", render: (el) => serverSection(el, actions) } : null,
     lvl >= OWNER ? { id: "rules", label: "Rules & privacy", render: (el) => legalSection(el, actions) } : null,
+    lvl >= ADMIN ? { id: "customization", label: "Customisation", render: (el) => customizationSection(el, actions) } : null,
     { id: "accounts", label: "Accounts", badge: state.pendingAccounts, render: (el) => accountsSection(el, actions) },
     lvl >= OWNER || lvl >= ADMIN ? { id: "staff", label: "Staff", render: (el) => staffSection(el, actions) } : null,
     { id: "bans", label: "Bans", render: (el) => bansSection(el, actions) },
@@ -102,6 +103,87 @@ function serverSection(el, actions) {
     });
     actions.setServerInfo(res.config);
   }, { okText: "Server settings saved" }));
+}
+
+// --- customisation perks (owner sets the mode; admins keep the allow-list) ----------
+
+const FEATURES = [
+  ["profile_banner", "Profile banners", "An image at the top of your profile."],
+  ["profile_colors", "Profile colours", "Two colours that tint the whole profile card."],
+  ["animated_media", "Animated images", "GIF / animated WebP avatars, guild icons, banners and role icons play instead of standing still."],
+  ["guild_banner", "Guild banners", "An image at the top of a guild's channel list and on its invites."],
+  ["gradient_roles", "Gradient roles", "Role names in a gradient of two or three colours."],
+  ["role_icons", "Role icons", "A small image or emoji next to members' names."],
+  ["client_themes", "Themes", "Colour presets and custom gradient backgrounds for the app."],
+];
+const MODES = [
+  ["on", "Everyone", "Every account can use the features switched on below."],
+  ["allowlist", "Allow-list", "Only people given perks by an admin (and server staff). Like handing out Nitro."],
+  ["off", "Nobody", "Customisation is off. Stored banners and colours are kept but hidden."],
+];
+
+async function customizationSection(el, actions) {
+  const info = state.info;
+  const owner = staffLevel() >= OWNER;
+  const feats = info.customization_features || {};
+  const form = h("form", { class: "stack narrow" },
+    h("fieldset", { class: "radio-cards", disabled: !owner }, h("legend", {}, "Who can customise"),
+      MODES.map(([v, label, hint]) => h("label", { class: "radio-card" },
+        h("input", { type: "radio", name: "mode", value: v, checked: (info.customization_mode || "on") === v }),
+        h("span", {}, h("strong", {}, label), h("span", { class: "muted small block" }, hint))))),
+    h("fieldset", { class: "stack", disabled: !owner }, h("legend", {}, "Features"),
+      FEATURES.map(([key, label, hint]) => h("label", { class: "check" },
+        h("input", { type: "checkbox", name: key, checked: feats[key] !== false }),
+        h("span", {}, label, h("span", { class: "muted small block" }, hint))))),
+    owner ? h("div", {}, h("button", { class: "btn primary", type: "submit" }, "Save")) : h("p", { class: "muted small" }, "Only the server owner can change these."));
+  add(el, h("p", { class: "muted" }, "Custom emoji and stickers are always available to everyone. These extras can be limited."),
+    owner ? formRow(form, async (fd) => {
+      const res = await actions.req(T.SERVER_CONFIG_UPDATE, {
+        customization_mode: fd.get("mode"),
+        customization_features: Object.fromEntries(FEATURES.map(([key]) => [key, fd.get(key) === "on"])),
+      });
+      actions.setServerInfo(res.config);
+    }, { okText: "Customisation settings saved" }) : form);
+
+  // Allow-list.
+  const list = h("div", { class: "list" });
+  const search = h("input", { type: "search", placeholder: "Add someone: search accounts", "aria-label": "Search accounts to give perks" });
+  const results = h("div", { class: "list" });
+  const setPerks = async (u, perks) => {
+    try {
+      await actions.req(T.ADMIN_USERS_SET_PERKS, { user_id: u.user_id, perks });
+      toast(perks ? `${displayName(u)} now has perks` : `Removed ${displayName(u)}'s perks`);
+      search.value = "";
+      clear(results);
+      await draw();
+    } catch (e) { fail(e); }
+  };
+  const draw = async () => {
+    const { users } = await actions.req(T.ADMIN_USERS_LIST, { status: "active" });
+    const allowed = users.filter((u) => u.perks);
+    clear(list, allowed.length ? allowed.map((u) => h("div", { class: "list-row" }, avatar(u, { size: "sm" }),
+      h("span", { class: "meta" }, h("span", { class: "name" }, displayName(u)), h("span", { class: "sub" }, u.username)),
+      h("button", { class: "btn", type: "button", on: { click: () => setPerks(u, false) } }, "Remove")))
+      : h("p", { class: "muted" }, "Nobody yet."));
+  };
+  let timer;
+  search.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const q = search.value.trim();
+      if (!q) { clear(results); return; }
+      const { users } = await actions.req(T.ADMIN_USERS_LIST, { status: "active", query: q });
+      clear(results, users.filter((u) => !u.perks).slice(0, 8).map((u) => h("div", { class: "list-row" }, avatar(u, { size: "sm" }),
+        h("span", { class: "meta" }, h("span", { class: "name" }, displayName(u)), h("span", { class: "sub" }, u.username)),
+        h("button", { class: "btn primary", type: "button", on: { click: () => setPerks(u, true) } }, "Give perks"))));
+    }, 200);
+  });
+  add(el, h("h3", {}, "Allow-list"),
+    h("p", { class: "muted small" }, (info.customization_mode || "on") === "allowlist"
+      ? "These people can customise. Server staff always can."
+      : "Only used in allow-list mode. You can prepare it now."),
+    search, results, list);
+  await draw();
 }
 
 // --- legal documents (owner) ------------------------------------------------------
@@ -192,7 +274,8 @@ function accountRow(u, actions, redraw) {
     h("span", { class: "meta" },
       h("span", { class: "name" }, displayName(u), u.display_name ? h("span", { class: "muted small" }, ` ${u.username}`) : null, role,
         u.status !== "active" ? h("span", { class: `tag ${u.status}` }, u.status.toUpperCase()) : null,
-        isMuted(u) ? h("span", { class: "tag warn" }, "MUTED") : null),
+        isMuted(u) ? h("span", { class: "tag warn" }, "MUTED") : null,
+        u.perks ? h("span", { class: "tag perks", title: "Has customisation perks" }, "PERKS") : null),
       h("span", { class: "sub" }, facts)),
     h("span", { class: "row" }, buttons));
 }
@@ -235,6 +318,7 @@ export function adminModeration(u, actions, after = () => {}) {
         }));
       },
     }) } : null,
+    lvl >= ADMIN ? { label: u.perks ? "Remove perks" : "Give perks", icon: "✨", hint: "Customisation allow-list", onClick: () => done(actions.req(T.ADMIN_USERS_SET_PERKS, { user_id: u.user_id, perks: !u.perks }).then(() => toast(u.perks ? "Perks removed" : "Perks given"))) } : null,
     lvl >= ADMIN ? { label: "Delete account…", icon: "🗑", danger: true, onClick: () => deleteAccountDialog(u, () => done(actions.req(T.ADMIN_USERS_DELETE, { user_id: u.user_id }).then(() => toast(`${name}'s account was deleted`)))) } : null,
   ];
 }

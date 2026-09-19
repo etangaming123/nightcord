@@ -1,11 +1,12 @@
 // Server → client events (PROTOCOL.md §5): keep state in sync and redraw.
 
 import {
-  ackCurrent, addMessage, applyReaction, expireTyping, forgetGuild, legalChanged, loadAll, openGuild, openHome,
-  reloadRoles, removeMessage, setServerInfo, updateMessage, upsertMember,
+  ackCurrent, addMessage, applyGuildEmojis, applyGuildStickers, applyReaction, expireTyping, forgetGuild, legalChanged,
+  loadAll, openGuild, openHome, reloadRoles, removeMessage, setServerInfo, updateMessage, upsertMember,
 } from "./actions.js";
 import { req } from "./api.js";
 import { notifyMessage } from "./notify.js";
+import { applyPrefs } from "./prefs.js";
 import { T } from "./protocol.js";
 import { invalidate } from "./render.js";
 import {
@@ -132,7 +133,9 @@ export function wireEvents(conn) {
   on(T.USER_UPDATED, (u) => {
     if (u.user_id === state.user.user_id) {
       const wasMuted = state.user.muted_until;
+      const perksBefore = state.user.perks;
       state.user = { ...state.user, ...u };
+      if ("perks" in u && u.perks !== perksBefore) applyPrefs();
       if ("muted_until" in u && u.muted_until !== wasMuted) {
         toast(u.muted_until ? "You've been muted on this server by its staff." : "You're no longer muted.", { error: !!u.muted_until });
       }
@@ -151,7 +154,10 @@ export function wireEvents(conn) {
     }
     if (config.voice_enabled !== voiceBefore && state.view === "guild" && state.guildId) permissionsChanged(state.guildId);
     if (config.legal_version !== before && config.legal_version) legalChanged();
-    invalidate("sidebar", "composer");
+    // Customisation settings change what every view shows, and the theme.
+    applyPrefs();
+    invalidate();
+    if (fullscreenOpen()) refreshFullscreen();
   });
 
   on(T.VOICE_STATE_UPDATED, (v) => {
@@ -164,6 +170,9 @@ export function wireEvents(conn) {
   });
 
   // --- guilds ---
+  on(T.GUILD_EMOJIS_UPDATED, applyGuildEmojis);
+  on(T.GUILD_STICKERS_UPDATED, applyGuildStickers);
+
   on(T.GUILD_UPDATED, (guild) => {
     const existing = state.guilds.get(guild.guild_id);
     if (!existing) return;

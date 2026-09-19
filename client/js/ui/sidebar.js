@@ -5,7 +5,8 @@ import {
   can, channelTree, dmTitle, guildBadge, homeBadge, isMuted, isPrivate, isStaff, isUnread, memberById, mentionCount,
   nameOf, sortDms, statusOf, userById, voiceEnabled, voiceIn,
 } from "../state.js";
-import { $, add, avatar, avatarUrl, clear, displayName, h, iconBtn, initials } from "./dom.js";
+import { guildCan } from "../perks.js";
+import { $, add, avatar, clear, displayName, h, iconBtn, imageEl, initials, mayAnimate } from "./dom.js";
 
 function badge(n) {
   return n ? h("span", { class: "badge", "aria-label": `${n} mentions` }, n > 99 ? "99+" : String(n)) : null;
@@ -35,7 +36,7 @@ export function renderRail(state, actions) {
         click: () => actions.openGuild(g.guild_id),
         contextmenu: (e) => { e.preventDefault(); actions.guildMenu(g, { x: e.clientX, y: e.clientY }); },
       },
-    }, g.icon_id ? h("img", { src: avatarUrl(g.icon_id), alt: "", draggable: "false" }) : initials(g.name),
+    }, g.icon_id ? imageEl(g.icon_id, { animate: mayAnimate(g) }) : initials(g.name),
     g.ghost ? h("span", { class: "ghost-badge", "aria-hidden": "true" }, "👻") : null, badge(mentions)));
   }
   add(rail, h("button", {
@@ -63,6 +64,9 @@ function renderGuild(state, actions) {
   const guild = state.guilds.get(state.guildId);
   const header = clear($("#guild-header"));
   const list = clear($("#channel-list"));
+  const banner = guild?.banner_id && guildCan("guild_banner", guild);
+  header.classList.toggle("with-banner", !!banner);
+  if (banner) add(header, h("div", { class: "guild-banner", "aria-hidden": "true" }, imageEl(guild.banner_id, { animate: guildCan("animated_media", guild), lazy: false })));
   if (!guild) {
     add(header, h("span", { class: "title muted" }, state.info?.server_name || ""));
     if (state.user) add(list, h("p", { class: "muted small pad" }, "Pick a guild on the left, or press + to create or join one."));

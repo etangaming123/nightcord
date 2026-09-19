@@ -1,6 +1,7 @@
 """aiohttp application: GET /ws (the protocol), GET / (cert-trust page),
-GET /avatars/{avatar_id} (profile pictures and guild icons), and the
-attachment routes POST /upload and GET /files/{id}/{name}."""
+GET /avatars/{avatar_id} (small base64-uploaded avatars and guild icons),
+the attachment routes POST /upload and GET /files/{id}/{name}, and the
+media routes POST /media and GET /media/{media_id}."""
 
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ from .db import Database
 from .dispatch import dispatch
 from .handlers import Ctx
 from .handlers import files as file_routes
+from .handlers import media as media_routes
 from .handlers.admin import ip_matches
 from .handlers.auth import LoginThrottle, hash_setup_code, setup_required
 from .handlers.server import public_config
@@ -27,7 +29,7 @@ from .permissions import PermissionService
 log = logging.getLogger("nightcord.app")
 
 CTX_KEY = web.AppKey("ctx", Ctx)
-SWEEPER_KEY = web.AppKey("sweeper", asyncio.Task)
+SWEEPER_KEY = web.AppKey("sweepers", list)
 
 LANDING_HTML = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -152,13 +154,17 @@ def create_app(config: Config, db: Database | None = None, *, setup_code: str | 
     app.router.add_post("/upload", file_routes.upload)
     app.router.add_route("OPTIONS", "/upload", file_routes.upload_preflight)
     app.router.add_get("/files/{attachment_id}/{filename}", file_routes.download)
+    app.router.add_post("/media", media_routes.upload)
+    app.router.add_route("OPTIONS", "/media", file_routes.upload_preflight)
+    app.router.add_get("/media/{media_id}", media_routes.serve)
 
     async def on_startup(app: web.Application) -> None:
-        app[SWEEPER_KEY] = asyncio.create_task(file_routes.sweeper(app))
+        app[SWEEPER_KEY] = [
+            asyncio.create_task(file_routes.sweeper(app)), asyncio.create_task(media_routes.sweeper(app)),
+        ]
 
     async def on_shutdown(app: web.Application) -> None:
-        task = app.get(SWEEPER_KEY)
-        if task:
+        for task in app.get(SWEEPER_KEY, []):
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task

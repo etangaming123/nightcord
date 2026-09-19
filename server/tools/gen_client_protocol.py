@@ -84,6 +84,16 @@ def main() -> None:
         f"  INVITE_MAX_AGES: Object.freeze([{', '.join(map(str, P.INVITE_MAX_AGES))}]),",
         f"  SYSTEM_JOIN: {P.SYSTEM_JOIN},",
         f"  SYSTEM_LEAVE: {P.SYSTEM_LEAVE},",
+        f"  EMOJI_NAME_RE: /{P.EMOJI_NAME_RE.pattern}/,",
+        f"  MAX_GUILD_EMOJI: {P.MAX_GUILD_EMOJI},",
+        f"  MAX_GUILD_STICKERS: {P.MAX_GUILD_STICKERS},",
+        f"  STICKER_NAME_MAX: {P.STICKER_NAME_MAX},",
+        f"  STICKER_DESCRIPTION_MAX: {P.STICKER_DESCRIPTION_MAX},",
+        f"  MAX_ROLE_COLORS: {P.MAX_ROLE_COLORS},",
+        "  MEDIA_KINDS: Object.freeze({" + ", ".join(
+            f"{k}: Object.freeze({{ maxBytes: {b}, maxDim: {'null' if d is None else d} }})"
+            for k, (b, d) in P.MEDIA_KINDS.items()) + "}),",
+        "  CUSTOMIZATION_FEATURES: Object.freeze([" + ", ".join(f'"{f}"' for f in P.CUSTOMIZATION_FEATURES) + "]),",
         "});",
         "",
     ]

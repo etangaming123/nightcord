@@ -1,6 +1,6 @@
 // node client/tests/markdown.test.mjs — tokenizer checks (no DOM needed).
 import assert from "node:assert/strict";
-import { parse, parseDocument, parseInline } from "../js/ui/markdown.js";
+import { jumboCount, parse, parseDocument, parseInline, plainText } from "../js/ui/markdown.js";
 
 const t = (text) => ({ type: "text", text });
 
@@ -40,9 +40,9 @@ assert.deepEqual(parse(">>> all\nof it"), [{ type: "quote", children: [t("all\no
 assert.deepEqual(parse("```\nno lang\n```"), [{ type: "codeblock", lang: null, text: "no lang" }]);
 
 // Every token is a known type and text is never interpreted as markup.
-const KNOWN = new Set(["text", "code", "codeblock", "bold", "italic", "underline", "strike", "spoiler", "mention", "everyone", "link", "quote"]);
+const KNOWN = new Set(["text", "code", "codeblock", "bold", "italic", "underline", "strike", "spoiler", "mention", "everyone", "link", "quote", "emoji"]);
 const walk = (toks) => toks.forEach((x) => { assert.ok(KNOWN.has(x.type), x.type); if (x.children) walk(x.children); });
-walk(parse("**__~~||*deep* `x` <@1> https://a.b||~~__** > q\n> q2\n```x```"));
+walk(parse("**__~~||*deep* `x` <@1> <:pan:2> https://a.b||~~__** > q\n> q2\n```x```"));
 
 // Pathological input stays fast.
 for (const s of ["*".repeat(2000), "**".repeat(1000) + "x", "_".repeat(2000), "||".repeat(1000), "`".repeat(2000), "> ".repeat(1000)]) {
@@ -62,3 +62,18 @@ assert.deepEqual(doc[4], { type: "hr" });
 assert.deepEqual(doc[5].children[1], { type: "link", href: "https://example.com", children: [t("our site")] });
 assert.ok(!JSON.stringify(doc[5]).includes('"href":"javascript'));
 assert.deepEqual(parseDocument("<h1>x</h1>"), [{ type: "paragraph", children: [t("<h1>x</h1>")] }]);
+
+// Custom emoji (PROTOCOL.md §4 Emoji).
+const E = (name, id, animated = false) => ({ type: "emoji", animated, name, id });
+assert.deepEqual(parse("hi <:pan_cake:123>"), [t("hi "), E("pan_cake", "123")]);
+assert.deepEqual(parse("<a:dance:9>"), [E("dance", "9", true)]);
+assert.deepEqual(parse("\\<:pan:1>"), [t("<:pan:1>")]); // escaped
+assert.deepEqual(parse("`<:pan:1>`"), [{ type: "code", text: "<:pan:1>" }]); // in code
+assert.deepEqual(parse("<:p:1> <:has space:1> <:ok:x>"), [t("<:p:1> <:has space:1> <:ok:x>")]); // malformed
+assert.deepEqual(parse("**<:pan:1>**"), [{ type: "bold", children: [E("pan", "1")] }]);
+assert.equal(plainText("I <3 <:pan:1>"), "I <3 :pan:");
+assert.equal(jumboCount("<:pan:1> 🥞 👍🏽"), 3);
+assert.equal(jumboCount("hi 🥞"), 0);
+assert.equal(jumboCount("123"), 0);
+assert.equal(jumboCount("🥞".repeat(28)), 0);
+console.log("custom emoji: ok");

@@ -62,7 +62,42 @@ export function setAvatarBase(wsUrl) {
   avatarBase = u.toString();
   httpBase = u.origin;
 }
-export const avatarUrl = (avatarId) => (avatarBase && avatarId ? avatarBase + encodeURIComponent(avatarId) : null);
+// Image references (PROTOCOL.md §4 User): "123.png" is a small upload under
+// /avatars/, "123" a /media upload and "a_123" an animated one.
+const MEDIA_REF = /^(a_)?(\d{1,20})$/;
+export const mediaUrl = (mediaId) => (httpBase && mediaId ? `${httpBase}/media/${encodeURIComponent(mediaId)}` : null);
+export const isAnimatedRef = (ref) => typeof ref === "string" && ref.startsWith("a_");
+export function avatarUrl(ref) {
+  if (!ref) return null;
+  const m = MEDIA_REF.exec(ref);
+  if (m) return mediaUrl(m[2]);
+  return avatarBase ? avatarBase + encodeURIComponent(ref) : null;
+}
+export const imageUrl = avatarUrl;
+
+// Whether an animated image may play; set from the server's customisation
+// settings (PROTOCOL.md §8d). owner: the PublicUser (or guild) it belongs to.
+let animatePolicy = () => true;
+export const setAnimatePolicy = (fn) => { animatePolicy = fn; };
+export const mayAnimate = (owner) => animatePolicy(owner);
+
+// <img> for an image reference; an animated image that may not play is
+// drawn still (its first frame) on a canvas.
+export function imageEl(ref, { animate = true, alt = "", cls = "", lazy = true } = {}) {
+  const src = avatarUrl(ref);
+  if (!src) return null;
+  const img = h("img", { src, alt, class: cls || null, loading: lazy ? "lazy" : null, decoding: "async", draggable: "false" });
+  if (!isAnimatedRef(ref) || animate) return img;
+  const canvas = h("canvas", { class: `still ${cls}`, role: alt ? "img" : null, "aria-label": alt || null });
+  img.crossOrigin = "anonymous";
+  img.loading = "eager";
+  img.onload = () => {
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    canvas.getContext("2d").drawImage(img, 0, 0);
+  };
+  return canvas;
+}
 // An absolute URL for a server path like /files/… or /upload.
 export const serverUrl = (path) => (httpBase ? httpBase + path : null);
 
@@ -88,7 +123,7 @@ export function avatar(user, { size = "", status = null } = {}) {
     style: url ? null : `background:${user?.avatar_color || colorFor(name)}`,
     "aria-hidden": "true",
   });
-  if (url) el.append(h("img", { src: url, alt: "", loading: "lazy", decoding: "async", draggable: "false" }));
+  if (url) el.append(imageEl(user.avatar_id, { animate: mayAnimate(user) }));
   else el.append([...displayName(user)][0].toUpperCase());
   if (status) el.append(h("span", { class: `dot ${status}`, title: statusLabel(status) }));
   return el;

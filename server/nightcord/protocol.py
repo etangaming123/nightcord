@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-PROTOCOL_VERSION = "0.4"
+PROTOCOL_VERSION = "0.5"
 
 # --- Message types -----------------------------------------------------------
 
@@ -77,6 +77,8 @@ ADMIN_STATS = "admin.stats"
 ADMIN_STATS_RESULT = "admin.stats.result"
 ADMIN_LEGAL_SET = "admin.legal.set"
 ADMIN_LEGAL_SET_RESULT = "admin.legal.set.result"
+ADMIN_USERS_SET_PERKS = "admin.users.set_perks"
+ADMIN_USERS_SET_PERKS_RESULT = "admin.users.set_perks.result"
 
 # Users
 USER_PROFILE = "user.profile"
@@ -138,6 +140,24 @@ GUILD_MEMBER_JOINED = "guild.member_joined"
 GUILD_MEMBER_LEFT = "guild.member_left"
 GUILD_MEMBER_UPDATED = "guild.member_updated"
 GUILD_PERMISSIONS_CHANGED = "guild.permissions_changed"
+GUILD_EMOJIS_UPDATED = "guild.emojis_updated"
+GUILD_STICKERS_UPDATED = "guild.stickers_updated"
+
+# Custom emoji and stickers
+EMOJI_CREATE = "emoji.create"
+EMOJI_CREATE_RESULT = "emoji.create.result"
+EMOJI_UPDATE = "emoji.update"
+EMOJI_UPDATE_RESULT = "emoji.update.result"
+EMOJI_DELETE = "emoji.delete"
+EMOJI_DELETE_RESULT = "emoji.delete.result"
+EMOJI_INFO = "emoji.info"
+EMOJI_INFO_RESULT = "emoji.info.result"
+STICKER_CREATE = "sticker.create"
+STICKER_CREATE_RESULT = "sticker.create.result"
+STICKER_UPDATE = "sticker.update"
+STICKER_UPDATE_RESULT = "sticker.update.result"
+STICKER_DELETE = "sticker.delete"
+STICKER_DELETE_RESULT = "sticker.delete.result"
 
 # Roles
 ROLE_LIST = "role.list"
@@ -317,6 +337,8 @@ INVITE_EXPIRED = "invite_expired"
 LEGAL_REQUIRED = "legal_required"
 VOICE_DISABLED = "voice_disabled"
 PIN_LIMIT = "pin_limit"
+FEATURE_DISABLED = "feature_disabled"
+MEDIA_INVALID = "media_invalid"
 
 ERROR_CODES = frozenset(
     {
@@ -329,6 +351,7 @@ ERROR_CODES = frozenset(
         BANNED, TIMED_OUT, AVATAR_INVALID, TOO_MANY_REACTIONS, DM_LIMIT,
         INVALID_CURRENT_PASSWORD, FILE_TOO_LARGE, MUTED, IP_BANNED, DEVICE_BANNED,
         SLOWMODE, INVITE_EXPIRED, LEGAL_REQUIRED, VOICE_DISABLED, PIN_LIMIT,
+        FEATURE_DISABLED, MEDIA_INVALID,
     }
 )
 
@@ -354,6 +377,7 @@ PERMS = {
     "CONNECT": 1 << 16,
     "CHANGE_NICKNAME": 1 << 17,
     "MANAGE_NICKNAMES": 1 << 18,
+    "MANAGE_EXPRESSIONS": 1 << 19,
 }
 
 # --- Limits ------------------------------------------------------------------
@@ -373,7 +397,7 @@ BIO_MAX = 190
 CUSTOM_STATUS_MAX = 128
 ROLE_NAME_MAX = 32
 MAX_ROLES = 50
-EMOJI_MAX_CHARS = 32
+EMOJI_MAX_CHARS = 32  # a unicode emoji; custom emoji use CUSTOM_EMOJI_RE
 MAX_REACTION_EMOJI = 20
 AVATAR_MAX_BYTES = 40 * 1024
 GROUP_DM_MAX = 10
@@ -400,6 +424,33 @@ INVITE_MAX_AGES = (0, 1800, 3600, 21600, 43200, 86400, 604800)
 VANITY_RE = re.compile(r"^[a-z0-9-]{3,32}$")
 DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
 MAX_MUTE_SECONDS = 365 * 24 * 3600
+
+# Custom emoji, stickers and customisation (PROTOCOL.md §4 Emoji, §8d)
+EMOJI_NAME_RE = re.compile(r"^[A-Za-z0-9_]{2,32}$")
+CUSTOM_EMOJI_RE = re.compile(r"^<(a?):([A-Za-z0-9_]{2,32}):(\d{1,20})>$")
+MAX_GUILD_EMOJI = 200
+MAX_GUILD_STICKERS = 60
+STICKER_NAME_MAX = 30
+STICKER_DESCRIPTION_MAX = 100
+MAX_STICKERS_PER_MESSAGE = 1
+MAX_ROLE_COLORS = 3
+PROFILE_COLORS = 2
+MEDIA_TYPES = ("image/png", "image/jpeg", "image/gif", "image/webp")
+# kind: (max bytes, max width/height or None)
+MEDIA_KINDS = {
+    "emoji": (256 * 1024, 256),
+    "sticker": (512 * 1024, 320),
+    "avatar": (1024 * 1024, None),
+    "guild_icon": (1024 * 1024, None),
+    "banner": (2 * 1024 * 1024, None),
+    "guild_banner": (2 * 1024 * 1024, None),
+    "role_icon": (256 * 1024, None),
+}
+CUSTOMIZATION_MODES = ("off", "allowlist", "on")
+CUSTOMIZATION_FEATURES = (
+    "profile_banner", "profile_colors", "animated_media", "guild_banner", "gradient_roles", "role_icons",
+    "client_themes",
+)
 
 # Guild system message flags
 SYSTEM_JOIN = 1
@@ -614,8 +665,11 @@ def validate_color(color: Any) -> str | None:
     return color.lower()
 
 
-def validate_emoji(emoji: Any) -> str:
-    # Unicode emoji only: short, no whitespace, and at least one code point
+def validate_emoji(emoji: Any, *, allow_custom: bool = True) -> str:
+    """A unicode emoji, or (allow_custom) a custom one written <:name:id> / <a:name:id>."""
+    if allow_custom and isinstance(emoji, str) and CUSTOM_EMOJI_RE.match(emoji):
+        return emoji
+    # Unicode emoji: short, no whitespace, and at least one code point
     # outside basic Latin/punctuation (keycaps like 1️⃣ carry U+20E3).
     if (
         not isinstance(emoji, str)
@@ -626,3 +680,18 @@ def validate_emoji(emoji: Any) -> str:
     ):
         raise ProtocolError(BAD_REQUEST, "'emoji' must be a unicode emoji")
     return emoji
+
+
+def validate_emoji_name(name: Any) -> str:
+    if not isinstance(name, str) or not EMOJI_NAME_RE.match(name.strip()):
+        raise ProtocolError(BAD_REQUEST, "Emoji names must be 2-32 characters: letters, digits and _")
+    return name.strip()
+
+
+def validate_colors(colors: Any, *, min_len: int, max_len: int, key: str) -> list[str] | None:
+    """A list of '#rrggbb' strings, or None."""
+    if colors is None:
+        return None
+    if not isinstance(colors, list) or not min_len <= len(colors) <= max_len:
+        raise ProtocolError(BAD_REQUEST, f"'{key}' must be a list of {min_len}-{max_len} colors")
+    return [validate_color(c) for c in colors]

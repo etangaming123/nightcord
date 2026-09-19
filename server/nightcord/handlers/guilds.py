@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .. import perks
 from .. import permissions as perm
 from .. import protocol as P
 from ..protocol import ProtocolError
@@ -75,10 +76,18 @@ async def _join(ctx, conn, guild: dict, *, invite_row=None) -> dict:
 
 async def remove_guild(ctx, guild: dict) -> None:
     """Delete a guild and tell every member (guild.removed, reason deleted)."""
+    from .files import delete_files
+    from .users import drop_image
+
     guild_id = guild["guild_id"]
     members = ctx.db.all_member_ids(guild_id)
     channel_ids = [c["channel_id"] for c in ctx.db.list_channels(guild_id)]
+    media = ctx.db.guild_media_ids(guild_id)
+    files = ctx.db.attachment_ids_in_guild(guild_id)
     ctx.db.delete_guild(guild_id)
+    for ref in media:
+        drop_image(ctx, ref)
+    delete_files(ctx, files)
     ctx.perms.invalidate_guild(guild_id)
     await ctx.hub.voice_drop_where(lambda v: v["guild_id"] == guild_id)
     for cid in channel_ids:
@@ -237,20 +246,42 @@ async def config_update(ctx, conn, payload):
             if ctx.db.vanity_taken(vanity, guild_id) or ctx.db.invite_row(vanity) is not None:
                 raise ProtocolError(P.BAD_REQUEST, "That vanity link is taken")
         changes["vanity_code"] = vanity
+    old_banner = guild["banner_id"]
+    if "banner_media_id" in payload:
+        from .users import claim_image
+
+        changes["banner_id"] = None
+        if payload["banner_media_id"] is not None:
+            changes["banner_id"] = claim_image(
+                ctx, conn.user_id, payload["banner_media_id"], "guild_banner", "guild_banner",
+                perks.guild_owner(ctx, guild), guild=True,
+            )
     guild = ctx.db.update_guild(guild_id, changes)
+    if "banner_id" in changes and changes["banner_id"] != old_banner:
+        from .users import drop_image
+
+        drop_image(ctx, old_banner)
     if changes:
-        ctx.db.add_audit(guild_id, conn.user_id, "guild.update", guild_id, changes)
+        ctx.db.add_audit(
+            guild_id, conn.user_id, "guild.update", guild_id,
+            {k: (bool(v) if k == "banner_id" else v) for k, v in changes.items()},
+        )
     await ctx.hub.send_to_guild(guild_id, P.frame(P.GUILD_UPDATED, guild))
     return {"guild": guild}
 
 
 @handles(P.GUILD_ICON_SET)
 async def icon_set(ctx, conn, payload):
-    from .users import drop_image, store_image
+    from .users import claim_image, drop_image, store_image
 
     guild, _ = require_guild_perm(ctx, conn, P.req_id(payload, "guild_id"), perm.MANAGE_GUILD)
     data_b64 = payload.get("data_b64")
-    icon_id = None if data_b64 is None else store_image(ctx, data_b64)
+    if payload.get("media_id") is not None:
+        icon_id = claim_image(
+            ctx, conn.user_id, payload["media_id"], "guild_icon", None, perks.guild_owner(ctx, guild), guild=True
+        )
+    else:
+        icon_id = None if data_b64 is None else store_image(ctx, data_b64)
     old = guild["icon_id"]
     guild = ctx.db.update_guild(guild["guild_id"], {"icon_id": icon_id})
     drop_image(ctx, old)
@@ -302,7 +333,10 @@ async def invite_resolve(ctx, conn, payload):
     row, guild = _check_invite(ctx, code)
     members = ctx.db.non_ghost_member_ids(guild["guild_id"])
     return {
-        "guild": {"guild_id": guild["guild_id"], "name": guild["name"], "icon_id": guild["icon_id"]},
+        "guild": {
+            "guild_id": guild["guild_id"], "name": guild["name"], "icon_id": guild["icon_id"],
+            "banner_id": guild["banner_id"] if perks.can(ctx, "guild_banner", perks.guild_owner(ctx, guild)) else None,
+        },
         "member_count": len(members),
         "online_count": len(ctx.hub.presences(members)),
         "inviter": ctx.db.public_user(row["created_by"]) if row is not None else None,
