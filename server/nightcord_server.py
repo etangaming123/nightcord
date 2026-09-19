@@ -7,6 +7,10 @@
     python nightcord_server.py users list [--status active|pending|rejected|disabled]
     python nightcord_server.py users disable|enable <username>
     python nightcord_server.py owner reset-password
+    python nightcord_server.py staff list
+    python nightcord_server.py staff set <username> admin|moderator|none
+    python nightcord_server.py ipban list
+    python nightcord_server.py ipban add|remove <ip-or-cidr>
     python nightcord_server.py config show
     python nightcord_server.py config set <key> <value>
     python nightcord_server.py guilds
@@ -155,17 +159,77 @@ def cmd_config(db: Database, cfg: Config, action: str, key: str | None, value: s
         "guild_creation": {"off", "on"},
         "account_creation": {"off", "request", "on"},
         "guild_list_visible": {"true", "false"},
+        "voice_enabled": {"true", "false"},
     }
     if key == "server_name" and value and value.strip():
         db.set_server_config({"server_name": value.strip()[:64]})
         print(f"server_name = {value.strip()[:64]}")
         return 0
+    if key == "max_upload_mb" and value and value.isdigit() and 1 <= int(value) <= 1024:
+        db.set_server_config({"max_upload_bytes": int(value) * 1024 * 1024})
+        print(f"max_upload_bytes = {int(value) * 1024 * 1024}")
+        return 0
     if key not in allowed or value not in allowed[key]:
-        print(f"Usage: config set <key> <value>; keys: server_name, {allowed}", file=sys.stderr)
+        print(
+            f"Usage: config set <key> <value>; keys: server_name, max_upload_mb (1-1024), {allowed}",
+            file=sys.stderr,
+        )
         return 2
-    parsed = (value == "true") if key == "guild_list_visible" else value
+    parsed = (value == "true") if allowed[key] == {"true", "false"} else value
     db.set_server_config({key: parsed})
     print(f"{key} = {parsed}")
+    return 0
+
+
+def cmd_staff(db: Database, action: str, username: str | None, role: str | None) -> int:
+    if action == "list":
+        found = False
+        for r in db.list_users(limit=10_000):
+            if r["server_role"] != "none":
+                found = True
+                print(f"{r['username']}  {r['server_role']}")
+        if not found:
+            print("No staff.")
+        return 0
+    row = _user_row(db, username)
+    if row is None:
+        return 2 if not username else 1
+    if row["is_server_owner"]:
+        print("The server owner's role can't change.", file=sys.stderr)
+        return 1
+    if role not in ("admin", "moderator", "none"):
+        print("Usage: staff set <username> admin|moderator|none", file=sys.stderr)
+        return 2
+    db.update_profile(row["user_id"], {"server_role": role})
+    print(f"{row['username']} is now {role}. Connected clients see it after reconnecting.")
+    return 0
+
+
+def cmd_ipban(db: Database, action: str, cidr: str | None) -> int:
+    import ipaddress
+
+    if action == "list":
+        bans = db.ip_bans()
+        if not bans:
+            print("No IP bans.")
+        for b in bans:
+            reason = f"  — {b['reason']}" if b["reason"] else ""
+            print(f"{b['cidr']}  (since {b['created_at']}){reason}")
+        return 0
+    try:
+        net = str(ipaddress.ip_network((cidr or "").strip(), strict=False))
+    except ValueError:
+        print("Give an IP address or range, e.g. 203.0.113.7 or 203.0.113.0/24", file=sys.stderr)
+        return 2
+    if action == "add":
+        owner = db.get_server_owner_row()
+        db.add_ip_ban(net, None, owner["user_id"] if owner else "cli")
+        print(f"Banned {net}. Open connections stay up until they reconnect.")
+    elif db.remove_ip_ban(net):
+        print(f"Unbanned {net}.")
+    else:
+        print(f"{net} isn't banned.", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -208,6 +272,13 @@ def build_parser() -> argparse.ArgumentParser:
     conf.add_argument("key", nargs="?")
     conf.add_argument("value", nargs="?")
     sub.add_parser("guilds", help="list every guild with its ID (for ghost joins)")
+    staff = sub.add_parser("staff", help="server admins and moderators")
+    staff.add_argument("action", choices=["list", "set"])
+    staff.add_argument("username", nargs="?")
+    staff.add_argument("role", nargs="?", choices=["admin", "moderator", "none"])
+    ipban = sub.add_parser("ipban", help="server-wide IP bans")
+    ipban.add_argument("action", choices=["list", "add", "remove"])
+    ipban.add_argument("cidr", nargs="?")
     return p
 
 
@@ -242,6 +313,10 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_config(db, cfg, args.action, args.key, args.value)
         if args.command == "guilds":
             return cmd_guilds(db)
+        if args.command == "staff":
+            return cmd_staff(db, args.action, args.username, args.role)
+        if args.command == "ipban":
+            return cmd_ipban(db, args.action, args.cidr)
     finally:
         db.close()
     return 0

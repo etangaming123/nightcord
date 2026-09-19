@@ -1,6 +1,6 @@
 # Nightcord Protocol
 
-Version: `0.3`
+Version: `0.4`
 
 This document is the single source of truth for the wire format between the
 Nightcord client (GitHub Pages, vanilla JS) and a Nightcord server (Python).
@@ -16,6 +16,7 @@ Each protocol version arrived with one commit on `main`, named in the middle col
 |---|---|---|
 | 0.2 | Chat server and web client | Accounts, guilds, text channels and messages over one WebSocket. |
 | 0.3 | Roles, moderation, DMs, profiles and first-run setup | First-run setup, an admin API, profiles, avatars and status, direct messages, roles and permissions with channel overwrites, moderation, message edits, deletes, replies, reactions and mentions, typing, synced read state and notification preferences. |
+| 0.4 | Server staff, attachments, invites, categories and search | Server admins and moderators with global mutes, account deletion and IP/device bans; Terms of Service and Privacy Policy documents; file attachments over HTTP; invites with use limits, expiry and vanity links; join/leave messages; categories, topics and slowmode; pins and search; guild icons; nicknames; hoisted roles; a voice-channel placeholder. |
 
 ---
 
@@ -27,6 +28,8 @@ Each protocol version arrived with one commit on `main`, named in the middle col
   its own channels, roles, members, and owner. A Server can host many Guilds.
 - **Server owner** — the account created during first-run setup (§8a). It
   manages server-wide settings and accounts, and can ghost-join any guild.
+- **Server staff** — server admins and moderators appointed by the owner
+  (§8c). Not to be confused with guild roles.
 - **Guild owner** — the user who created a given Guild. Has every
   permission in it and can't be kicked, banned or outranked.
 - **DM** — a direct-message channel outside any guild: 1:1 (`dm`) or group
@@ -59,11 +62,17 @@ Each protocol version arrived with one commit on `main`, named in the middle col
   `type` is answered with type `error` (payload `{ code, message }`, code
   `bad_request` or `unknown_type`).
 - Server → client messages without an `id` are unsolicited events.
-- Maximum frame size is 64 KB.
-- Only `server.info`, `setup.claim` and `auth.*` may be sent before
-  authentication; anything else gets `X.error` / `not_authenticated`.
+- Maximum frame size is 64 KB. Files go over HTTP (below).
+- Only `server.info`, `legal.get`, `setup.claim` and `auth.*` may be sent
+  before authentication; anything else gets `X.error` / `not_authenticated`.
 - If a connection's session is revoked (password change, "log out other
-  sessions", account disabled), the server closes it with code `4001`.
+  sessions", account disabled or deleted), the server closes it with code
+  `4001`.
+- A connection from a banned IP address gets one `error` frame with code
+  `ip_banned` and is closed with code `4003`. Connections are also closed
+  with `4003` when an IP or device ban is added that matches them (§8c).
+- Some error payloads carry extra fields next to `code` and `message`
+  (e.g. `retry_after` for `slowmode`).
 
 ### HTTP
 
@@ -71,21 +80,44 @@ Besides `/ws`, the server answers:
 
 - `GET /` — a small HTML page. Opening it once lets a browser trust a
   self-signed certificate.
-- `GET /avatars/{avatar_id}` — avatar images (§4 User). Immutable: each
-  upload gets a new id.
+- `GET /avatars/{avatar_id}` — avatar images and guild icons (§4 User,
+  Guild). Immutable: each upload gets a new id.
+- `POST /upload?channel_id=…&filename=…[&width=…&height=…]` — upload one
+  attachment. The request body is the raw file bytes (not multipart) and
+  the request needs `Authorization: Bearer <session_token>`. Browsers get
+  CORS headers for origins in `allowed_origins`. Requires `VIEW_CHANNEL`,
+  `SEND_MESSAGES` and `ATTACH_FILES` in the channel and no server mute. The
+  body may be at most `max_upload_bytes` (§4 Server config). The server
+  decides the content type from the file's bytes, never from the client.
+  `width`/`height` are hints the client measured for images and video.
+  Success: `200 { attachment: Attachment }`. Failure: an HTTP error status
+  with `{ error: { code, message } }` — `not_authenticated` (401),
+  `forbidden` / `muted` / `ip_banned` (403), `not_found` (404),
+  `file_too_large` (413), `rate_limited` (429, more than 50 unsent
+  uploads). An upload not used by `message.send` within an hour is deleted.
+- `GET /files/{attachment_id}/{filename}?exp=…&sig=…` — download. The URL
+  comes from the `Attachment` object; it is signed by the server and stops
+  working at `exp` (a Unix time about 7 days out; URLs stay the same for a
+  whole UTC day so browsers can cache them). Supports `Range`. Images
+  (png/jpeg/gif/webp), video (mp4/webm) and audio are served inline with
+  their type; text files as `text/plain; charset=utf-8`; everything else
+  (including SVG and HTML) as an `application/octet-stream` download.
 
 ---
 
 ## 3. Connection & Auth Flow
 
 1. Client opens the WebSocket and sends `server.info`. If
-   `setup_required` is true, it shows the setup wizard (§8a).
+   `setup_required` is true, it shows the setup wizard (§8a). If
+   `legal_version` is set, it shows the documents from `legal.get` before
+   account creation (§8b).
 2. Client sends `auth.login` or `auth.register` (or `auth.resume` with a
    stored session token).
 3. Server responds `auth.ok` (with session token + the user's own profile)
    or `auth.error`.
 4. Client loads `guild.list`, `dm.list`, `read_state.list` and
-   `notify.prefs.get`.
+   `notify.prefs.get`. If `auth.ok` says `legal_update_required`, it asks
+   the user to accept the new documents (`legal.accept`).
 5. When the user opens a guild, the client sends `channel.list`,
    `guild.members`, `role.list` and `presence.list` for it.
 6. Client sends `channel.join` for the channel in view (its "focus") and
@@ -103,6 +135,10 @@ that is what drives unread badges. Only `typing.started` depends on focus.
   `code: "session_expired"` and the client falls back to the login screen.
 - Sessions expire after 30 days without use (sliding expiry — every
   successful `auth.resume` extends it). `auth.logout` revokes the token.
+- Every auth request may carry `device_id`: a random 16–64 character id
+  (`[A-Za-z0-9_-]`) the client generates once per saved server and keeps
+  in local storage. The server records it with the session and the client
+  IP for device bans (§8c).
 
 ---
 
@@ -125,15 +161,23 @@ plain JSON numbers.
   "avatar_id": "string | null",
   "avatar_color": "#rrggbb | null",
   "custom_status": "string | null",
-  "is_server_owner": false
+  "is_server_owner": false,
+  "server_role": "owner | admin | moderator | none",
+  "deleted": false
 }
 ```
 The user's own view (`auth.ok`'s `user`, `user.updated` sent to
-themselves) adds `bio`, `created_at` and `presence`
-(`online | idle | dnd | invisible`, their chosen status). `user.profile`
-returns `PublicUser` plus `bio` and `created_at`.
+themselves) adds `bio`, `created_at`, `presence`
+(`online | idle | dnd | invisible`, their chosen status), `muted_until`
+(ISO8601, `"permanent"` or null; §8c) and `legal_version` (the documents
+they accepted, §8b). `user.profile` returns `PublicUser` plus `bio` and
+`created_at`.
 
-Clients show `display_name` when set, else `username`. An avatar image is
+A `deleted` user's profile fields are cleared and their `username` is a
+placeholder; clients show "Deleted User". Their messages stay.
+
+Clients show a guild member's `nickname` (§4 Member) inside that guild,
+else `display_name` when set, else `username`. An avatar image is
 at `GET /avatars/{avatar_id}`; without one, clients draw initials on
 `avatar_color` (or a color derived from the username).
 
@@ -145,11 +189,14 @@ Password is never sent to the client; the server stores only a bcrypt hash.
   "server_name": "string",
   "guild_creation": "off | on",
   "account_creation": "off | request | on",
-  "guild_list_visible": true
+  "guild_list_visible": true,
+  "max_upload_bytes": 26214400,
+  "voice_enabled": false
 }
 ```
 Defaults: `guild_creation: "on"`, `account_creation: "on"`,
-`guild_list_visible: true`, `server_name` from the server's config file
+`guild_list_visible: true`, `max_upload_bytes` 25 MB (1 MB – 1 GB),
+`voice_enabled: false`, `server_name` from the server's config file
 until the owner sets one. `guild_list_visible` gates whether a server-wide
 "open guild list" can exist at all — a guild's own `listed` flag still needs
 to be true for it to appear.
@@ -161,9 +208,17 @@ to be true for it to appear.
   "name": "string",
   "owner_user_id": "string",
   "listed": false,
-  "created_at": "ISO8601"
+  "created_at": "ISO8601",
+  "icon_id": "string | null",
+  "system_channel_id": "string | null",
+  "system_flags": 0,
+  "vanity_code": "string | null"
 }
 ```
+`icon_id` is an image at `GET /avatars/{icon_id}`. `system_channel_id` and
+`system_flags` control join/leave messages (§5 System messages); new
+guilds preselect `#general` with the flags off. `vanity_code` is the
+guild's permanent public invite code, if any.
 Guild objects sent to a member (`guild.list`, `guild.create` and the join
 results) also carry `ghost: bool` and `my_permissions` (guild-wide, §5a).
 `guild.public_list` entries carry `member_count`.
@@ -177,11 +232,14 @@ results) also carry `ghost: bool` and `my_permissions` (guild-wide, §5a).
   "color": "#rrggbb | null",
   "permissions": 0,
   "position": 0,
-  "is_everyone": false
+  "is_everyone": false,
+  "hoist": false
 }
 ```
 Every guild has an `@everyone` role with `role_id == guild_id`, position 0,
-which applies to all members. Higher `position` = higher rank.
+which applies to all members. Higher `position` = higher rank. Clients
+group online members under their highest `hoist` role ("display role
+members separately"), like Discord.
 
 ### Member
 ```json
@@ -190,26 +248,41 @@ which applies to all members. Higher `position` = higher rank.
   "role_ids": ["string"],
   "joined_at": "ISO8601",
   "timed_out_until": "ISO8601 | null",
-  "is_owner": false
+  "is_owner": false,
+  "nickname": "string | null",
+  "invited_by": "user_id | null",
+  "invite_code": "string | null"
 }
 ```
+`invited_by` / `invite_code` record how the member joined (null for the
+public list; `invited_by` is null for the vanity link).
 `role_ids` never includes `@everyone`. Ghost memberships (§7) are never
 returned as Members.
 
 ### Channel
-Guild text channel:
+Guild channel:
 ```json
 {
   "channel_id": "string",
   "guild_id": "string",
-  "kind": "text",
+  "kind": "text | voice | category",
   "name": "string",
   "position": 0,
+  "parent_id": "string | null",
+  "topic": "string | null",
+  "slowmode_seconds": 0,
+  "perms_synced": false,
   "overwrites": [{ "role_id": "string", "allow": 0, "deny": 0 }],
   "last_message_id": "string | null",
   "my_permissions": 0
 }
 ```
+Channels are ordered by `position` across the whole guild; `parent_id`
+puts a text or voice channel in a category (categories can't nest). A
+channel with `perms_synced: true` uses its category's overwrites instead
+of its own (§5a). Only text channels have messages, a `topic` and
+`slowmode_seconds`. Voice channels only exist while `voice_enabled` is
+true (§5 Voice).
 DM channel:
 ```json
 {
@@ -240,12 +313,52 @@ only ever sent to users who have `VIEW_CHANNEL` in it.
   "reply_to": { "message_id": "string", "author": "PublicUser", "content": "string" },
   "mentions": ["user_id"],
   "mention_everyone": false,
-  "reactions": [{ "emoji": "string", "user_ids": ["string"] }]
+  "reactions": [{ "emoji": "string", "user_ids": ["string"] }],
+  "type": "default | member_join | member_leave | pin",
+  "pinned": false,
+  "attachments": ["Attachment"]
 }
 ```
 `reply_to` is null when there's no reply or the original was deleted
 (`reply_to_id` is kept either way); its `content` is cut to 120
 characters. Message events also carry `guild_id` (null in DMs).
+
+Non-`default` messages are **system messages**, written by the server
+with empty `content`; `author` is the user they're about (who joined,
+left or pinned). A `pin` message's `reply_to_id` is the pinned message.
+System messages can't be edited, pinned or searched; they can be reacted
+to and deleted with `MANAGE_MESSAGES`.
+
+### Attachment
+```json
+{
+  "attachment_id": "string",
+  "filename": "string",
+  "content_type": "string",
+  "size": 0,
+  "width": "number | null",
+  "height": "number | null",
+  "url": "/files/{attachment_id}/{filename}?exp=…&sig=…"
+}
+```
+`url` is relative to the server's https origin (§2 HTTP). Clients show
+`image/*` inline, play `video/*` and `audio/*` inline, open `text/plain`
+in a viewer, and offer everything else as a download.
+
+### Invite
+```json
+{
+  "code": "string",
+  "guild_id": "string",
+  "inviter": "PublicUser",
+  "uses": 0,
+  "max_uses": 0,
+  "expires_at": "ISO8601 | null",
+  "created_at": "ISO8601"
+}
+```
+`max_uses: 0` means unlimited; `expires_at: null` never expires. Codes
+are 8 characters and case-insensitive.
 
 Content is plain text with a small markdown subset rendered by clients:
 `**bold**`, `*italic*`, `__underline__`, `~~strike~~`, `` `code` ``,
@@ -293,6 +406,18 @@ only mention counts.
 | group DM | at most 10 people; name up to 64 chars |
 | history `limit` | default 50, max 100 |
 | timeout | 1 s – 28 days |
+| server mute | 1 s – 365 days, or permanent |
+| `nickname` | up to 32 chars |
+| channel `topic` | up to 1024 chars |
+| voice channel / category `name` | 1–32 chars, free text |
+| channels per guild | at most 200 |
+| attachments | at most 10 per message; each up to `max_upload_bytes`; filename up to 128 chars |
+| `slowmode_seconds` | one of 0, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 21600 |
+| invite `max_uses` | one of 0 (unlimited), 1, 5, 10, 25, 50, 100 |
+| invite `max_age_seconds` | one of 0 (never), 1800, 3600, 21600, 43200, 86400, 604800 |
+| `vanity_code` | 3–32 chars, `[a-z0-9-]` (stored lowercase) |
+| pins | at most 50 per channel |
+| legal documents | each up to 30000 chars of Markdown |
 
 ---
 
@@ -301,17 +426,25 @@ only mention counts.
 ### Setup
 | type | direction | payload |
 |---|---|---|
-| `setup.claim` | C→S | `{ setup_code, username, password, server_name?, account_creation?, guild_creation?, guild_list_visible? }` → `auth.ok`. Pre-auth; only while `setup_required` (§8a) |
+| `setup.claim` | C→S | `{ setup_code, username, password, server_name?, account_creation?, guild_creation?, guild_list_visible?, device_id? }` → `auth.ok`. Pre-auth; only while `setup_required` (§8a) |
+
+### Legal documents
+| type | direction | payload |
+|---|---|---|
+| `legal.get` | C→S | `{}` — sendable pre-auth |
+| `legal.get.result` | S→C | `{ terms: markdown \| null, privacy: markdown \| null, legal_version }` |
+| `legal.accept` | C→S | `{ legal_version }` — must be the current version |
+| `legal.accept.result` | S→C | `{ user }` (self view) |
 
 ### Auth
 | type | direction | payload |
 |---|---|---|
-| `auth.register` | C→S | `{ username, password }` |
-| `auth.login` | C→S | `{ username, password }` |
-| `auth.resume` | C→S | `{ session_token }` |
-| `auth.request_account` | C→S | `{ username, password, note? }` — used when `account_creation` is `request` |
+| `auth.register` | C→S | `{ username, password, accept_legal_version?, device_id? }` — `accept_legal_version` must equal the current `legal_version` when there is one (§8b) |
+| `auth.login` | C→S | `{ username, password, device_id? }` |
+| `auth.resume` | C→S | `{ session_token, device_id? }` |
+| `auth.request_account` | C→S | `{ username, password, note?, accept_legal_version?, device_id? }` — used when `account_creation` is `request` |
 | `auth.request_account.result` | S→C | `{ status: "pending" }` |
-| `auth.ok` | S→C | `{ session_token, user }` — `user` is the self view (§4 User) |
+| `auth.ok` | S→C | `{ session_token, user, legal_update_required }` — `user` is the self view (§4 User) |
 | `auth.error` | S→C | `{ code, message }` |
 | `auth.logout` | C→S | `{}` — revokes the current session token |
 | `auth.logout.result` | S→C | `{}` |
@@ -320,26 +453,58 @@ only mention counts.
 | type | direction | payload |
 |---|---|---|
 | `server.info` | C→S | `{}` — sendable pre-auth |
-| `server.info.result` | S→C | `ServerConfig` plus `protocol_version` and `setup_required` |
-| `server.config.update` | C→S | partial `ServerConfig` — **server owner only** |
+| `server.info.result` | S→C | `ServerConfig` plus `protocol_version`, `setup_required`, `legal_version`, `has_terms`, `has_privacy` |
+| `server.config.update` | C→S | partial `ServerConfig` — **server owner only**. Turning `voice_enabled` off disconnects everyone from voice |
 | `server.config.update.result` | S→C | `{ config: ServerConfig }` |
+| `server.config.updated` | S→C | `ServerConfig` + `legal_version`, `has_terms`, `has_privacy` — to every logged-in connection after a config or legal change |
 
-### Admin (server owner only)
+### Admin (server staff, §8c)
+The column "who" is the lowest server role allowed: **mod** (moderator),
+**admin** or **owner**. Every action that targets a user needs the
+target's server role to be strictly below the actor's.
+
 | type | direction | payload |
 |---|---|---|
-| `admin.users.list` | C→S | `{ status?: "pending"\|"active"\|"rejected"\|"disabled", query? }` |
-| `admin.users.list.result` | S→C | `{ users: [AdminUser] }` — `PublicUser` plus `status`, `created_at`, `note` |
-| `admin.users.set_status` | C→S | `{ user_id, status: "active"\|"rejected"\|"disabled" }` — approve (pending→active), reject (pending→rejected), disable (active→disabled; closes their connections), enable (disabled→active) |
+| `admin.users.list` | C→S | `{ status?: "pending"\|"active"\|"rejected"\|"disabled", query? }` — mod. Deleted accounts are left out |
+| `admin.users.list.result` | S→C | `{ users: [AdminUser] }` — `PublicUser` plus `status`, `created_at`, `note`, `muted_until`, `last_ip`, `last_seen`, `device_count` |
+| `admin.users.set_status` | C→S | `{ user_id, status: "active"\|"rejected"\|"disabled" }` — mod. Approve (pending→active), reject (pending→rejected), disable (active→disabled; closes their connections), enable (disabled→active) |
 | `admin.users.set_status.result` | S→C | `{ user: AdminUser }` |
-| `admin.users.reset_password` | C→S | `{ user_id }` — sets a random password, revokes sessions |
-| `admin.users.reset_password.result` | S→C | `{ password }` — shown to the owner once |
-| `admin.guilds.list` | C→S | `{}` |
+| `admin.users.reset_password` | C→S | `{ user_id }` — admin. Sets a random password, revokes sessions |
+| `admin.users.reset_password.result` | S→C | `{ password }` — shown once |
+| `admin.users.mute` | C→S | `{ user_id, duration_seconds?, permanent?, reason? }` — mod. Server-wide mute; neither field lifts it |
+| `admin.users.mute.result` | S→C | `{ user: AdminUser }` |
+| `admin.users.delete` | C→S | `{ user_id }` — admin. Deletes the account (see `user.delete`) |
+| `admin.users.delete.result` | S→C | `{}` |
+| `admin.staff.set` | C→S | `{ user_id, role: "admin"\|"moderator"\|"none" }` — admin; only the owner can make admins |
+| `admin.staff.set.result` | S→C | `{ user: AdminUser }` |
+| `admin.ip_bans.list` | C→S | `{}` — mod |
+| `admin.ip_bans.list.result` | S→C | `{ bans: [{ cidr, reason, banned_by: PublicUser, created_at }] }` |
+| `admin.ip_bans.add` | C→S | `{ cidr, reason? }` — mod. An address (`203.0.113.7`) or range (`203.0.113.0/24`). Can't include your own address or a connected staff member at or above you |
+| `admin.ip_bans.add.result` | S→C | `{ bans }` |
+| `admin.ip_bans.remove` | C→S | `{ cidr }` — mod |
+| `admin.ip_bans.remove.result` | S→C | `{ bans }` |
+| `admin.device_bans.list` | C→S | `{}` — mod |
+| `admin.device_bans.list.result` | S→C | `{ bans: [{ device_id, user: PublicUser \| null, reason, banned_by, created_at }] }` |
+| `admin.device_bans.add` | C→S | `{ user_id, reason? }` — mod. Bans every device the user has a session on |
+| `admin.device_bans.add.result` | S→C | `{ bans }` |
+| `admin.device_bans.remove` | C→S | `{ device_id }` — mod |
+| `admin.device_bans.remove.result` | S→C | `{ bans }` |
+| `admin.audit_log` | C→S | `{ before?, limit? }` — mod. Server-wide actions, newest first |
+| `admin.audit_log.result` | S→C | `{ entries: [{ entry_id, actor: PublicUser, action, target_id, details, created_at }], has_more }` |
+| `admin.stats` | C→S | `{}` — admin |
+| `admin.stats.result` | S→C | `{ users, guilds, messages, attachments: { count, bytes } }` |
+| `admin.legal.set` | C→S | `{ terms?: markdown \| null, privacy?: markdown \| null }` — owner. Empty or null removes a document |
+| `admin.legal.set.result` | S→C | `{ legal_version, has_terms, has_privacy }` |
+| `admin.guilds.list` | C→S | `{}` — admin |
 | `admin.guilds.list.result` | S→C | `{ guilds: [Guild + { member_count, owner: PublicUser }] }` |
-| `admin.guilds.delete` | C→S | `{ guild_id }` |
+| `admin.guilds.delete` | C→S | `{ guild_id }` — admin |
 | `admin.guilds.delete.result` | S→C | `{}` |
-| `admin.account_requested` | S→C | `{ user: AdminUser }` — event to the server owner when someone requests an account |
+| `admin.account_requested` | S→C | `{ user: AdminUser }` — event to every moderator and above when someone requests an account |
 
-The server owner's own account can't be changed through `admin.users.*`.
+Server audit `action` values: `user.status`, `user.reset_password`,
+`user.mute`, `user.delete`, `user.delete_self`, `staff.set`,
+`ip_ban.add`, `ip_ban.remove`, `device_ban.add`, `device_ban.remove`,
+`guild.delete`, `config.update`, `legal.update`.
 
 ### Users
 | type | direction | payload |
@@ -358,6 +523,8 @@ The server owner's own account can't be changed through `admin.users.*`.
 | `user.sessions.revoke.result` | S→C | `{}` |
 | `user.search` | C→S | `{ query }` — active users whose username or display name starts with `query` (max 20) |
 | `user.search.result` | S→C | `{ users: [PublicUser] }` |
+| `user.delete` | C→S | `{ password }` — delete your own account (not the server owner). Guilds you own pass to their highest-ranked member (or are deleted if empty); you leave every guild and group DM; your messages stay, shown as "Deleted User"; your avatar and uploads are deleted; your username is freed |
+| `user.delete.result` | S→C | `{}` — the connection stays open but logged out |
 | `user.updated` | S→C | `PublicUser` — event to everyone who shares a guild or DM with the user; the user's own connections get the self view |
 
 ### Presence
@@ -384,11 +551,11 @@ visible status changes. Ghost memberships never produce presence (§7).
 | `guild.create.result` | S→C | `{ guild: Guild, channels: [Channel] }` — starts with `#general` and `@everyone` |
 | `guild.public_list` | C→S | `{}` — only guilds with `listed: true` while `guild_list_visible: true` |
 | `guild.public_list.result` | S→C | `{ guilds: [Guild] }` |
-| `guild.join_by_code` | C→S | `{ invite_code }` |
+| `guild.join_by_code` | C→S | `{ invite_code }` — an invite code or a vanity code; `invite_expired` when expired or used up |
 | `guild.join_by_code.result` | S→C | `{ guild: Guild }` |
 | `guild.join_by_id` | C→S | `{ guild_id }` — only for guilds in the public list |
 | `guild.join_by_id.result` | S→C | `{ guild: Guild }` |
-| `guild.owner_override_join` | C→S | `{ guild_id }` — **server owner only**; joins silently as a ghost (§7) |
+| `guild.owner_override_join` | C→S | `{ guild_id }` — **server admins and the owner**; joins silently as a ghost (§7) |
 | `guild.owner_override_join.result` | S→C | `{ guild: Guild }` |
 | `guild.leave` | C→S | `{ guild_id }` — not allowed for the guild owner |
 | `guild.leave.result` | S→C | `{}` |
@@ -396,15 +563,23 @@ visible status changes. Ghost memberships never produce presence (§7).
 | `guild.delete.result` | S→C | `{}` |
 | `guild.members` | C→S | `{ guild_id }` |
 | `guild.members.result` | S→C | `{ members: [Member] }` |
-| `guild.config.update` | C→S | `{ guild_id, name?, listed? }` — needs `MANAGE_GUILD` |
+| `guild.config.update` | C→S | `{ guild_id, name?, listed?, system_channel_id?, system_flags?, vanity_code? }` — needs `MANAGE_GUILD`. `system_channel_id` must be a text channel (or null); `vanity_code` null removes it |
 | `guild.config.update.result` | S→C | `{ guild: Guild }` |
-| `guild.invite.create` | C→S | `{ guild_id }` — needs `CREATE_INVITE` |
-| `guild.invite.create.result` | S→C | `{ invite_code }` |
+| `guild.icon.set` | C→S | `{ guild_id, data_b64 }` — needs `MANAGE_GUILD`; same rules as `user.avatar.set`; `null` removes |
+| `guild.icon.set.result` | S→C | `{ guild: Guild }` |
+| `guild.invite.create` | C→S | `{ guild_id, max_uses?, max_age_seconds? }` — needs `CREATE_INVITE` |
+| `guild.invite.create.result` | S→C | `{ invite_code, invite: Invite }` |
+| `guild.invite.list` | C→S | `{ guild_id }` — active invites (not revoked, expired or used up): all of them with `MANAGE_GUILD`, else your own |
+| `guild.invite.list.result` | S→C | `{ invites: [Invite] }` |
+| `guild.invite.revoke` | C→S | `{ invite_code }` — your own invites, or any with `MANAGE_GUILD` |
+| `guild.invite.revoke.result` | S→C | `{}` |
+| `guild.invite.resolve` | C→S | `{ invite_code }` — preview before joining |
+| `guild.invite.resolve.result` | S→C | `{ guild: { guild_id, name, icon_id }, member_count, online_count, inviter: PublicUser \| null, expires_at, is_member }` |
 | `guild.bans.list` | C→S | `{ guild_id }` — needs `BAN_MEMBERS` |
 | `guild.bans.list.result` | S→C | `{ bans: [{ user: PublicUser, reason, created_at }] }` |
 | `guild.audit_log` | C→S | `{ guild_id, before?, limit? }` — needs `VIEW_AUDIT_LOG`; newest first, `limit` ≤ 100 |
 | `guild.audit_log.result` | S→C | `{ entries: [{ entry_id, actor: PublicUser, action, target_id, details, created_at }], has_more }` |
-| `guild.updated` | S→C | `Guild` — event to members after `guild.config.update` |
+| `guild.updated` | S→C | `Guild` — event to members after `guild.config.update`, `guild.icon.set` or an ownership change |
 | `guild.removed` | S→C | `{ guild_id, reason: "kicked"\|"banned"\|"deleted" }` — event to a user who lost access |
 | `guild.member_joined` | S→C | `{ guild_id, member: Member }` — never sent for ghost joins |
 | `guild.member_left` | S→C | `{ guild_id, user_id, reason: "left"\|"kicked"\|"banned" }` — never sent for ghosts |
@@ -414,16 +589,26 @@ visible status changes. Ghost memberships never produce presence (§7).
 Audit log `action` values: `guild.update`, `channel.create`,
 `channel.update`, `channel.delete`, `role.create`, `role.update`,
 `role.reorder`, `role.delete`, `member.roles`, `member.kick`, `member.ban`,
-`member.unban`, `member.timeout`, `message.delete` (someone else's message).
+`member.unban`, `member.timeout`, `member.nickname` (someone else's),
+`message.delete` (someone else's message), `message.pin`, `invite.revoke`,
+`channel.reorder`, `guild.transfer` (ownership passed on after account
+deletion).
+
+### System messages
+With `system_channel_id` set, the server posts `member_join` when someone
+joins (flag `1`) and `member_leave` when someone leaves, is kicked or is
+banned (flag `2`), as ordinary `message.new` events in that channel.
+Ghost joins never post. Pinning posts a `pin` message in the pinned
+message's channel regardless of the flags.
 
 ### Roles
 | type | direction | payload |
 |---|---|---|
 | `role.list` | C→S | `{ guild_id }` |
 | `role.list.result` | S→C | `{ roles: [Role] }` — highest first, `@everyone` last |
-| `role.create` | C→S | `{ guild_id, name?, color?, permissions? }` — needs `MANAGE_ROLES`; placed just below the creator's highest role |
+| `role.create` | C→S | `{ guild_id, name?, color?, permissions?, hoist? }` — needs `MANAGE_ROLES`; placed just below the creator's highest role |
 | `role.create.result` | S→C | `{ role: Role }` |
-| `role.update` | C→S | `{ role_id, name?, color?, permissions? }` — needs `MANAGE_ROLES` and the role below your highest (any member may edit `@everyone`'s permissions with `MANAGE_ROLES`) |
+| `role.update` | C→S | `{ role_id, name?, color?, permissions?, hoist? }` — needs `MANAGE_ROLES` and the role below your highest (any member may edit `@everyone`'s permissions with `MANAGE_ROLES`) |
 | `role.update.result` | S→C | `{ role: Role }` |
 | `role.reorder` | C→S | `{ guild_id, role_ids }` — every role except `@everyone`, highest first; only roles below yours may move |
 | `role.reorder.result` | S→C | `{ roles: [Role] }` |
@@ -448,6 +633,8 @@ You can't grant permissions you don't have yourself.
 | `member.unban.result` | S→C | `{}` |
 | `member.timeout` | C→S | `{ guild_id, user_id, duration_seconds \| null, reason? }` — needs `MODERATE_MEMBERS`; `null` lifts it |
 | `member.timeout.result` | S→C | `{ member: Member }` |
+| `member.nickname.set` | C→S | `{ guild_id, user_id, nickname \| null }` — your own needs `CHANGE_NICKNAME`; others' need `MANAGE_NICKNAMES` and to rank above them. Sends `guild.member_updated` |
+| `member.nickname.set.result` | S→C | `{ member: Member }` |
 
 Moderation targets must be visible members ranked strictly below you (the
 guild owner outranks everyone). Nobody can target themselves or the owner.
@@ -457,18 +644,22 @@ A banned user can't rejoin by invite or public list (`banned`).
 | type | direction | payload |
 |---|---|---|
 | `channel.list` | C→S | `{ guild_id }` — channels you can view |
-| `channel.list.result` | S→C | `{ channels: [Channel] }` |
+| `channel.list.result` | S→C | `{ channels: [Channel], voice_states: [VoiceState] }` — categories are included when you can view them or a channel in them; voice channels only while voice is enabled |
 | `channel.join` | C→S | `{ channel_id }` — focus this channel (guild or DM); one per connection |
 | `channel.join.result` | S→C | `{}` |
 | `channel.leave` | C→S | `{ channel_id }` — drop focus |
 | `channel.leave.result` | S→C | `{}` |
-| `channel.history` | C→S | `{ channel_id, before_message_id?, limit? }` — needs `READ_HISTORY` |
-| `channel.history.result` | S→C | `{ messages: [Message], has_more }` — oldest-first |
-| `channel.create` | C→S | `{ guild_id, name, overwrites? }` — needs `MANAGE_CHANNELS` (and `MANAGE_ROLES` for overwrites) |
+| `channel.history` | C→S | `{ channel_id, before_message_id?, after_message_id?, around_message_id?, limit? }` — needs `READ_HISTORY`; at most one cursor. `around` centers on a message (for jumping to search results, pins and replies) |
+| `channel.history.result` | S→C | `{ messages: [Message], has_more, has_more_after }` — oldest-first; `has_more` = older messages exist, `has_more_after` = newer ones do |
+| `channel.create` | C→S | `{ guild_id, name, kind?, parent_id?, topic?, overwrites? }` — needs `MANAGE_CHANNELS` (and `MANAGE_ROLES` for overwrites). `kind` defaults to `text`; `voice` needs `voice_enabled` (`voice_disabled`). A channel created in a category without overwrites is synced with it |
 | `channel.create.result` | S→C | `{ channel: Channel }` |
-| `channel.update` | C→S | `{ channel_id, name?, position?, overwrites? }` — needs `MANAGE_CHANNELS` in the channel; `overwrites` replaces the whole list and needs `MANAGE_ROLES` |
+| `channel.update` | C→S | `{ channel_id, name?, position?, topic?, slowmode_seconds?, perms_synced?, overwrites? }` — needs `MANAGE_CHANNELS` in the channel; `overwrites` replaces the whole list (and unsyncs the channel), `overwrites` and `perms_synced` need `MANAGE_ROLES` |
 | `channel.update.result` | S→C | `{ channel: Channel }` |
-| `channel.delete` | C→S | `{ channel_id }` — needs `MANAGE_CHANNELS`; deletes its messages too |
+| `channel.reorder` | C→S | `{ guild_id, channels: [{ channel_id, parent_id, position }] }` — needs `MANAGE_CHANNELS`; sends `channel.updated` for each moved channel. Moving a channel out of its category unsyncs it |
+| `channel.reorder.result` | S→C | `{ channels: [Channel] }` |
+| `channel.pins` | C→S | `{ channel_id }` — needs `READ_HISTORY` |
+| `channel.pins.result` | S→C | `{ messages: [Message] }` — most recently pinned first |
+| `channel.delete` | C→S | `{ channel_id }` — needs `MANAGE_CHANNELS`; deletes its messages too. Deleting a category moves its channels to the top level (synced ones keep the category's overwrites) |
 | `channel.delete.result` | S→C | `{}` |
 | `channel.ack` | C→S | `{ channel_id, message_id }` — mark read up to `message_id` and clear mentions |
 | `channel.ack.result` | S→C | `{ read_state: ReadState }` |
@@ -519,12 +710,18 @@ requests and message requests are deferred (§10).
 ### Messaging
 | type | direction | payload |
 |---|---|---|
-| `message.send` | C→S | `{ channel_id, content, reply_to_id?, mention_reply? }` — needs `SEND_MESSAGES`; rate-limited to 5 per 5 s per connection (shared with edits). Replying mentions the original author unless `mention_reply: false` |
+| `message.send` | C→S | `{ channel_id, content, reply_to_id?, mention_reply?, attachment_ids? }` — needs `SEND_MESSAGES` (and `ATTACH_FILES` with attachments); text channels and DMs only. Rate-limited to 5 per 5 s per connection (shared with edits). Replying mentions the original author unless `mention_reply: false`. `content` may be empty when there are attachments (up to 10, from your own `/upload`s to this channel, each usable once). Slowmode: `slowmode` with `retry_after` seconds; `MANAGE_MESSAGES` or `MANAGE_CHANNELS` bypass it |
 | `message.send.result` | S→C | `{ message_id, message: Message }` |
 | `message.edit` | C→S | `{ message_id, content }` — your own messages only |
 | `message.edit.result` | S→C | `{ message: Message }` |
-| `message.delete` | C→S | `{ message_id }` — your own, or anyone's with `MANAGE_MESSAGES` |
+| `message.delete` | C→S | `{ message_id }` — your own, or anyone's with `MANAGE_MESSAGES`; deletes its attachments |
 | `message.delete.result` | S→C | `{}` |
+| `message.pin` | C→S | `{ message_id }` — needs `MANAGE_MESSAGES` (anyone in a DM); `pin_limit` past 50. Sends `message.updated` and a `pin` system message |
+| `message.pin.result` | S→C | `{}` |
+| `message.unpin` | C→S | `{ message_id }` — same permission; sends `message.updated` |
+| `message.unpin.result` | S→C | `{}` |
+| `message.search` | C→S | `{ guild_id \| channel_id, query?, author_id?, has?: "file"\|"image"\|"video"\|"link", pinned?, before?, after?, offset? }` — at least one filter. Searches text channels where you have `READ_HISTORY` (or one channel / DM); words match as prefixes, newest first, 25 per page |
+| `message.search.result` | S→C | `{ messages: [Message + guild_id], total }` |
 | `message.new` | S→C | `Message` + `guild_id` — to everyone who can view the channel (including the sender) |
 | `message.updated` | S→C | `Message` + `guild_id` |
 | `message.deleted` | S→C | `{ channel_id, guild_id, message_id }` |
@@ -550,6 +747,28 @@ mentioned users' read state (everyone who can view the channel for
 | `typing.start.result` | S→C | `{}` |
 | `typing.started` | S→C | `{ channel_id, guild_id, user_id }` — to other users' connections focused on that channel; show for ~8 s or until their message arrives |
 
+### Voice (placeholder)
+Voice channels exist so guilds can be laid out like Discord; there is no
+audio yet. Joining only shows you as "in" the channel.
+
+```json
+{ "guild_id": "string", "channel_id": "string | null", "user_id": "string", "self_mute": false, "self_deaf": false }
+```
+That is a `VoiceState`; `channel_id: null` in an event means the user left.
+
+| type | direction | payload |
+|---|---|---|
+| `voice.join` | C→S | `{ channel_id }` — a voice channel; needs `CONNECT`, voice enabled (`voice_disabled`) and no server mute. Leaves any other voice channel |
+| `voice.join.result` | S→C | `{ voice_state: VoiceState }` |
+| `voice.leave` | C→S | `{}` |
+| `voice.leave.result` | S→C | `{}` |
+| `voice.state.set` | C→S | `{ self_mute?, self_deaf? }` — cosmetic for now |
+| `voice.state.set.result` | S→C | `{ voice_state }` |
+| `voice.state_updated` | S→C | `VoiceState` — to online guild members |
+
+A user is in at most one voice channel, tied to the connection that
+joined; closing it leaves the channel.
+
 ---
 
 ## 5a. Permissions
@@ -571,15 +790,23 @@ mentioned users' read state (everyone who can view the channel for
 | `MODERATE_MEMBERS` | 4096 | time members out |
 | `VIEW_AUDIT_LOG` | 8192 | read the audit log |
 | `ADMINISTRATOR` | 16384 | every permission, ignoring overwrites |
+| `ATTACH_FILES` | 32768 | upload attachments |
+| `CONNECT` | 65536 | join voice channels |
+| `CHANGE_NICKNAME` | 131072 | set your own nickname |
+| `MANAGE_NICKNAMES` | 262144 | set other members' nicknames |
 
 `@everyone` starts with `VIEW_CHANNEL | SEND_MESSAGES | READ_HISTORY |
-ADD_REACTIONS | CREATE_INVITE` (527).
+ADD_REACTIONS | CREATE_INVITE | ATTACH_FILES | CONNECT | CHANGE_NICKNAME`
+(229903). Upgrading from v0.3 adds the three new bits to every existing
+`@everyone` role.
 
 Computation for a member in a channel:
 1. The guild owner has every permission.
 2. `base` = `@everyone` | each of the member's roles. `ADMINISTRATOR` →
    every permission (overwrites ignored).
 3. Apply the channel's `@everyone` overwrite: `base = (base & ~deny) | allow`.
+   A channel with `perms_synced` in a category uses the category's
+   overwrites here and in step 4.
 4. Apply the union of the member's role overwrites the same way (all
    denies, then all allows).
 5. Without `VIEW_CHANNEL`, the member has no channel permissions.
@@ -587,13 +814,18 @@ Computation for a member in a channel:
 7. A ghost membership (§7) has `VIEW_CHANNEL | READ_HISTORY` in every
    channel and nothing else.
 
-Overwrites may only use the first seven flags (`VIEW_CHANNEL` …
-`MANAGE_CHANNELS`) and can't both allow and deny the same flag. A private
+Overwrites may only use the channel flags — `VIEW_CHANNEL` …
+`MANAGE_CHANNELS`, `ATTACH_FILES` and `CONNECT` — and can't both allow and
+deny the same flag. A private
 channel is one that denies `VIEW_CHANNEL` to `@everyone` and allows it to
 some roles; a read-only channel denies `SEND_MESSAGES`.
 
 In DMs every recipient has `VIEW_CHANNEL | SEND_MESSAGES | READ_HISTORY |
-ADD_REACTIONS`.
+ADD_REACTIONS | ATTACH_FILES`.
+
+A server-wide mute (§8c) is separate from guild permissions: it blocks
+sending, reacting, typing, uploading and joining voice everywhere,
+including DMs, with `muted`.
 
 A member's **rank** is the highest `position` among their roles (0 with
 none); the owner outranks everyone.
@@ -606,7 +838,7 @@ none); the owner outranks everyone.
 |---|---|
 | Invite code | Always available regardless of listing settings |
 | Open list | Requires **both** `server.guild_list_visible: true` **and** the guild's `listed: true` |
-| Server-owner override | Server owner only, via `guild.owner_override_join`; results in a `ghost` membership |
+| Server-owner override | Server owner and server admins, via `guild.owner_override_join`; results in a `ghost` membership |
 
 Banned users get `banned` from the invite and open-list paths.
 
@@ -614,7 +846,7 @@ Banned users get `banned` from the invite and open-list paths.
 
 ## 7. Server-owner override behavior
 
-- The server owner may call `guild.owner_override_join` for **any** guild
+- The server owner (and server admins, §8c) may call `guild.owner_override_join` for **any** guild
   at any time, bypassing invite codes, listing and bans.
 - The resulting membership has `ghost: true`. It is read-only: it has
   `VIEW_CHANNEL | READ_HISTORY` in every channel (overwrites don't apply)
@@ -662,6 +894,57 @@ A server with no server-owner account is in setup mode:
   in (`auth.ok`). Wrong code → `invalid_setup_code`; after setup →
   `setup_already_done`. Attempts are rate-limited per IP.
 
+## 8b. Terms of Service and Privacy Policy
+
+A server may publish two Markdown documents, stored as
+`data/legal/terms.md` and `data/legal/privacy.md`. The owner edits them in
+the client (`admin.legal.set`) or puts the files there by hand.
+
+- `legal_version` is a hash of both documents, or null when there are
+  none. It changes whenever either document changes.
+- Clients show the documents (headings, paragraphs, lists, links, and the
+  chat markdown subset) before creating an account, and send
+  `accept_legal_version` with `auth.register` / `auth.request_account`;
+  without it those fail with `legal_required`.
+- When the documents change, `auth.ok` has `legal_update_required: true`
+  for users who accepted an older version (never for the server owner).
+  Clients block the app until the user accepts with `legal.accept` (or
+  logs out).
+
+Before a client connects to a server it hasn't saved yet, it warns the
+user that the server's owner and staff can see their IP address, and to
+only connect to servers they trust. This is a client rule; the protocol
+can't help, since connecting reveals the address.
+
+## 8c. Server staff
+
+Server roles, lowest to highest: `none`, `moderator`, `admin`, `owner`.
+There is exactly one owner (the account from §8a).
+
+| | moderator | admin | owner |
+|---|---|---|---|
+| See accounts, IPs and the server audit log | ✓ | ✓ | ✓ |
+| Approve / reject requests, disable / enable accounts | ✓ | ✓ | ✓ |
+| Server mute, IP bans, device bans | ✓ | ✓ | ✓ |
+| Delete accounts, reset passwords | | ✓ | ✓ |
+| List / delete / ghost-join guilds | | ✓ | ✓ |
+| Appoint moderators | | ✓ | ✓ |
+| Appoint admins; server config; legal documents | | | ✓ |
+
+Staff can only act on users whose server role is strictly below their
+own, and never on themselves.
+
+- **Server mute** — `muted_until` is a time or `"permanent"`. Muted users
+  can read but not send, react, type, upload or join voice anywhere.
+- **IP ban** — addresses or CIDR ranges. Banned addresses can't open a
+  WebSocket, upload or download (§2). Behind a reverse proxy the server
+  must be configured with `trust_proxy` so it sees the real address.
+- **Device ban** — bans the `device_id`s the user's sessions reported.
+  Auth requests with a banned `device_id` fail with `device_banned`. This
+  is a speed bump, not an identity check: clearing browser storage makes a
+  new device id. It only applies to this server.
+- **Account deletion** — see `user.delete`.
+
 ---
 
 ## 9. Errors
@@ -680,7 +963,9 @@ owner-only action), `bad_request` (malformed frame or payload),
 server-side failure; safe to retry), `setup_required`,
 `invalid_setup_code`, `setup_already_done`, `account_disabled`, `banned`,
 `timed_out`, `avatar_invalid`, `too_many_reactions`, `dm_limit`,
-`invalid_current_password`.
+`invalid_current_password`, `file_too_large`, `muted` (server mute,
+§8c), `ip_banned`, `device_banned`, `slowmode` (the payload also has `retry_after` seconds),
+`invite_expired`, `legal_required`, `voice_disabled`, `pin_limit`.
 This list will grow — append here rather than inventing undocumented codes.
 
 ---
@@ -690,12 +975,13 @@ This list will grow — append here rather than inventing undocumented codes.
 Documented so the schema leaves room, without being built yet:
 
 - Friend requests, blocking, and DM message requests
-- File/image attachments and link embeds
-- Message search
-- Channel categories and topics
-- Guild icons; invites that expire or have use limits; invite management
-- Per-guild nicknames; per-member channel overwrites
-- Voice/video
+- Link embeds / previews
+- Per-member channel overwrites
+- Voice/video audio (voice channels are placeholders, §5 Voice)
+- Custom emoji and stickers
+- Profile and guild banners, gradient role colors, themes (a server
+  setting will gate these)
+- Guild ownership transfer by hand
 - Read receipts — **permanently out of scope** (read state in §4 is
   private to each user)
 - Choice of TLS strategy (self-signed vs. Cloudflare Tunnel) at setup time

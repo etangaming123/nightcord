@@ -5,7 +5,8 @@ Discord's model without per-member overwrites:
 1. The guild owner has every permission.
 2. base = @everyone | each of the member's roles. ADMINISTRATOR grants all.
 3. In a channel: apply the @everyone overwrite (deny, then allow), then the
-   union of the member's role overwrites (deny, then allow).
+   union of the member's role overwrites (deny, then allow). A channel synced
+   with its category uses the category's overwrites.
 4. Without VIEW_CHANNEL a member has no permissions in that channel.
 5. A timed-out member keeps only VIEW_CHANNEL and READ_HISTORY.
 6. A ghost (server-owner override) membership has VIEW_CHANNEL and
@@ -38,6 +39,10 @@ BAN_MEMBERS = PERMS["BAN_MEMBERS"]
 MODERATE_MEMBERS = PERMS["MODERATE_MEMBERS"]
 VIEW_AUDIT_LOG = PERMS["VIEW_AUDIT_LOG"]
 ADMINISTRATOR = PERMS["ADMINISTRATOR"]
+ATTACH_FILES = PERMS["ATTACH_FILES"]
+CONNECT = PERMS["CONNECT"]
+CHANGE_NICKNAME = PERMS["CHANGE_NICKNAME"]
+MANAGE_NICKNAMES = PERMS["MANAGE_NICKNAMES"]
 
 ALL = 0
 for _bit in PERMS.values():
@@ -46,11 +51,14 @@ for _bit in PERMS.values():
 # Permissions that can be set per channel with overwrites.
 CHANNEL_PERMS = (
     VIEW_CHANNEL | SEND_MESSAGES | READ_HISTORY | ADD_REACTIONS
-    | MENTION_EVERYONE | MANAGE_MESSAGES | MANAGE_CHANNELS
+    | MENTION_EVERYONE | MANAGE_MESSAGES | MANAGE_CHANNELS | ATTACH_FILES | CONNECT
 )
 READ_ONLY = VIEW_CHANNEL | READ_HISTORY
-DM_PERMS = VIEW_CHANNEL | SEND_MESSAGES | READ_HISTORY | ADD_REACTIONS
-DEFAULT_EVERYONE = VIEW_CHANNEL | SEND_MESSAGES | READ_HISTORY | ADD_REACTIONS | CREATE_INVITE
+DM_PERMS = VIEW_CHANNEL | SEND_MESSAGES | READ_HISTORY | ADD_REACTIONS | ATTACH_FILES
+DEFAULT_EVERYONE = (
+    VIEW_CHANNEL | SEND_MESSAGES | READ_HISTORY | ADD_REACTIONS | CREATE_INVITE
+    | ATTACH_FILES | CONNECT | CHANGE_NICKNAME
+)
 
 OWNER_RANK = 1 << 30  # above any role position
 
@@ -184,6 +192,13 @@ class PermissionService:
             }
         return self._overwrites[channel_id]
 
+    @staticmethod
+    def overwrite_source(channel: dict) -> str:
+        """The channel whose overwrites apply: the category for synced children."""
+        if channel.get("perms_synced") and channel.get("parent_id"):
+            return channel["parent_id"]
+        return channel["channel_id"]
+
     def channel_perms(self, channel: dict, user_id: str) -> int:
         """Permissions of user_id in a guild channel or DM (0 = no access)."""
         if channel["guild_id"] is None:
@@ -191,7 +206,7 @@ class PermissionService:
         mp = self.member(channel["guild_id"], user_id)
         if mp is None:
             return 0
-        return compute_channel(mp, channel["guild_id"], self.overwrites(channel["channel_id"]))
+        return compute_channel(mp, channel["guild_id"], self.overwrites(self.overwrite_source(channel)))
 
     def can_view(self, channel: dict, user_id: str) -> bool:
         return bool(self.channel_perms(channel, user_id) & VIEW_CHANNEL)

@@ -2,7 +2,7 @@
 // actions (message, edit profile, moderation) the viewer is allowed to use.
 
 import { T } from "../protocol.js";
-import { memberById, memberRoles, state, statusOf, userById } from "../state.js";
+import { STAFF_LABEL, can, memberById, memberRoles, state, statusOf, userById } from "../state.js";
 import { add, avatar, clear, displayName, fmtDate, h, statusLabel } from "./dom.js";
 import { closePopover, openMenu, openPopover, repositionPopover, toast } from "./modals.js";
 
@@ -13,13 +13,22 @@ export function openProfile(userId, anchor, actions, { placement = "right" } = {
     const status = statusOf(user.user_id);
     const member = state.view === "guild" ? memberById(user.user_id) : null;
     const me = user.user_id === state.user?.user_id;
+    if (user.deleted) {
+      clear(body,
+        h("div", { class: "profile-banner", style: "background:var(--muted)" }),
+        h("div", { class: "profile-avatar" }, avatar(user, { size: "xl" })),
+        h("div", { class: "profile-card" }, h("div", { class: "profile-name" }, "Deleted User"),
+          h("p", { class: "muted small" }, "This account was deleted. Its messages are kept.")));
+      repositionPopover();
+      return;
+    }
     clear(body,
       h("div", { class: "profile-banner", style: `background:${user.avatar_color || "var(--accent)"}` }),
       h("div", { class: "profile-avatar" }, avatar(user, { size: "xl", status })),
       h("div", { class: "profile-card" },
-        h("div", { class: "profile-name" }, displayName(user)),
-        h("div", { class: "profile-username" }, user.username,
-          user.is_server_owner ? h("span", { class: "tag" }, "SERVER OWNER") : null),
+        h("div", { class: "profile-name" }, member?.nickname || displayName(user)),
+        h("div", { class: "profile-username" }, member?.nickname ? `${displayName(user)} · ${user.username}` : user.username,
+          STAFF_LABEL[user.server_role] ? h("span", { class: `tag staff ${user.server_role}` }, STAFF_LABEL[user.server_role].toUpperCase()) : null),
         user.custom_status ? h("div", { class: "profile-status" }, user.custom_status) : null,
         h("div", { class: "muted small" }, statusLabel(status)),
         extra.bio ? section("About me", h("p", { class: "profile-bio" }, extra.bio)) : null,
@@ -34,7 +43,8 @@ export function openProfile(userId, anchor, actions, { placement = "right" } = {
           me
             ? h("button", { class: "btn", type: "button", on: { click: () => { closePopover(); actions.userSettings("profile"); } } }, "Edit profile")
             : h("button", { class: "btn primary", type: "button", on: { click: () => { closePopover(); actions.messageUser(user.user_id); } } }, "Message"),
-          member && !me ? modButton(user, actions) : null)));
+          me && member && can("CHANGE_NICKNAME") ? h("button", { class: "btn", type: "button", on: { click: () => { closePopover(); actions.changeNickname(user.user_id); } } }, "Nickname") : null,
+          !me ? modButton(user, actions, member) : null)));
     repositionPopover();
   };
   if (cached) draw(cached);
@@ -80,9 +90,11 @@ function rolesSection(member, actions) {
   return section(roles.length ? "Roles" : "No roles", h("div", { class: "role-chips" }, chips, add));
 }
 
-function modButton(user, actions) {
-  const items = actions.moderationItems(user.user_id);
-  if (!items.length) return null;
+function modButton(user, actions, member) {
+  const guildItems = member ? actions.moderationItems(user.user_id) : [];
+  const staff = actions.staffItems(user.user_id);
+  const items = [...guildItems, ...(staff.length ? [guildItems.length ? "-" : null, { heading: "Server staff" }, ...staff] : [])];
+  if (!guildItems.length && !staff.length) return null;
   return h("button", {
     class: "btn", type: "button", "aria-haspopup": "menu",
     on: { click: (e) => openMenu(e.currentTarget, items, { placement: "top" }) },

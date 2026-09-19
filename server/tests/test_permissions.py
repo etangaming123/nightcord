@@ -16,8 +16,8 @@ def member(*, roles=(), role_perms=(), owner=False, ghost=False, timeout=None):
     return MemberPerms(G, "u", owner, ghost, base, frozenset(roles), 0, timeout)
 
 
-def test_default_everyone_is_527():
-    assert EVERYONE == 527
+def test_default_everyone():
+    assert EVERYONE == 229903  # 527 + ATTACH_FILES + CONNECT + CHANGE_NICKNAME
 
 
 @pytest.mark.parametrize(
@@ -66,6 +66,6 @@ def test_rejects_v1_database(tmp_path):
 
 def test_fresh_database_is_versioned(tmp_path):
     db = Database(tmp_path / "new.db")
-    assert db.conn.execute("PRAGMA user_version").fetchone()[0] == 1
+    assert db.conn.execute("PRAGMA user_version").fetchone()[0] == 2
     db.close()
     Database(tmp_path / "new.db").close()  # reopening doesn't re-run migrations

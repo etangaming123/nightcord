@@ -1,15 +1,14 @@
 // User Settings (full screen): account, profile, devices, appearance,
-// notifications — plus the server owner's Admin panel.
+// notifications — plus the Admin panel for server staff (admin.js).
 
 import { getPrefs, setPrefs } from "../prefs.js";
 import { LIMITS, T } from "../protocol.js";
-import { state } from "../state.js";
-import { add, avatar, clear, displayName, fmtDate, fmtDateTime, h, initials } from "./dom.js";
-import { closeFullscreen, confirmModal, openFullscreen, openModal, refreshFullscreen, toast } from "./modals.js";
-import { copyText } from "./profile.js";
+import { STAFF_LABEL, state } from "../state.js";
+import { adminSections } from "./admin.js";
+import { add, avatar, clear, displayName, fmtDate, fmtDateTime, h } from "./dom.js";
+import { closeFullscreen, confirmModal, openFullscreen, refreshFullscreen, toast } from "./modals.js";
 
 export function userSettings(actions, initial) {
-  const owner = state.user?.is_server_owner;
   openFullscreen({
     title: "User settings",
     initial,
@@ -21,10 +20,7 @@ export function userSettings(actions, initial) {
       { heading: "App settings" },
       { id: "appearance", label: "Appearance", render: appearance },
       { id: "notifications", label: "Notifications", render: notifications },
-      owner ? { heading: "Server admin" } : null,
-      owner ? { id: "server", label: "Server", render: (el) => serverSection(el, actions) } : null,
-      owner ? { id: "accounts", label: "Accounts", badge: state.pendingAccounts, render: (el) => accountsSection(el, actions) } : null,
-      owner ? { id: "guilds", label: "Guilds", render: (el) => guildsSection(el, actions) } : null,
+      ...adminSections(actions),
       { separator: true },
       { label: "Log out", danger: true, onClick: () => { closeFullscreen(); actions.logout(); } },
     ],
@@ -67,7 +63,7 @@ function account(el, actions) {
         h("dt", {}, "Username"), h("dd", {}, me.username),
         h("dt", {}, "Member since"), h("dd", {}, fmtDate(me.created_at)),
         h("dt", {}, "Server"), h("dd", {}, state.info?.server_name || ""),
-        me.is_server_owner ? [h("dt", {}, "Role"), h("dd", {}, "Server owner")] : null)),
+        STAFF_LABEL[me.server_role] ? [h("dt", {}, "Role"), h("dd", {}, STAFF_LABEL[me.server_role])] : null)),
     h("h3", {}, "Password"),
     formRow(h("form", { class: "stack narrow" },
       h("label", {}, "Current password", h("input", { name: "current", type: "password", required: true, autocomplete: "current-password" })),
@@ -81,12 +77,30 @@ function account(el, actions) {
       await actions.req(T.USER_PASSWORD_CHANGE, { current_password: fd.get("current"), new_password: fd.get("new") });
       el.querySelector("form").reset();
     }, { okText: "Password changed" }),
+    me.is_server_owner ? null : h("h3", {}, "Delete account"),
+    me.is_server_owner ? null : h("p", { class: "muted" }, "Your messages stay but show as “Deleted User”. Your profile, avatar and uploads are deleted, you leave every guild (guilds you own pass to their highest-ranked member) and your username becomes free."),
+    me.is_server_owner ? null : h("div", {}, h("button", {
+      class: "btn danger", type: "button",
+      on: {
+        click: () => confirmModal({
+          title: "Delete your account?",
+          message: `This can't be undone. Enter your password to delete ${me.username} on ${state.info?.server_name || "this server"}.`,
+          confirmLabel: "Delete my account",
+          fields: [h("label", {}, "Password", h("input", { name: "password", type: "password", required: true, autocomplete: "current-password" }))],
+          onConfirm: async (fd) => {
+            await actions.req(T.USER_DELETE, { password: fd.get("password") });
+            closeFullscreen();
+            actions.accountDeleted();
+          },
+        }),
+      },
+    }, "Delete account")),
   );
 }
 
 // --- Profile -----------------------------------------------------------------
 
-async function resizeAvatar(file) {
+export async function resizeAvatar(file) {
   const bitmap = await createImageBitmap(file);
   const size = 128;
   const canvas = document.createElement("canvas");
@@ -106,7 +120,7 @@ async function resizeAvatar(file) {
   throw new Error("Couldn't shrink that image enough; try a simpler one.");
 }
 
-const blobToBase64 = (blob) => new Promise((resolve, reject) => {
+export const blobToBase64 = (blob) => new Promise((resolve, reject) => {
   const r = new FileReader();
   r.onload = () => resolve(String(r.result).split(",")[1]);
   r.onerror = () => reject(r.error);
@@ -272,129 +286,4 @@ function notifications(el) {
     }), "Play a sound for new notifications"),
     h("p", { class: "muted small" }, "Do Not Disturb mutes all notifications."),
   );
-}
-
-// --- Server admin ------------------------------------------------------------
-
-function serverSection(el, actions) {
-  const info = state.info;
-  const select = (name, value, options) =>
-    h("select", { name }, options.map(([v, label]) => h("option", { value: v, selected: v === value }, label)));
-  add(el, formRow(h("form", { class: "stack narrow" },
-    h("label", {}, "Server name", h("input", { name: "server_name", required: true, maxLength: LIMITS.SERVER_NAME_MAX, value: info.server_name })),
-    h("label", {}, "Account creation", select("account_creation", info.account_creation, [
-      ["on", "Open: anyone can register"],
-      ["request", "By request: you approve new accounts"],
-      ["off", "Closed"],
-    ])),
-    h("label", {}, "Guild creation", select("guild_creation", info.guild_creation, [
-      ["on", "Anyone can create guilds"],
-      ["off", "Only the server owner"],
-    ])),
-    h("label", { class: "check" }, h("input", { type: "checkbox", name: "guild_list_visible", checked: info.guild_list_visible }), "Allow a public guild directory"),
-    h("div", {}, h("button", { class: "btn primary", type: "submit" }, "Save"))),
-  async (fd) => {
-    const res = await actions.req(T.SERVER_CONFIG_UPDATE, {
-      server_name: String(fd.get("server_name")).trim(),
-      account_creation: fd.get("account_creation"),
-      guild_creation: fd.get("guild_creation"),
-      guild_list_visible: fd.get("guild_list_visible") === "on",
-    });
-    actions.setServerInfo(res.config);
-  }, { okText: "Server settings saved" }));
-}
-
-async function accountsSection(el, actions) {
-  let filter = state.pendingAccounts ? "pending" : "";
-  const tabs = h("div", { class: "tabs inline" });
-  const search = h("input", { type: "search", placeholder: "Search accounts", "aria-label": "Search accounts" });
-  const list = h("div", { class: "list" });
-  const draw = async () => {
-    clear(tabs, [["", "All"], ["pending", "Pending"], ["active", "Active"], ["disabled", "Disabled"], ["rejected", "Rejected"]].map(([v, l]) =>
-      h("button", { class: "tab", type: "button", "aria-selected": String(filter === v), on: { click: () => { filter = v; draw(); } } }, l)));
-    const { users } = await actions.req(T.ADMIN_USERS_LIST, { status: filter || undefined, query: search.value.trim() || undefined });
-    if (filter === "pending" || !filter) {
-      state.pendingAccounts = users.filter((u) => u.status === "pending").length || (filter === "pending" ? 0 : state.pendingAccounts);
-      actions.refreshChrome();
-    }
-    clear(list);
-    if (!users.length) add(list, h("p", { class: "muted" }, filter === "pending" ? "No account requests right now." : "No accounts match."));
-    for (const u of users) add(list, accountRow(u, actions, draw));
-  };
-  let timer;
-  search.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(draw, 200); });
-  add(el, h("div", { class: "row wrap" }, tabs, search), list);
-  await draw();
-}
-
-function accountRow(u, actions, redraw) {
-  const act = (label, status, cls = "") => h("button", {
-    class: `btn ${cls}`, type: "button",
-    on: { click: async () => { try { await actions.req(T.ADMIN_USERS_SET_STATUS, { user_id: u.user_id, status }); await redraw(); } catch (e) { toast(e.message, { error: true }); } } },
-  }, label);
-  const buttons = [];
-  if (u.is_server_owner) buttons.push(h("span", { class: "tag" }, "SERVER OWNER"));
-  else if (u.status === "pending") buttons.push(act("Approve", "active", "primary"), act("Reject", "rejected"));
-  else if (u.status === "active") {
-    buttons.push(
-      h("button", {
-        class: "btn", type: "button",
-        on: {
-          click: () => confirmModal({
-            title: `Reset ${u.username}'s password?`,
-            message: "They'll be logged out everywhere. You'll see the new password once.",
-            confirmLabel: "Reset password",
-            onConfirm: async () => {
-              const { password } = await actions.req(T.ADMIN_USERS_RESET_PASSWORD, { user_id: u.user_id });
-              setTimeout(() => openModal({
-                title: "New password",
-                subtitle: `Give this to ${u.username}. It won't be shown again.`,
-                content: h("div", { class: "row" }, h("div", { class: "code-display" }, password),
-                  h("button", { class: "btn", type: "button", on: { click: () => copyText(password, "Password copied") } }, "Copy")),
-              }));
-            },
-          }),
-        },
-      }, "Reset password"),
-      act("Disable", "disabled", "danger"));
-  } else if (u.status === "disabled") buttons.push(act("Enable", "active"));
-  else if (u.status === "rejected") buttons.push(h("span", { class: "muted small" }, "Rejected"));
-  return h("div", { class: "list-row" },
-    avatar(u, { size: "sm" }),
-    h("span", { class: "meta" },
-      h("span", { class: "name" }, displayName(u), u.display_name ? h("span", { class: "muted small" }, ` ${u.username}`) : null,
-        u.status !== "active" ? h("span", { class: `tag ${u.status}` }, u.status.toUpperCase()) : null),
-      h("span", { class: "sub" }, `Joined ${fmtDate(u.created_at)}${u.note ? ` · “${u.note}”` : ""}`)),
-    h("span", { class: "row" }, buttons));
-}
-
-async function guildsSection(el, actions) {
-  const { guilds } = await actions.req(T.ADMIN_GUILDS_LIST);
-  add(el, h("p", { class: "muted" }, "Every guild on this server. A ghost join lets you read a guild without its members seeing you; you can't post."));
-  const list = h("div", { class: "list" });
-  if (!guilds.length) add(list, h("p", { class: "muted" }, "No guilds yet."));
-  for (const g of guilds) {
-    const mine = state.guilds.get(g.guild_id);
-    add(list, h("div", { class: "list-row" },
-      h("div", { class: "guild-icon static", "aria-hidden": "true" }, initials(g.name)),
-      h("span", { class: "meta" },
-        h("span", { class: "name" }, g.name, g.listed ? h("span", { class: "tag" }, "LISTED") : null),
-        h("span", { class: "sub" }, `Owner ${displayName(g.owner)} · ${g.member_count} member${g.member_count === 1 ? "" : "s"} · `,
-          h("button", { class: "btn link mono", type: "button", title: "Copy guild ID", on: { click: () => copyText(g.guild_id, "Guild ID copied") } }, g.guild_id))),
-      h("span", { class: "row" },
-        mine ? h("button", { class: "btn", type: "button", on: { click: () => { closeFullscreen(); actions.openGuild(g.guild_id); } } }, mine.ghost ? "Open (ghost)" : "Open")
-          : h("button", { class: "btn", type: "button", on: { click: async () => { try { await actions.ghostJoin(g.guild_id); closeFullscreen(); } catch (e) { toast(e.message, { error: true }); } } } }, "Ghost join"),
-        h("button", {
-          class: "btn danger", type: "button",
-          on: {
-            click: () => confirmModal({
-              title: `Delete ${g.name}?`,
-              message: "Every channel, message and role in it is deleted for everyone. This can't be undone.",
-              confirmLabel: "Delete guild",
-              onConfirm: async () => { await actions.req(T.ADMIN_GUILDS_DELETE, { guild_id: g.guild_id }); refreshFullscreen(); },
-            }),
-          },
-        }, "Delete"))));
-  }
-  add(el, list);
 }

@@ -1,9 +1,11 @@
 // Message composer: drafts per channel, reply bar, @mention autocomplete,
-// emoji button, typing notifications, ↑ to edit your last message.
+// emoji button, attachments (button, paste, drag and drop), slowmode,
+// typing notifications, ↑ to edit your last message.
 
 import { LIMITS } from "../protocol.js";
-import { can, currentChannel, currentGuild, isDm, memberById, state as appState, userById } from "../state.js";
-import { $, add, avatar, clear, displayName, h } from "./dom.js";
+import { can, currentChannel, currentGuild, isDm, memberById, mutedUntil, nameOf, state as appState, userById } from "../state.js";
+import { addFiles, removePending, uploading } from "../uploads.js";
+import { $, add, avatar, clear, fmtBytes, h } from "./dom.js";
 import { openEmojiPicker } from "./emoji.js";
 import { toast } from "./modals.js";
 
@@ -44,6 +46,49 @@ export function focusComposer() {
   $("#composer textarea")?.focus();
 }
 
+let slowTimer = null;
+
+// Seconds left before this channel's slowmode lets you send again.
+function slowmodeLeft(channel) {
+  const until = appState.slowmodeUntil.get(channel.channel_id) || 0;
+  return Math.max(0, Math.ceil((until - Date.now()) / 1000));
+}
+
+const canAttach = (channel) => can("ATTACH_FILES", channel);
+
+// Drag files anywhere over the chat to attach them.
+export function setupDropZone() {
+  const chat = $("#chat");
+  let depth = 0;
+  const overlay = h("div", { class: "drop-overlay", hidden: true }, h("div", {}, h("strong", {}, "Drop to upload"), h("span", { class: "muted" }, "Files are sent with your next message")));
+  chat.append(overlay);
+  const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
+  const usable = () => { const ch = currentChannel(); return ch && can("SEND_MESSAGES", ch) && canAttach(ch) && !mutedUntil(); };
+  chat.addEventListener("dragenter", (e) => { if (!hasFiles(e) || !usable()) return; e.preventDefault(); depth++; overlay.hidden = false; });
+  chat.addEventListener("dragover", (e) => { if (hasFiles(e) && usable()) e.preventDefault(); });
+  chat.addEventListener("dragleave", () => { depth = Math.max(0, depth - 1); if (!depth) overlay.hidden = true; });
+  chat.addEventListener("drop", (e) => {
+    depth = 0;
+    overlay.hidden = true;
+    if (!hasFiles(e) || !usable()) return;
+    e.preventDefault();
+    addFiles([...e.dataTransfer.files]);
+    focusComposer();
+  });
+}
+
+function uploadTray(state) {
+  if (!state.pending.length) return null;
+  return h("div", { class: "upload-tray", role: "list", "aria-label": "Attachments" }, state.pending.map((p) => h("div", {
+    class: `upload ${p.error ? "failed" : p.attachment ? "done" : "busy"}`, role: "listitem", dataset: { upload: String(p.id) },
+  },
+  p.preview ? h("img", { class: "up-thumb", src: p.preview, alt: "" }) : h("span", { class: "up-thumb icon", "aria-hidden": "true" }, "📄"),
+  h("span", { class: "up-name", title: p.name }, p.name),
+  h("span", { class: "up-size" }, p.error ? p.error : fmtBytes(p.size)),
+  p.attachment || p.error ? null : h("span", { class: "up-bar", "aria-hidden": "true" }, h("i", { style: `width:${Math.round(p.progress * 100)}%` })),
+  h("button", { class: "icon-btn up-x", type: "button", title: "Remove", "aria-label": `Remove ${p.name}`, on: { click: () => removePending(p.id) } }, "✕"))));
+}
+
 export function renderComposer(state, actions) {
   const form = clear($("#composer"));
   form.onsubmit = null;
@@ -63,10 +108,17 @@ export function renderComposer(state, actions) {
     add(form, h("div", { class: "readonly" }, "You don't have permission to send messages in this channel."));
     return;
   }
+  const muted = mutedUntil();
+  if (muted) {
+    add(form, h("div", { class: "readonly" }, muted === "permanent"
+      ? "🔇 You've been muted on this server by its staff."
+      : `🔇 You've been muted on this server until ${new Date(muted).toLocaleString()}.`));
+    return;
+  }
 
   const channelId = channel.channel_id;
   const input = h("textarea", {
-    rows: 1, placeholder: `Message ${isDm(channel) ? "@" : "#"}${isDm(channel) ? (channel.name || channel.recipients.filter((u) => u.user_id !== state.user.user_id).map((u) => displayName(userById(u.user_id) || u)).join(", ")) : channel.name}`,
+    rows: 1, placeholder: `Message ${isDm(channel) ? "@" : "#"}${isDm(channel) ? (channel.name || channel.recipients.filter((u) => u.user_id !== state.user.user_id).map((u) => nameOf(userById(u.user_id) || u, null)).join(", ")) : channel.name}`,
     "aria-label": "Message", maxLength: LIMITS.CONTENT_MAX_CHARS + 500, disabled: !state.connected,
     autocomplete: "off",
   });
@@ -77,6 +129,12 @@ export function renderComposer(state, actions) {
   let lastTyping = 0;
   let ac = null; // { start, items, index }
 
+  const slow = channel.slowmode_seconds && !can("MANAGE_MESSAGES", channel) && !can("MANAGE_CHANNELS", channel);
+  const waitFor = slow ? slowmodeLeft(channel) : 0;
+  const slowNote = slow ? h("div", { class: "slowmode", title: `Slowmode: one message every ${channel.slowmode_seconds}s` },
+    "🐢 ", waitFor ? `${waitFor}s` : `Slowmode ${channel.slowmode_seconds}s`) : null;
+  clearTimeout(slowTimer);
+  if (waitFor) slowTimer = setTimeout(() => actions.rerenderComposer(), 1000);
   const autosize = () => {
     input.style.height = "auto";
     input.style.height = `${input.scrollHeight}px`;
@@ -84,7 +142,8 @@ export function renderComposer(state, actions) {
     count.hidden = n < LIMITS.CONTENT_MAX_CHARS - 200;
     count.textContent = `${n} / ${LIMITS.CONTENT_MAX_CHARS}`;
     count.classList.toggle("over", n > LIMITS.CONTENT_MAX_CHARS);
-    send.disabled = !state.connected || n === 0 || n > LIMITS.CONTENT_MAX_CHARS;
+    const files = state.pending.length > 0;
+    send.disabled = !state.connected || (n === 0 && !files) || n > LIMITS.CONTENT_MAX_CHARS || waitFor > 0 || uploading();
     if (input.value) drafts.set(channelId, input.value);
     else drafts.delete(channelId);
   };
@@ -112,7 +171,7 @@ export function renderComposer(state, actions) {
       class: `ac-item ${i === ac.index ? "active" : ""}`, role: "option", "aria-selected": String(i === ac.index),
       on: { mousedown: (e) => { e.preventDefault(); pickAc(u); } },
     }, u.everyone ? h("span", { class: "avatar xs everyone", "aria-hidden": "true" }, "@") : avatar(u, { size: "xs" }),
-    h("span", { class: "ac-name" }, u.everyone ? "@everyone" : displayName(u)),
+    h("span", { class: "ac-name" }, u.everyone ? "@everyone" : nameOf(u)),
     h("span", { class: "ac-sub" }, u.everyone ? "Notify everyone who can see this channel" : u.username))));
   };
   const updateAc = () => {
@@ -133,7 +192,8 @@ export function renderComposer(state, actions) {
 
   const submit = async () => {
     const raw = input.value.trim();
-    if (!raw || raw.length > LIMITS.CONTENT_MAX_CHARS || !state.connected) return;
+    if ((!raw && !state.pending.length) || raw.length > LIMITS.CONTENT_MAX_CHARS || !state.connected) return;
+    if (slowmodeLeft(channel) && slow) return;
     const reply = state.replyTo;
     input.value = "";
     autosize();
@@ -158,6 +218,12 @@ export function renderComposer(state, actions) {
     }
   });
   input.addEventListener("click", updateAc);
+  input.addEventListener("paste", (e) => {
+    const files = [...(e.clipboardData?.files || [])];
+    if (!files.length || !canAttach(channel)) return;
+    e.preventDefault();
+    addFiles(files);
+  });
   input.addEventListener("blur", () => setTimeout(closeAc, 100));
   input.addEventListener("keydown", (e) => {
     if (ac?.items.length) {
@@ -203,13 +269,20 @@ export function renderComposer(state, actions) {
     },
   }, "☺");
 
+  const fileInput = h("input", { type: "file", multiple: true, hidden: true });
+  fileInput.addEventListener("change", () => { addFiles([...fileInput.files]); fileInput.value = ""; input.focus(); });
+  const attachBtn = canAttach(channel) ? h("button", {
+    class: "icon-btn attach-btn", type: "button", title: "Upload a file", "aria-label": "Upload a file",
+    disabled: !state.connected, on: { click: () => fileInput.click() },
+  }, "＋") : null;
+
   let replyBar = null;
   if (state.replyTo) {
     const r = state.replyTo;
     const author = userById(r.author?.user_id) || r.author;
     const mine = author?.user_id === state.user.user_id;
     replyBar = h("div", { class: "reply-bar" },
-      h("span", {}, "Replying to ", h("strong", {}, displayName(author))),
+      h("span", {}, "Replying to ", h("strong", {}, nameOf(author))),
       mine ? null : h("button", {
         class: `btn link ping ${state.replyPing ? "on" : ""}`, type: "button",
         title: state.replyPing ? "They'll be notified — click to turn off" : "They won't be notified — click to turn on",
@@ -218,7 +291,8 @@ export function renderComposer(state, actions) {
       h("button", { class: "icon-btn", type: "button", title: "Cancel reply", "aria-label": "Cancel reply", on: { click: actions.cancelReply } }, "✕"));
   }
 
-  add(form, ...[popup, replyBar, h("div", { class: `box ${replyBar ? "with-reply" : ""}` }, emojiBtn, input, send), count].filter(Boolean));
+  const tray = uploadTray(state);
+  add(form, ...[popup, replyBar, tray, h("div", { class: `box ${replyBar || tray ? "with-reply" : ""}` }, attachBtn, fileInput, input, emojiBtn, send), slowNote, count].filter(Boolean));
   autosize();
   if (state.connected && matchMedia("(pointer: fine)").matches && !state.editingId) input.focus();
 }

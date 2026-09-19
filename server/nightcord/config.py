@@ -36,6 +36,9 @@ class Config:
     public_hostnames: list[str] = field(default_factory=list)
     # Browser Origins allowed to open /ws. "*" allows any origin.
     allowed_origins: list[str] = field(default_factory=lambda: list(DEFAULT_ORIGINS))
+    # Behind a reverse proxy: take the client IP from X-Forwarded-For. Only
+    # enable this when the proxy is the only way to reach the server.
+    trust_proxy: bool = False
 
     @property
     def db_path(self) -> Path:

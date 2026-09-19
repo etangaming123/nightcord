@@ -114,3 +114,22 @@ async def timeout(ctx, conn, payload):
     )
     await member_updated(ctx, guild["guild_id"], user_id)
     return {"member": ctx.db.member(guild["guild_id"], user_id)}
+
+
+@handles(P.MEMBER_NICKNAME_SET)
+async def nickname_set(ctx, conn, payload):
+    guild_id = P.req_id(payload, "guild_id")
+    user_id = P.req_id(payload, "user_id")
+    flag = perm.CHANGE_NICKNAME if user_id == conn.user_id else perm.MANAGE_NICKNAMES
+    guild, _ = require_guild_perm(ctx, conn, guild_id, flag)
+    if user_id != conn.user_id:
+        require_above(ctx, conn, guild, user_id)
+    elif ctx.db.get_membership(guild["guild_id"], user_id) is None:
+        raise ProtocolError(P.NOT_FOUND, "Member not found")
+    nickname = P.opt_text(payload, "nickname", P.NICKNAME_MAX) or None
+    ctx.db.set_nickname(guild["guild_id"], user_id, nickname)
+    if user_id != conn.user_id:
+        ctx.db.add_audit(guild["guild_id"], conn.user_id, "member.nickname", user_id, {"nickname": nickname})
+    member = ctx.db.member(guild["guild_id"], user_id)
+    await ctx.hub.send_to_guild(guild["guild_id"], P.frame(P.GUILD_MEMBER_UPDATED, {"guild_id": guild["guild_id"], "member": member}))
+    return {"member": member}

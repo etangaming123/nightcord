@@ -45,7 +45,8 @@ def handles(type_: str):
 def load_all() -> dict[str, Handler]:
     # Importing registers handlers via @handles.
     from . import (  # noqa: F401
-        admin, auth, channels, dms, guilds, members, messages, notify, presence, roles, server, users,
+        admin, auth, channels, dms, guilds, legal, members, messages, notify, presence, roles, server, users,
+        voice,
     )
 
     return REGISTRY

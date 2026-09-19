@@ -36,7 +36,13 @@ export const state = {
   editingId: null, // message id being edited inline
   editDraft: "",
 
-  pendingAccounts: 0, // server owner: account requests waiting
+  pendingAccounts: 0, // server staff: account requests waiting
+  voice: new Map(), // user_id -> VoiceState in the current guild
+  myVoice: null, // my VoiceState (any guild) or null
+  collapsed: new Set(), // collapsed category ids (per device, see prefs)
+  hasMoreAfter: false, // jumped into the past: newer messages not loaded
+  pending: [], // composer uploads: { id, file, name, progress, attachment, error }
+  slowmodeUntil: new Map(), // channel_id -> ms timestamp
 };
 
 export function resetServerState() {
@@ -45,14 +51,14 @@ export function resetServerState() {
     users: new Map(), presences: new Map(), guilds: new Map(), dms: new Map(),
     readStates: new Map(), notifyPrefs: new Map(),
     view: "guild", guildId: null, channels: [], roles: [], members: [], channelId: null,
-    pendingAccounts: 0,
+    pendingAccounts: 0, voice: new Map(), myVoice: null, pending: [], slowmodeUntil: new Map(),
   });
   resetMessages();
 }
 
 export function resetMessages() {
   Object.assign(state, {
-    messages: [], messageIds: new Set(), hasMore: false, loadingOlder: false,
+    messages: [], messageIds: new Set(), hasMore: false, hasMoreAfter: false, loadingOlder: false,
     unreadMarker: null, typing: new Map(), replyTo: null, editingId: null, editDraft: "",
   });
 }
@@ -68,6 +74,31 @@ export function rememberUser(u) {
 }
 
 export const userById = (id) => state.users.get(id) || (state.user?.user_id === id ? state.user : undefined);
+
+// Name shown for a user in the current guild: nickname > display name > username.
+export function nameOf(user, guildId = state.view === "guild" ? state.guildId : null) {
+  if (!user) return "Unknown user";
+  if (user.deleted) return "Deleted User";
+  if (guildId && guildId === state.guildId) {
+    const nick = state.members.find((m) => m.user.user_id === user.user_id)?.nickname;
+    if (nick) return nick;
+  }
+  return user.display_name || user.username || "Unknown user";
+}
+
+// --- server staff (PROTOCOL.md §8c) -------------------------------------------
+
+const STAFF = { none: 0, moderator: 1, admin: 2, owner: 3 };
+export const staffLevel = (u = state.user) => STAFF[u?.server_role || (u?.is_server_owner ? "owner" : "none")] || 0;
+export const isStaff = (min = 1) => staffLevel() >= min;
+export const STAFF_LABEL = { owner: "Server owner", admin: "Server admin", moderator: "Server moderator" };
+
+export function mutedUntil() {
+  const until = state.user?.muted_until;
+  if (!until) return null;
+  if (until === "permanent") return "permanent";
+  return new Date(until) > new Date() ? until : null;
+}
 
 export function statusOf(userId) {
   if (userId === state.user?.user_id) {
@@ -97,16 +128,58 @@ export function can(flag, channel = undefined) {
 
 export const isGuildOwner = (g = currentGuild()) => !!g && !g.ghost && g.owner_user_id === state.user?.user_id;
 
+// Overwrites that apply to a channel (its category's when synced).
+export function effectiveOverwrites(channel) {
+  if (channel?.perms_synced && channel.parent_id) {
+    const parent = state.channels.find((c) => c.channel_id === channel.parent_id);
+    if (parent) return parent.overwrites || [];
+  }
+  return channel?.overwrites || [];
+}
+
 export function isPrivate(channel) {
-  const everyone = channel.overwrites?.find((o) => o.role_id === channel.guild_id);
+  const everyone = effectiveOverwrites(channel).find((o) => o.role_id === channel.guild_id);
   return !!(everyone && everyone.deny & PERMS.VIEW_CHANNEL);
 }
+
+// Mirrors the server's permission computation (PROTOCOL.md §5a) for another
+// member, to list who can see a channel. The server remains the authority.
+export function memberChannelPerms(member, channel) {
+  if (!member || !channel) return 0;
+  if (member.is_owner) return ~0;
+  const everyone = state.roles.find((r) => r.is_everyone);
+  const ids = new Set(member.role_ids);
+  let perms = everyone?.permissions || 0;
+  for (const r of state.roles) if (ids.has(r.role_id)) perms |= r.permissions;
+  if (perms & PERMS.ADMINISTRATOR) return ~0;
+  const ows = effectiveOverwrites(channel);
+  const e = ows.find((o) => o.role_id === channel.guild_id);
+  if (e) perms = (perms & ~e.deny) | e.allow;
+  let allow = 0;
+  let deny = 0;
+  for (const o of ows) if (ids.has(o.role_id)) { allow |= o.allow; deny |= o.deny; }
+  return (perms & ~deny) | allow;
+}
+
+export const memberCanView = (member, channel) => !!(memberChannelPerms(member, channel) & PERMS.VIEW_CHANNEL);
+
+// Channels in sidebar order: top-level channels, then each category with its channels.
+export function channelTree() {
+  const cats = state.channels.filter((c) => c.kind === "category");
+  const inCat = (id) => state.channels.filter((c) => c.kind !== "category" && c.parent_id === id);
+  const loose = state.channels.filter((c) => c.kind !== "category" && (!c.parent_id || !cats.some((k) => k.channel_id === c.parent_id)));
+  return { loose, categories: cats.map((cat) => ({ cat, channels: inCat(cat.channel_id) })) };
+}
+
+export const textChannels = () => state.channels.filter((c) => c.kind === "text");
+export const voiceEnabled = () => !!state.info?.voice_enabled;
+export const voiceIn = (channelId) => [...state.voice.values()].filter((v) => v.channel_id === channelId);
 
 export function dmTitle(ch) {
   if (ch.name) return ch.name;
   const others = ch.recipients.filter((u) => u.user_id !== state.user?.user_id);
   if (!others.length) return "Just you";
-  return others.map((u) => userById(u.user_id)?.display_name || userById(u.user_id)?.username || u.username).join(", ");
+  return others.map((u) => nameOf(userById(u.user_id) || u, null)).join(", ");
 }
 
 export function channelTitle(ch) {
@@ -127,6 +200,9 @@ export function roleColor(userId) {
   if (state.view !== "guild") return null;
   return memberRoles(memberById(userId)).find((r) => r.color)?.color || null;
 }
+
+// The highest role that's displayed separately in the member list, if any.
+export const hoistedRole = (member) => memberRoles(member).find((r) => r.hoist) || null;
 
 // --- unread / notification prefs -------------------------------------------
 

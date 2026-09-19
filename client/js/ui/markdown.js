@@ -1,6 +1,8 @@
 // Message markdown (PROTOCOL.md §4 Message): **bold**, *italic*, __underline__,
 // ~~strike~~, `code`, ```blocks```, > quotes, ||spoilers||, links, <@id>
-// mentions and @everyone.
+// mentions and @everyone. Documents (Terms of Service, Privacy Policy;
+// PROTOCOL.md §8b) also get headings, paragraphs, lists, rules and
+// [label](https://…) links.
 //
 // parse() turns text into a token tree without touching the DOM (so it can be
 // tested in node); render() builds DOM nodes from it with text nodes only —
@@ -160,7 +162,16 @@ function renderToken(t, ctx) {
     case "everyone":
       return h("span", { class: "mention everyone" }, "@everyone");
     case "link":
-      return h("a", { href: t.href, target: "_blank", rel: "noopener noreferrer nofollow" }, t.href);
+      return h("a", { href: t.href, target: "_blank", rel: "noopener noreferrer nofollow" },
+        t.children ? renderTokens(t.children, ctx) : t.href);
+    case "heading":
+      return h(`h${Math.min(6, t.level + 1)}`, { class: "doc-h" }, renderTokens(t.children, ctx));
+    case "paragraph":
+      return h("p", {}, renderTokens(t.children, ctx));
+    case "list":
+      return h(t.ordered ? "ol" : "ul", {}, t.items.map((item) => h("li", {}, renderTokens(item, ctx))));
+    case "hr":
+      return h("hr");
     default:
       return document.createTextNode("");
   }
@@ -183,4 +194,81 @@ export function plainText(content, ctx = {}) {
     }
   }).join("");
   return walk(parse(content));
+}
+
+// --- documents -------------------------------------------------------------
+
+const DOC_LINK = /\[([^\]\n]{1,200})\]\((https?:\/\/[^\s)<>"']+)\)/g;
+
+// Inline markdown plus [label](url) links.
+export function parseDocInline(text) {
+  const out = [];
+  let last = 0;
+  for (const m of text.matchAll(DOC_LINK)) {
+    out.push(...parseInline(text.slice(last, m.index)));
+    out.push({ type: "link", href: m[2], children: parseInline(m[1]) });
+    last = m.index + m[0].length;
+  }
+  out.push(...parseInline(text.slice(last)));
+  return out.filter((t) => t.type !== "text" || t.text);
+}
+
+// Block structure of a Markdown document, as tokens.
+export function parseDocument(text) {
+  const blocks = [];
+  const lines = String(text || "").replace(/\r\n?/g, "\n").split("\n");
+  let para = [];
+  const flushPara = () => {
+    if (para.length) blocks.push({ type: "paragraph", children: parseDocInline(para.join("\n")) });
+    para = [];
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const fence = /^```([A-Za-z0-9_+-]{0,20})\s*$/.exec(line);
+    if (fence) {
+      flushPara();
+      const body = [];
+      for (i++; i < lines.length && !/^```\s*$/.test(lines[i]); i++) body.push(lines[i]);
+      blocks.push({ type: "codeblock", lang: fence[1] || null, text: body.join("\n") });
+      continue;
+    }
+    const heading = /^(#{1,6})\s+(.*)$/.exec(line);
+    if (heading) {
+      flushPara();
+      blocks.push({ type: "heading", level: heading[1].length, children: parseDocInline(heading[2].trim()) });
+      continue;
+    }
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { flushPara(); blocks.push({ type: "hr" }); continue; }
+    const item = /^\s*(?:([-*+])|(\d{1,3})[.)])\s+(.*)$/.exec(line);
+    if (item) {
+      flushPara();
+      const ordered = !!item[2];
+      const items = [];
+      while (i < lines.length) {
+        const m = /^\s*(?:([-*+])|(\d{1,3})[.)])\s+(.*)$/.exec(lines[i]);
+        if (!m || !!m[2] !== ordered) break;
+        items.push(parseDocInline(m[3]));
+        i++;
+      }
+      i--;
+      blocks.push({ type: "list", ordered, items });
+      continue;
+    }
+    if (line.startsWith("> ") || line === ">") {
+      flushPara();
+      const quoted = [];
+      for (; i < lines.length && (lines[i].startsWith("> ") || lines[i] === ">"); i++) quoted.push(lines[i].slice(2));
+      i--;
+      blocks.push({ type: "quote", children: parseDocInline(quoted.join("\n")) });
+      continue;
+    }
+    if (!line.trim()) { flushPara(); continue; }
+    para.push(line);
+  }
+  flushPara();
+  return blocks;
+}
+
+export function renderDocument(text, ctx = {}) {
+  return h("div", { class: "doc" }, renderTokens(parseDocument(text), ctx));
 }

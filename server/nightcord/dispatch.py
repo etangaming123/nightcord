@@ -50,7 +50,7 @@ async def dispatch(ctx: Ctx, conn: Connection, raw: str) -> dict:
         result = await handler(ctx, conn, payload)
         return P.frame(P.result_type(type_), result, id_)
     except ProtocolError as e:
-        return P.frame(P.error_type(type_), P.error_payload(e.code, e.message), id_)
+        return P.frame(P.error_type(type_), P.error_payload(e.code, e.message, **e.extra), id_)
     except Exception:
         log.exception("handler %s failed", type_)
         return P.frame(

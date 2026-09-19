@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import json
+import math
 import re
 
 from .. import permissions as perm
 from .. import protocol as P
 from ..protocol import ProtocolError
 from . import handles
-from ._access import check_timeout, get_channel, require_channel_perm
+from ._access import check_muted, check_timeout, get_channel, require_channel_perm, require_member
 
 MENTION_RE = re.compile(r"<@(\d{1,20})>")
 EVERYONE_RE = re.compile(r"(?<![\w`])@everyone\b")
@@ -69,10 +71,45 @@ async def _reveal_dm(ctx, channel: dict) -> None:
     await ctx.hub.send_to_users(hidden, P.frame(P.DM_CREATED, {**fresh, "my_permissions": perm.DM_PERMS}))
 
 
+async def post_system(ctx, channel: dict, user_id: str, type_: str, *, reply_to_id: int | None = None) -> dict:
+    """A system message (join/leave/pin) authored by the user it's about."""
+    message = ctx.db.create_message(channel["channel_id"], user_id, "", type_=type_, reply_to_id=reply_to_id)
+    message["guild_id"] = channel["guild_id"]
+    await ctx.hub.send_to_channel_viewers(channel, P.frame(P.MESSAGE_NEW, message))
+    return message
+
+
+def _parse_iso(s: str) -> dt.datetime:
+    return dt.datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+
+def _check_slowmode(ctx, channel: dict, perms: int, user_id: str) -> None:
+    seconds = channel.get("slowmode_seconds") or 0
+    if not seconds or perms & (perm.MANAGE_MESSAGES | perm.MANAGE_CHANNELS):
+        return
+    last = ctx.db.last_sent_at(channel["channel_id"], user_id)
+    if last is None:
+        return
+    wait = seconds - (dt.datetime.now(dt.timezone.utc) - _parse_iso(last)).total_seconds()
+    if wait > 0:
+        retry = math.ceil(wait)
+        raise ProtocolError(P.SLOWMODE, f"Slowmode is on; wait {retry}s", retry_after=retry)
+
+
 @handles(P.MESSAGE_SEND)
 async def send(ctx, conn, payload):
     channel, perms = require_channel_perm(ctx, conn, P.req_str(payload, "channel_id"), perm.SEND_MESSAGES)
-    content = P.validate_content(payload.get("content"))
+    if channel["kind"] not in ("text", "dm", "group_dm"):
+        raise ProtocolError(P.BAD_REQUEST, "You can't send messages in that channel")
+    check_muted(ctx, conn)
+    attachment_ids = P.id_list(payload, "attachment_ids", max_len=P.MAX_ATTACHMENTS) if payload.get("attachment_ids") else []
+    content = P.validate_content(payload.get("content"), allow_empty=bool(attachment_ids))
+    if attachment_ids:
+        if not perms & perm.ATTACH_FILES:
+            raise ProtocolError(P.FORBIDDEN, "You can't upload files here")
+        if not ctx.db.claimable_attachments(attachment_ids, conn.user_id, channel["channel_id"]):
+            raise ProtocolError(P.BAD_REQUEST, "Unknown or already used attachment")
+    _check_slowmode(ctx, channel, perms, conn.user_id)
     reply_to = P.opt_id(payload, "reply_to_id")
     extra: list[str] = []
     if reply_to is not None:
@@ -89,6 +126,7 @@ async def send(ctx, conn, payload):
     message = ctx.db.create_message(
         channel["channel_id"], conn.user_id, content,
         reply_to_id=int(reply_to) if reply_to else None, mentions=mentions, mention_everyone=everyone,
+        attachment_ids=attachment_ids,
     )
     pinged = set(_audience_ids(ctx, channel)) if everyone else set(mentions)
     pinged.discard(conn.user_id)
@@ -101,11 +139,13 @@ async def send(ctx, conn, payload):
 @handles(P.MESSAGE_EDIT)
 async def edit(ctx, conn, payload):
     row, channel, perms = _require_message(ctx, conn, payload)
-    if row["author_user_id"] != conn.user_id:
+    if row["author_user_id"] != conn.user_id or row["type"] != "default":
         raise ProtocolError(P.FORBIDDEN, "You can only edit your own messages")
     if channel["guild_id"] is not None:
         check_timeout(ctx, channel["guild_id"], conn.user_id)
-    content = P.validate_content(payload.get("content"))
+    check_muted(ctx, conn)
+    has_files = bool(ctx.db.message_attachment_ids(row["message_id"]))
+    content = P.validate_content(payload.get("content"), allow_empty=has_files)
     if not conn.allow_message():
         raise ProtocolError(P.RATE_LIMITED, "You're sending messages too fast")
     old_mentions = set(json.loads(row["mentions"]))
@@ -124,10 +164,14 @@ async def edit(ctx, conn, payload):
 @handles(P.MESSAGE_DELETE)
 async def delete(ctx, conn, payload):
     row, channel, perms = _require_message(ctx, conn, payload)
+    from .files import delete_files
+
     own = row["author_user_id"] == conn.user_id
     if not own and not (channel["guild_id"] is not None and perms & perm.MANAGE_MESSAGES):
         raise ProtocolError(P.FORBIDDEN, "You can only delete your own messages")
+    files = ctx.db.message_attachment_ids(row["message_id"])
     ctx.db.delete_message(row["message_id"])
+    delete_files(ctx, files)
     if not own:
         ctx.db.add_audit(
             channel["guild_id"], conn.user_id, "message.delete", row["author_user_id"],
@@ -155,6 +199,7 @@ async def reaction_add(ctx, conn, payload):
         if channel["guild_id"] is not None:
             check_timeout(ctx, channel["guild_id"], conn.user_id)
         raise ProtocolError(P.FORBIDDEN, "You can't add reactions here")
+    check_muted(ctx, conn)
     existing = ctx.db.reaction_emoji(row["message_id"])
     if emoji not in existing and len(existing) >= P.MAX_REACTION_EMOJI:
         raise ProtocolError(P.TOO_MANY_REACTIONS, "This message has too many different reactions")
@@ -175,6 +220,7 @@ async def reaction_remove(ctx, conn, payload):
 @handles(P.TYPING_START)
 async def typing_start(ctx, conn, payload):
     channel, _ = require_channel_perm(ctx, conn, P.req_str(payload, "channel_id"), perm.SEND_MESSAGES)
+    check_muted(ctx, conn)
     if conn.allow_typing(channel["channel_id"]):
         await ctx.hub.send_to_focused(
             channel,
@@ -184,3 +230,93 @@ async def typing_start(ctx, conn, payload):
             exclude_user=conn.user_id,
         )
     return {}
+
+
+# --- pins ----------------------------------------------------------------------
+
+
+def _require_pin_perm(ctx, conn, channel: dict, perms: int) -> None:
+    if channel["guild_id"] is None:
+        check_muted(ctx, conn)
+        return
+    if not perms & perm.MANAGE_MESSAGES:
+        check_timeout(ctx, channel["guild_id"], conn.user_id)
+        raise ProtocolError(P.FORBIDDEN, "Pinning messages needs Manage Messages")
+
+
+@handles(P.MESSAGE_PIN)
+async def pin(ctx, conn, payload):
+    row, channel, perms = _require_message(ctx, conn, payload)
+    _require_pin_perm(ctx, conn, channel, perms)
+    if row["type"] != "default":
+        raise ProtocolError(P.BAD_REQUEST, "System messages can't be pinned")
+    if row["pinned_at"] is None:
+        if ctx.db.pin_count(channel["channel_id"]) >= P.MAX_PINS:
+            raise ProtocolError(P.PIN_LIMIT, f"A channel can have at most {P.MAX_PINS} pins")
+        message = ctx.db.set_pinned(row["message_id"], conn.user_id)
+        message["guild_id"] = channel["guild_id"]
+        await ctx.hub.send_to_channel_viewers(channel, P.frame(P.MESSAGE_UPDATED, message))
+        if channel["guild_id"] is not None:
+            ctx.db.add_audit(channel["guild_id"], conn.user_id, "message.pin", row["author_user_id"],
+                             {"channel_id": channel["channel_id"], "channel": channel["name"]})
+        await post_system(ctx, channel, conn.user_id, "pin", reply_to_id=row["message_id"])
+    return {}
+
+
+@handles(P.MESSAGE_UNPIN)
+async def unpin(ctx, conn, payload):
+    row, channel, perms = _require_message(ctx, conn, payload)
+    _require_pin_perm(ctx, conn, channel, perms)
+    if row["pinned_at"] is not None:
+        message = ctx.db.set_pinned(row["message_id"], None)
+        message["guild_id"] = channel["guild_id"]
+        await ctx.hub.send_to_channel_viewers(channel, P.frame(P.MESSAGE_UPDATED, message))
+    return {}
+
+
+@handles(P.CHANNEL_PINS)
+async def pins(ctx, conn, payload):
+    channel, _ = require_channel_perm(ctx, conn, P.req_str(payload, "channel_id"), perm.READ_HISTORY)
+    return {"messages": ctx.db.pins(channel["channel_id"])}
+
+
+# --- search --------------------------------------------------------------------
+
+SEARCH_HAS = ("file", "image", "video", "link")
+
+
+@handles(P.MESSAGE_SEARCH)
+async def search(ctx, conn, payload):
+    """Search one channel (guild or DM) or a whole guild, newest first."""
+    if payload.get("channel_id") is not None:
+        channel, _ = require_channel_perm(ctx, conn, P.req_id(payload, "channel_id"), perm.READ_HISTORY)
+        channel_ids = [channel["channel_id"]]
+    else:
+        guild, _ = require_member(ctx, conn, P.req_id(payload, "guild_id"))
+        channel_ids = [
+            c["channel_id"] for c in ctx.db.list_channels(guild["guild_id"])
+            if c["kind"] == "text" and ctx.perms.channel_perms(c, conn.user_id) & perm.READ_HISTORY
+        ]
+    query = P.opt_text(payload, "query", 200) or None
+    author_id = P.opt_id(payload, "author_id")
+    has = P.opt_enum(payload, "has", SEARCH_HAS)
+    pinned = P.opt_bool(payload, "pinned")
+    before = P.opt_id(payload, "before")
+    after = P.opt_id(payload, "after")
+    offset = P.opt_int(payload, "offset") or 0
+    if not 0 <= offset <= 5000:
+        raise ProtocolError(P.BAD_REQUEST, "'offset' must be between 0 and 5000")
+    if not (query or author_id or has or pinned):
+        raise ProtocolError(P.BAD_REQUEST, "Search for something")
+    messages, total = ctx.db.search(
+        channel_ids, query=query, author_id=author_id, has=has, pinned=pinned,
+        before=int(before) if before else None, after=int(after) if after else None,
+        offset=offset, limit=P.SEARCH_PAGE,
+    )
+    guild_of = {}
+    for m in messages:
+        cid = m["channel_id"]
+        if cid not in guild_of:
+            guild_of[cid] = ctx.db.get_channel(cid)["guild_id"]
+        m["guild_id"] = guild_of[cid]
+    return {"messages": messages, "total": total}

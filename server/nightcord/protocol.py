@@ -10,12 +10,18 @@ from __future__ import annotations
 import re
 from typing import Any
 
-PROTOCOL_VERSION = "0.3"
+PROTOCOL_VERSION = "0.4"
 
 # --- Message types -----------------------------------------------------------
 
 # Setup
 SETUP_CLAIM = "setup.claim"
+
+# Legal documents
+LEGAL_GET = "legal.get"
+LEGAL_GET_RESULT = "legal.get.result"
+LEGAL_ACCEPT = "legal.accept"
+LEGAL_ACCEPT_RESULT = "legal.accept.result"
 
 # Auth
 AUTH_REGISTER = "auth.register"
@@ -33,6 +39,7 @@ SERVER_INFO = "server.info"
 SERVER_INFO_RESULT = "server.info.result"
 SERVER_CONFIG_UPDATE = "server.config.update"
 SERVER_CONFIG_UPDATE_RESULT = "server.config.update.result"
+SERVER_CONFIG_UPDATED = "server.config.updated"
 
 # Admin (server owner)
 ADMIN_USERS_LIST = "admin.users.list"
@@ -46,6 +53,30 @@ ADMIN_GUILDS_LIST_RESULT = "admin.guilds.list.result"
 ADMIN_GUILDS_DELETE = "admin.guilds.delete"
 ADMIN_GUILDS_DELETE_RESULT = "admin.guilds.delete.result"
 ADMIN_ACCOUNT_REQUESTED = "admin.account_requested"
+ADMIN_STAFF_SET = "admin.staff.set"
+ADMIN_STAFF_SET_RESULT = "admin.staff.set.result"
+ADMIN_USERS_MUTE = "admin.users.mute"
+ADMIN_USERS_MUTE_RESULT = "admin.users.mute.result"
+ADMIN_USERS_DELETE = "admin.users.delete"
+ADMIN_USERS_DELETE_RESULT = "admin.users.delete.result"
+ADMIN_IP_BANS_LIST = "admin.ip_bans.list"
+ADMIN_IP_BANS_LIST_RESULT = "admin.ip_bans.list.result"
+ADMIN_IP_BANS_ADD = "admin.ip_bans.add"
+ADMIN_IP_BANS_ADD_RESULT = "admin.ip_bans.add.result"
+ADMIN_IP_BANS_REMOVE = "admin.ip_bans.remove"
+ADMIN_IP_BANS_REMOVE_RESULT = "admin.ip_bans.remove.result"
+ADMIN_DEVICE_BANS_LIST = "admin.device_bans.list"
+ADMIN_DEVICE_BANS_LIST_RESULT = "admin.device_bans.list.result"
+ADMIN_DEVICE_BANS_ADD = "admin.device_bans.add"
+ADMIN_DEVICE_BANS_ADD_RESULT = "admin.device_bans.add.result"
+ADMIN_DEVICE_BANS_REMOVE = "admin.device_bans.remove"
+ADMIN_DEVICE_BANS_REMOVE_RESULT = "admin.device_bans.remove.result"
+ADMIN_AUDIT_LOG = "admin.audit_log"
+ADMIN_AUDIT_LOG_RESULT = "admin.audit_log.result"
+ADMIN_STATS = "admin.stats"
+ADMIN_STATS_RESULT = "admin.stats.result"
+ADMIN_LEGAL_SET = "admin.legal.set"
+ADMIN_LEGAL_SET_RESULT = "admin.legal.set.result"
 
 # Users
 USER_PROFILE = "user.profile"
@@ -62,6 +93,8 @@ USER_SESSIONS_REVOKE = "user.sessions.revoke"
 USER_SESSIONS_REVOKE_RESULT = "user.sessions.revoke.result"
 USER_SEARCH = "user.search"
 USER_SEARCH_RESULT = "user.search.result"
+USER_DELETE = "user.delete"
+USER_DELETE_RESULT = "user.delete.result"
 USER_UPDATED = "user.updated"
 
 # Guilds
@@ -87,6 +120,14 @@ GUILD_CONFIG_UPDATE = "guild.config.update"
 GUILD_CONFIG_UPDATE_RESULT = "guild.config.update.result"
 GUILD_INVITE_CREATE = "guild.invite.create"
 GUILD_INVITE_CREATE_RESULT = "guild.invite.create.result"
+GUILD_INVITE_LIST = "guild.invite.list"
+GUILD_INVITE_LIST_RESULT = "guild.invite.list.result"
+GUILD_INVITE_REVOKE = "guild.invite.revoke"
+GUILD_INVITE_REVOKE_RESULT = "guild.invite.revoke.result"
+GUILD_INVITE_RESOLVE = "guild.invite.resolve"
+GUILD_INVITE_RESOLVE_RESULT = "guild.invite.resolve.result"
+GUILD_ICON_SET = "guild.icon.set"
+GUILD_ICON_SET_RESULT = "guild.icon.set.result"
 GUILD_BANS_LIST = "guild.bans.list"
 GUILD_BANS_LIST_RESULT = "guild.bans.list.result"
 GUILD_AUDIT_LOG = "guild.audit_log"
@@ -124,6 +165,8 @@ MEMBER_UNBAN = "member.unban"
 MEMBER_UNBAN_RESULT = "member.unban.result"
 MEMBER_TIMEOUT = "member.timeout"
 MEMBER_TIMEOUT_RESULT = "member.timeout.result"
+MEMBER_NICKNAME_SET = "member.nickname.set"
+MEMBER_NICKNAME_SET_RESULT = "member.nickname.set.result"
 
 # Channels
 CHANNEL_LIST = "channel.list"
@@ -142,6 +185,10 @@ CHANNEL_DELETE = "channel.delete"
 CHANNEL_DELETE_RESULT = "channel.delete.result"
 CHANNEL_ACK = "channel.ack"
 CHANNEL_ACK_RESULT = "channel.ack.result"
+CHANNEL_REORDER = "channel.reorder"
+CHANNEL_REORDER_RESULT = "channel.reorder.result"
+CHANNEL_PINS = "channel.pins"
+CHANNEL_PINS_RESULT = "channel.pins.result"
 CHANNEL_CREATED = "channel.created"
 CHANNEL_UPDATED = "channel.updated"
 CHANNEL_DELETED = "channel.deleted"
@@ -169,6 +216,12 @@ MESSAGE_EDIT = "message.edit"
 MESSAGE_EDIT_RESULT = "message.edit.result"
 MESSAGE_DELETE = "message.delete"
 MESSAGE_DELETE_RESULT = "message.delete.result"
+MESSAGE_PIN = "message.pin"
+MESSAGE_PIN_RESULT = "message.pin.result"
+MESSAGE_UNPIN = "message.unpin"
+MESSAGE_UNPIN_RESULT = "message.unpin.result"
+MESSAGE_SEARCH = "message.search"
+MESSAGE_SEARCH_RESULT = "message.search.result"
 MESSAGE_NEW = "message.new"
 MESSAGE_UPDATED = "message.updated"
 MESSAGE_DELETED = "message.deleted"
@@ -205,12 +258,21 @@ PRESENCE_SET = "presence.set"
 PRESENCE_SET_RESULT = "presence.set.result"
 PRESENCE_UPDATE = "presence.update"
 
+# Voice (placeholder: presence in a voice channel, no audio yet)
+VOICE_JOIN = "voice.join"
+VOICE_JOIN_RESULT = "voice.join.result"
+VOICE_LEAVE = "voice.leave"
+VOICE_LEAVE_RESULT = "voice.leave.result"
+VOICE_STATE_SET = "voice.state.set"
+VOICE_STATE_SET_RESULT = "voice.state.set.result"
+VOICE_STATE_UPDATED = "voice.state_updated"
+
 # Generic error for frames that can't be attributed to a request type
 ERROR = "error"
 
 # Types a client may send before authenticating.
 PRE_AUTH_TYPES = frozenset(
-    {SERVER_INFO, SETUP_CLAIM, AUTH_REGISTER, AUTH_LOGIN, AUTH_RESUME, AUTH_REQUEST_ACCOUNT}
+    {SERVER_INFO, LEGAL_GET, SETUP_CLAIM, AUTH_REGISTER, AUTH_LOGIN, AUTH_RESUME, AUTH_REQUEST_ACCOUNT}
 )
 
 # Requests answered with auth.ok / auth.error instead of X.result / X.error.
@@ -246,6 +308,15 @@ AVATAR_INVALID = "avatar_invalid"
 TOO_MANY_REACTIONS = "too_many_reactions"
 DM_LIMIT = "dm_limit"
 INVALID_CURRENT_PASSWORD = "invalid_current_password"
+FILE_TOO_LARGE = "file_too_large"
+MUTED = "muted"
+IP_BANNED = "ip_banned"
+DEVICE_BANNED = "device_banned"
+SLOWMODE = "slowmode"
+INVITE_EXPIRED = "invite_expired"
+LEGAL_REQUIRED = "legal_required"
+VOICE_DISABLED = "voice_disabled"
+PIN_LIMIT = "pin_limit"
 
 ERROR_CODES = frozenset(
     {
@@ -256,7 +327,8 @@ ERROR_CODES = frozenset(
         GUILD_CREATION_DISABLED, ALREADY_MEMBER, INTERNAL_ERROR,
         SETUP_REQUIRED, INVALID_SETUP_CODE, SETUP_ALREADY_DONE, ACCOUNT_DISABLED,
         BANNED, TIMED_OUT, AVATAR_INVALID, TOO_MANY_REACTIONS, DM_LIMIT,
-        INVALID_CURRENT_PASSWORD,
+        INVALID_CURRENT_PASSWORD, FILE_TOO_LARGE, MUTED, IP_BANNED, DEVICE_BANNED,
+        SLOWMODE, INVITE_EXPIRED, LEGAL_REQUIRED, VOICE_DISABLED, PIN_LIMIT,
     }
 )
 
@@ -278,6 +350,10 @@ PERMS = {
     "MODERATE_MEMBERS": 1 << 12,
     "VIEW_AUDIT_LOG": 1 << 13,
     "ADMINISTRATOR": 1 << 14,
+    "ATTACH_FILES": 1 << 15,
+    "CONNECT": 1 << 16,
+    "CHANGE_NICKNAME": 1 << 17,
+    "MANAGE_NICKNAMES": 1 << 18,
 }
 
 # --- Limits ------------------------------------------------------------------
@@ -307,6 +383,32 @@ MAX_TIMEOUT_SECONDS = 28 * 24 * 3600
 MAX_BAN_DELETE_SECONDS = 7 * 24 * 3600
 COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
+NICKNAME_MAX = 32
+TOPIC_MAX = 1024
+CHANNEL_TITLE_MAX = 32  # voice channel and category names (free text)
+MAX_CHANNELS = 200
+MAX_ATTACHMENTS = 10
+FILENAME_MAX = 128
+DEFAULT_MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+MAX_UPLOAD_BYTES_CEILING = 1024 * 1024 * 1024
+LEGAL_MAX_CHARS = 30000
+MAX_PINS = 50
+SEARCH_PAGE = 25
+SLOWMODE_PRESETS = (0, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 21600)
+INVITE_MAX_USES = (0, 1, 5, 10, 25, 50, 100)
+INVITE_MAX_AGES = (0, 1800, 3600, 21600, 43200, 86400, 604800)
+VANITY_RE = re.compile(r"^[a-z0-9-]{3,32}$")
+DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
+MAX_MUTE_SECONDS = 365 * 24 * 3600
+
+# Guild system message flags
+SYSTEM_JOIN = 1
+SYSTEM_LEAVE = 2
+
+MESSAGE_TYPES = ("default", "member_join", "member_leave", "pin")
+CHANNEL_KINDS = ("text", "voice", "category")
+STAFF_ROLES = ("none", "moderator", "admin")
+
 PRESENCE_PREFS = ("online", "idle", "dnd", "invisible")
 NOTIFY_LEVELS = ("all", "mentions", "none")
 
@@ -314,11 +416,12 @@ NOTIFY_LEVELS = ("all", "mentions", "none")
 class ProtocolError(Exception):
     """Raised by handlers; becomes an `X.error` (or `auth.error`) frame."""
 
-    def __init__(self, code: str, message: str | None = None):
+    def __init__(self, code: str, message: str | None = None, **extra: Any):
         assert code in ERROR_CODES, code
         super().__init__(message or code)
         self.code = code
         self.message = message or code.replace("_", " ")
+        self.extra = extra
 
 
 # --- Envelope builders -------------------------------------------------------
@@ -339,8 +442,8 @@ def error_type(request_type: str) -> str:
     return AUTH_ERROR if request_type in AUTH_OK_TYPES else f"{request_type}.error"
 
 
-def error_payload(code: str, message: str) -> dict:
-    return {"code": code, "message": message}
+def error_payload(code: str, message: str, **extra: Any) -> dict:
+    return {"code": code, "message": message, **extra}
 
 
 # --- Payload field helpers ---------------------------------------------------
@@ -470,15 +573,36 @@ def validate_channel_name(name: Any) -> str:
     return name
 
 
-def validate_content(content: Any) -> str:
+def validate_content(content: Any, *, allow_empty: bool = False) -> str:
+    if content is None and allow_empty:
+        return ""
     if not isinstance(content, str):
         raise ProtocolError(BAD_REQUEST, "'content' must be a string")
     content = content.strip()
-    if not content:
+    if not content and not allow_empty:
         raise ProtocolError(BAD_REQUEST, "Message is empty")
     if len(content) > CONTENT_MAX_CHARS:
         raise ProtocolError(CONTENT_TOO_LONG, "Message exceeds 2000 characters")
     return content
+
+
+def validate_channel_title(name: Any) -> str:
+    """Voice channel / category names: free text."""
+    if not isinstance(name, str) or not name.strip():
+        raise ProtocolError(BAD_REQUEST, "Name can't be empty")
+    name = " ".join(name.split())
+    if len(name) > CHANNEL_TITLE_MAX:
+        raise ProtocolError(BAD_REQUEST, f"Name must be at most {CHANNEL_TITLE_MAX} characters")
+    return name
+
+
+def opt_device_id(payload: dict) -> str | None:
+    val = payload.get("device_id")
+    if val is None:
+        return None
+    if not isinstance(val, str) or not DEVICE_ID_RE.match(val):
+        raise ProtocolError(BAD_REQUEST, "'device_id' must be 16-64 characters: letters, digits, _ -")
+    return val
 
 
 def validate_color(color: Any) -> str | None:

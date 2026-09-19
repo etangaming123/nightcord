@@ -13,3 +13,7 @@ allowed_origins = [
   "https://YOUR-USERNAME.github.io",
   "http://localhost:8000",
 ]
+
+# Behind a reverse proxy (nginx, Caddy, Cloudflare Tunnel)? Take client IPs
+# from X-Forwarded-For so IP bans work. Leave false when clients connect directly.
+trust_proxy = false

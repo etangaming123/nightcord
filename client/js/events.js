@@ -1,8 +1,8 @@
 // Server → client events (PROTOCOL.md §5): keep state in sync and redraw.
 
 import {
-  ackCurrent, addMessage, applyReaction, expireTyping, forgetGuild, loadAll, openGuild, openHome, reloadRoles,
-  removeMessage, updateMessage, upsertMember,
+  ackCurrent, addMessage, applyReaction, expireTyping, forgetGuild, legalChanged, loadAll, openGuild, openHome,
+  reloadRoles, removeMessage, setServerInfo, updateMessage, upsertMember,
 } from "./actions.js";
 import { req } from "./api.js";
 import { notifyMessage } from "./notify.js";
@@ -27,8 +27,9 @@ function permissionsChanged(guildId) {
       state.guilds = new Map(guilds.map((g) => [g.guild_id, g]));
       state.readStates = new Map(read_states.map((s) => [s.channel_id, s]));
       if (state.view === "guild" && state.guildId === guildId) {
-        const { channels } = await req(T.CHANNEL_LIST, { guild_id: guildId });
+        const { channels, voice_states: voice } = await req(T.CHANNEL_LIST, { guild_id: guildId });
         state.channels = sortChannels(channels);
+        state.voice = new Map((voice || []).map((v) => [v.user_id, v]));
         if (state.channelId && !channels.some((c) => c.channel_id === state.channelId)) {
           toast("You no longer have access to that channel.");
           await openGuild(guildId);
@@ -74,7 +75,7 @@ export function wireEvents(conn) {
         invalidate("sidebar", "rail");
       }).catch(() => {});
     }
-    if (m.channel_id === state.channelId) {
+    if (m.channel_id === state.channelId && !state.hasMoreAfter) {
       if (state.typing.delete(m.author.user_id)) renderTyping(state);
       if (addMessage(m)) {
         if (mine) state.scrollTo = "bottom";
@@ -129,9 +130,37 @@ export function wireEvents(conn) {
   });
 
   on(T.USER_UPDATED, (u) => {
-    if (u.user_id === state.user.user_id) state.user = { ...state.user, ...u };
+    if (u.user_id === state.user.user_id) {
+      const wasMuted = state.user.muted_until;
+      state.user = { ...state.user, ...u };
+      if ("muted_until" in u && u.muted_until !== wasMuted) {
+        toast(u.muted_until ? "You've been muted on this server by its staff." : "You're no longer muted.", { error: !!u.muted_until });
+      }
+    }
     rememberUser(u);
-    invalidate("members", "sidebar", "header", "chat");
+    invalidate("members", "sidebar", "header", "chat", "composer");
+  });
+
+  on(T.SERVER_CONFIG_UPDATED, (config) => {
+    const before = state.info?.legal_version;
+    const voiceBefore = state.info?.voice_enabled;
+    setServerInfo(config);
+    if (!config.voice_enabled && voiceBefore) {
+      state.voice.clear();
+      state.myVoice = null;
+    }
+    if (config.voice_enabled !== voiceBefore && state.view === "guild" && state.guildId) permissionsChanged(state.guildId);
+    if (config.legal_version !== before && config.legal_version) legalChanged();
+    invalidate("sidebar", "composer");
+  });
+
+  on(T.VOICE_STATE_UPDATED, (v) => {
+    if (v.user_id === state.user.user_id) state.myVoice = v.channel_id ? v : null;
+    if (v.guild_id === state.guildId) {
+      if (v.channel_id) state.voice.set(v.user_id, v);
+      else state.voice.delete(v.user_id);
+    }
+    invalidate("sidebar");
   });
 
   // --- guilds ---
@@ -147,6 +176,7 @@ export function wireEvents(conn) {
     if (!g) return;
     const msg = { kicked: `You were kicked from ${g.name}.`, banned: `You were banned from ${g.name}.`, deleted: `${g.name} was deleted.` }[reason];
     toast(msg || `You left ${g.name}.`, { error: reason !== "deleted" });
+    if (state.myVoice?.guild_id === guild_id) state.myVoice = null;
     forgetGuild(guild_id);
   });
 

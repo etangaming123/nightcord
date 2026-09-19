@@ -2,34 +2,41 @@
 // permissions: Overview, Roles, Members, Invites, Bans, Audit log, Delete.
 
 import { LIMITS, PERMS, T } from "../protocol.js";
-import { can, currentGuild, isGuildOwner, memberRoles, state, userById } from "../state.js";
-import { add, avatar, clear, displayName, fmtDateTime, h, iconBtn } from "./dom.js";
+import { can, currentGuild, isGuildOwner, memberRoles, nameOf, state, userById } from "../state.js";
+import { add, avatar, clear, displayName, fmtDate, fmtDateTime, h, iconBtn } from "./dom.js";
+import { guildIcon, invitesTab } from "./invites.js";
 import { closeFullscreen, confirmModal, openFullscreen, openMenu, refreshFullscreen, toast } from "./modals.js";
 import { copyText } from "./profile.js";
+import { blobToBase64, resizeAvatar } from "./settings.js";
 
 export const PERM_INFO = [
   { heading: "General" },
   ["VIEW_CHANNEL", "View channels", "See channels and read new messages in them."],
   ["MANAGE_CHANNELS", "Manage channels", "Create, edit, reorder and delete channels."],
   ["MANAGE_ROLES", "Manage roles", "Create and edit roles below their highest role, assign them, and edit channel permissions."],
-  ["MANAGE_GUILD", "Manage guild", "Rename the guild and change its listing."],
+  ["MANAGE_GUILD", "Manage guild", "Change the guild's name, icon, listing, system messages and public invite link, and see every invite."],
   ["VIEW_AUDIT_LOG", "View audit log", "Read the record of changes made in this guild."],
   { heading: "Membership" },
   ["CREATE_INVITE", "Create invite", "Invite new people to this guild."],
   ["KICK_MEMBERS", "Kick members", "Remove members below them. Kicked members can rejoin with an invite."],
   ["BAN_MEMBERS", "Ban members", "Remove members below them for good, and manage the ban list."],
   ["MODERATE_MEMBERS", "Time out members", "Stop members below them from talking for a while."],
+  ["CHANGE_NICKNAME", "Change nickname", "Set their own nickname in this guild."],
+  ["MANAGE_NICKNAMES", "Manage nicknames", "Change the nicknames of members below them."],
   { heading: "Text" },
   ["SEND_MESSAGES", "Send messages", "Post messages in channels."],
   ["READ_HISTORY", "Read message history", "Scroll back through older messages."],
   ["ADD_REACTIONS", "Add reactions", "React to messages with emoji."],
+  ["ATTACH_FILES", "Attach files", "Upload images, videos and other files."],
   ["MENTION_EVERYONE", "Mention @everyone", "Notify everyone who can see the channel."],
-  ["MANAGE_MESSAGES", "Manage messages", "Delete other people's messages."],
+  ["MANAGE_MESSAGES", "Manage messages", "Delete and pin other people's messages, and skip slowmode."],
+  { heading: "Voice" },
+  ["CONNECT", "Connect", "Join voice channels."],
   { heading: "Advanced" },
   ["ADMINISTRATOR", "Administrator", "Every permission, ignoring channel overrides. Grant with care."],
 ];
 
-export const CHANNEL_PERM_KEYS = ["VIEW_CHANNEL", "SEND_MESSAGES", "READ_HISTORY", "ADD_REACTIONS", "MENTION_EVERYONE", "MANAGE_MESSAGES", "MANAGE_CHANNELS"];
+export const CHANNEL_PERM_KEYS = ["VIEW_CHANNEL", "SEND_MESSAGES", "READ_HISTORY", "ADD_REACTIONS", "ATTACH_FILES", "MENTION_EVERYONE", "MANAGE_MESSAGES", "MANAGE_CHANNELS", "CONNECT"];
 
 const ACTION_TEXT = {
   "guild.update": "updated the guild",
@@ -46,6 +53,11 @@ const ACTION_TEXT = {
   "member.unban": "unbanned",
   "member.timeout": "timed out",
   "message.delete": "deleted a message by",
+  "message.pin": "pinned a message by",
+  "member.nickname": "changed the nickname of",
+  "invite.revoke": "revoked an invite by",
+  "channel.reorder": "reordered channels",
+  "guild.transfer": "became the guild owner",
 };
 
 export function guildSettings(actions, initial) {
@@ -61,7 +73,7 @@ export function guildSettings(actions, initial) {
       any("MANAGE_GUILD") ? { id: "overview", label: "Overview", render: (el) => overview(el, actions) } : null,
       any("MANAGE_ROLES") ? { id: "roles", label: "Roles", render: (el) => roles(el, actions) } : null,
       any("MANAGE_ROLES", "KICK_MEMBERS", "BAN_MEMBERS", "MODERATE_MEMBERS") ? { id: "members", label: "Members", render: (el) => members(el, actions) } : null,
-      any("CREATE_INVITE") ? { id: "invites", label: "Invites", render: (el) => invites(el, actions) } : null,
+      any("CREATE_INVITE", "MANAGE_GUILD") ? { id: "invites", label: "Invites", render: (el) => invitesTab(el, actions) } : null,
       any("BAN_MEMBERS") ? { id: "bans", label: "Bans", render: (el) => bans(el, actions) } : null,
       any("VIEW_AUDIT_LOG") ? { id: "audit", label: "Audit log", render: (el) => audit(el, actions) } : null,
       owner ? { separator: true } : null,
@@ -75,9 +87,40 @@ function overview(el, actions) {
   const listedNote = state.info.guild_list_visible
     ? "Anyone on this server can find and join it from Browse."
     : "The server owner has turned off the public list, so this has no effect right now.";
+  const fileInput = h("input", { type: "file", accept: "image/png,image/jpeg,image/webp,image/gif", hidden: true });
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files[0];
+    fileInput.value = "";
+    if (!file) return;
+    try {
+      await actions.setGuildIcon(await blobToBase64(await resizeAvatar(file)));
+      toast("Icon updated");
+      refreshFullscreen();
+    } catch (e) {
+      toast(e.message, { error: true });
+    }
+  });
+  const texts = state.channels.filter((c) => c.kind === "text");
+  const sysChannel = h("select", { name: "system_channel_id" },
+    h("option", { value: "" }, "No system messages"),
+    texts.map((c) => h("option", { value: c.channel_id, selected: c.channel_id === g.system_channel_id }, `#${c.name}`)));
+  const flag = (bit, label) => h("label", { class: "check" },
+    h("input", { type: "checkbox", name: `flag${bit}`, checked: !!(g.system_flags & bit) }), label);
   const form = h("form", { class: "stack narrow" },
+    h("div", { class: "avatar-edit" },
+      guildIcon(g, "lg"),
+      h("div", { class: "stack" },
+        h("div", { class: "row" },
+          h("button", { class: "btn primary", type: "button", on: { click: () => fileInput.click() } }, "Upload icon"),
+          g.icon_id ? h("button", { class: "btn", type: "button", on: { click: async () => { try { await actions.setGuildIcon(null); refreshFullscreen(); } catch (e) { toast(e.message, { error: true }); } } } }, "Remove") : null),
+        h("span", { class: "muted small" }, "Square images work best; it's shrunk to 128×128.")),
+      fileInput),
     h("label", {}, "Guild name", h("input", { name: "name", required: true, maxLength: LIMITS.GUILD_NAME_MAX, value: g.name })),
     h("label", { class: "check" }, h("input", { type: "checkbox", name: "listed", checked: g.listed }), h("span", {}, "List in the public guild directory", h("span", { class: "muted small block" }, listedNote))),
+    h("h3", {}, "System messages"),
+    h("label", {}, "Channel", sysChannel),
+    flag(LIMITS.SYSTEM_JOIN, "Say hello when someone joins"),
+    flag(LIMITS.SYSTEM_LEAVE, "Say when someone leaves (or is kicked or banned)"),
     h("div", { class: "muted small" }, "Guild ID: ", h("button", { class: "btn link mono", type: "button", on: { click: () => copyText(g.guild_id, "Guild ID copied") } }, g.guild_id)),
     h("div", {}, h("button", { class: "btn primary", type: "submit" }, "Save changes")));
   form.addEventListener("submit", async (e) => {
@@ -87,6 +130,10 @@ function overview(el, actions) {
     const name = String(fd.get("name")).trim();
     if (name !== g.name) patch.name = name;
     if ((fd.get("listed") === "on") !== g.listed) patch.listed = fd.get("listed") === "on";
+    const sys = fd.get("system_channel_id") || null;
+    if (sys !== g.system_channel_id) patch.system_channel_id = sys;
+    const flags = (fd.get(`flag${LIMITS.SYSTEM_JOIN}`) ? LIMITS.SYSTEM_JOIN : 0) | (fd.get(`flag${LIMITS.SYSTEM_LEAVE}`) ? LIMITS.SYSTEM_LEAVE : 0);
+    if (flags !== g.system_flags) patch.system_flags = flags;
     try {
       if (Object.keys(patch).length) await actions.updateGuild(patch);
       toast("Saved");
@@ -118,18 +165,54 @@ function roles(el, actions) {
       state.roles.map((r) => {
         const editable = r.is_everyone || r.position < rank;
         const idx = movable.findIndex((x) => x.role_id === r.role_id);
+        const menu = (anchor) => openMenu(anchor, [
+          { label: "Move up", icon: "↑", disabled: !(idx > 0 && movable[idx - 1].position < rank), onClick: () => move(r, -1) },
+          { label: "Move down", icon: "↓", disabled: !(idx < movable.length - 1), onClick: () => move(r, 1) },
+          "-",
+          { label: "Delete role", icon: "🗑", danger: true, onClick: () => deleteRole(r) },
+        ], { placement: "right" });
         return h("div", {
           class: `role-item ${r.role_id === selected ? "active" : ""} ${editable ? "" : "locked"}`,
           role: "button", tabindex: "0",
-          on: { click: () => { selected = r.role_id; drawList(); drawEditor(); } },
+          on: {
+            click: () => select(r.role_id),
+            contextmenu: (e) => { if (!r.is_everyone && editable) { e.preventDefault(); menu({ x: e.clientX, y: e.clientY }); } },
+          },
         },
         h("span", { class: "role-dot", style: `background:${r.color || "var(--muted)"}` }),
         h("span", { class: "name" }, r.name),
+        r.hoist ? h("span", { class: "muted small", title: "Displayed separately" }, "▤") : null,
         editable ? null : h("span", { class: "lock", title: "Above your highest role" }, "🔒"),
-        !r.is_everyone && editable && idx > 0 && movable[idx - 1].position < rank ? iconBtn("↑", "Move up", () => move(r, -1)) : null,
-        !r.is_everyone && editable && idx < movable.length - 1 ? iconBtn("↓", "Move down", () => move(r, 1)) : null);
+        !r.is_everyone && editable ? iconBtn("⋯", `More options for ${r.name}`, (e) => menu(e.currentTarget)) : null);
       }));
   };
+
+  // Unsaved edits: switching roles asks first (like Discord's "Careful!" bar).
+  let dirty = false;
+  const select = (id) => {
+    if (id === selected) return;
+    if (dirty) {
+      confirmModal({
+        title: "Discard unsaved changes?", message: "You changed this role but didn't save.", confirmLabel: "Discard",
+        onConfirm: () => { dirty = false; selected = id; drawList(); drawEditor(); },
+      });
+      return;
+    }
+    selected = id;
+    drawList();
+    drawEditor();
+  };
+
+  const deleteRole = (role) => confirmModal({
+    title: `Delete the ${role.name} role?`,
+    message: "Members lose it and any channel overrides for it. This can't be undone.",
+    confirmLabel: "Delete role",
+    onConfirm: async () => {
+      await actions.req(T.ROLE_DELETE, { role_id: role.role_id });
+      dirty = false;
+      if (selected === role.role_id) selected = state.roles.find((r) => r.role_id !== role.role_id && !r.is_everyone)?.role_id || state.guildId;
+    },
+  });
 
   const move = async (role, delta) => {
     const ids = state.roles.filter((r) => !r.is_everyone).map((r) => r.role_id);
@@ -166,6 +249,13 @@ function roles(el, actions) {
     const form = h("form", { class: "stack" });
     const color = h("input", { type: "color", name: "color", value: role.color || "#99aab5", disabled: role.is_everyone || !editable });
     let useColor = !!role.color;
+    const bar = h("div", { class: "unsaved-bar", hidden: true },
+      h("span", {}, "Careful — you have unsaved changes!"),
+      h("button", { class: "btn link", type: "button", on: { click: () => { dirty = false; drawEditor(); } } }, "Reset"),
+      h("button", { class: "btn primary", type: "submit" }, "Save changes"));
+    const markDirty = () => { dirty = true; bar.hidden = false; };
+    form.addEventListener("input", markDirty);
+    form.addEventListener("change", markDirty);
     add(form,
       h("div", { class: "row" },
         h("label", { class: "grow" }, "Role name", h("input", { name: "name", maxLength: LIMITS.ROLE_NAME_MAX, value: role.name, disabled: role.is_everyone || !editable })),
@@ -174,6 +264,9 @@ function roles(el, actions) {
             type: "checkbox", checked: !useColor, disabled: !editable, on: { change: (e) => { useColor = !e.currentTarget.checked; } },
           }), "None")))),
       role.is_everyone ? h("p", { class: "muted small" }, "@everyone applies to every member of the guild.") : null,
+      role.is_everyone ? null : h("label", { class: "perm-row" },
+        h("span", { class: "meta" }, h("span", { class: "name" }, "Display role members separately"), h("span", { class: "sub" }, "Online members with this role get their own group in the member list.")),
+        h("input", { type: "checkbox", class: "switch", name: "hoist", checked: role.hoist, disabled: !editable })),
       editable ? null : h("p", { class: "error-box info" }, "This role is at or above your highest role, so you can't edit it."));
     color.addEventListener("input", () => { useColor = true; form.querySelector(".check input").checked = false; });
     const permBox = h("div", { class: "perm-list" });
@@ -192,24 +285,7 @@ function roles(el, actions) {
         })));
     }
     add(form, permBox);
-    if (editable) {
-      add(form, h("div", { class: "row sticky-actions" },
-        h("button", { class: "btn primary", type: "submit" }, "Save changes"),
-        role.is_everyone ? null : h("button", {
-          class: "btn danger", type: "button",
-          on: {
-            click: () => confirmModal({
-              title: `Delete the ${role.name} role?`,
-              message: "Members lose it and any channel overrides for it.",
-              confirmLabel: "Delete role",
-              onConfirm: async () => {
-                await actions.req(T.ROLE_DELETE, { role_id: role.role_id });
-                selected = state.roles.find((r) => r.role_id !== role.role_id && !r.is_everyone)?.role_id || state.guildId;
-              },
-            }),
-          },
-        }, "Delete role")));
-    }
+    if (editable) add(form, bar);
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const fd = new FormData(form);
@@ -217,9 +293,12 @@ function roles(el, actions) {
       if (!role.is_everyone) {
         patch.name = String(fd.get("name")).trim() || role.name;
         patch.color = useColor ? color.value : null;
+        patch.hoist = fd.get("hoist") === "on";
       }
       try {
         await actions.req(T.ROLE_UPDATE, { role_id: role.role_id, ...patch });
+        dirty = false;
+        bar.hidden = true;
         toast("Role saved");
       } catch (err) {
         toast(err.message, { error: true });
@@ -244,15 +323,19 @@ function members(el, actions) {
     clear(list);
     for (const m of state.members) {
       const u = userById(m.user.user_id) || m.user;
-      if (q && !u.username.toLowerCase().includes(q) && !(u.display_name || "").toLowerCase().includes(q)) continue;
+      if (q && !u.username.toLowerCase().includes(q) && !(u.display_name || "").toLowerCase().includes(q) && !(m.nickname || "").toLowerCase().includes(q)) continue;
       const items = actions.moderationItems(u.user_id);
       const assignable = actions.assignableRoles();
       const timedOut = m.timed_out_until && new Date(m.timed_out_until) > new Date();
       add(list, h("div", { class: "list-row" },
         avatar(u, { size: "sm" }),
         h("span", { class: "meta" },
-          h("span", { class: "name" }, displayName(u), m.is_owner ? h("span", { class: "crown" }, " ♛") : null,
+          h("span", { class: "name" }, nameOf(u), m.nickname ? h("span", { class: "muted small" }, ` ${u.username}`) : null,
+            m.is_owner ? h("span", { class: "crown" }, " ♛") : null,
             timedOut ? h("span", { class: "tag warn" }, "TIMED OUT") : null),
+          h("span", { class: "sub" }, `Joined ${fmtDate(m.joined_at)}`,
+            m.invited_by ? ` · invited by ${nameOf(userById(m.invited_by) || { username: "someone" })}` : m.invite_code ? " · via the public link" : "",
+            m.invite_code ? h("span", { class: "mono" }, ` (${m.invite_code})`) : null),
           h("span", { class: "role-chips" }, memberRoles(m).map((r) => h("span", { class: "role-chip" },
             h("span", { class: "role-dot", style: `background:${r.color || "var(--muted)"}` }), r.name)))),
         h("span", { class: "row" },
@@ -275,26 +358,7 @@ function members(el, actions) {
   draw();
 }
 
-// --- Invites, bans, audit log --------------------------------------------------
-
-function invites(el, actions) {
-  const area = h("div", { class: "stack narrow" });
-  const make = async () => {
-    try {
-      const code = await actions.createInvite();
-      clear(area,
-        h("div", { class: "row" }, h("div", { class: "code-display" }, code),
-          h("button", { class: "btn", type: "button", on: { click: () => copyText(code, "Invite code copied") } }, "Copy")),
-        h("p", { class: "muted small" }, "Share this code. It doesn't expire. People enter it under + → Join with code."),
-        h("div", {}, h("button", { class: "btn", type: "button", on: { click: make } }, "Create another")));
-    } catch (e) {
-      toast(e.message, { error: true });
-    }
-  };
-  clear(area, h("p", { class: "muted" }, "Invite codes let people join this guild."),
-    h("div", {}, h("button", { class: "btn primary", type: "button", on: { click: make } }, "Create invite code")));
-  add(el, area);
-}
+// --- Bans, audit log -----------------------------------------------------------
 
 async function bans(el, actions) {
   const { bans: list } = await actions.req(T.GUILD_BANS_LIST, { guild_id: state.guildId });

@@ -20,9 +20,14 @@
       <p class="muted">Connect to a Nightcord server.</p>
       <ul id="saved-servers" class="saved-servers"></ul>
       <form id="connect-form" class="stack" autocomplete="on">
-        <label>Server address
-          <input name="address" placeholder="chat.example.com:8765" required spellcheck="false" autocapitalize="off">
-        </label>
+        <label for="connect-address">Server address</label>
+        <div class="url-field">
+          <span id="connect-scheme" class="url-prefix" aria-hidden="true">https://</span>
+          <input id="connect-address" name="address" placeholder="chat.example.com:8765" required spellcheck="false" autocapitalize="off" autocomplete="url" inputmode="url">
+        </div>
+        <div class="chips">
+          <button type="button" class="chip" id="connect-localhost" title="Fill in a server running on this computer">localhost:8765</button>
+        </div>
         <button type="submit" class="btn primary">Connect</button>
       </form>
       <div id="connect-error" class="error-box" hidden></div>
@@ -83,6 +88,21 @@
         </div>
       </form>
       <div id="setup-message" class="error-box" hidden></div>
+    </div>
+  </section>
+
+  <!-- The server's Terms of Service / Privacy Policy (PROTOCOL.md §8b) -->
+  <section id="screen-legal" class="screen" hidden>
+    <div class="card wide">
+      <button id="legal-back" class="btn link" type="button">← Servers</button>
+      <h1 id="legal-server-name" class="server-title"></h1>
+      <p class="muted">Before you join, read this server's rules. You'll be asked to accept them when you create an account.</p>
+      <div id="legal-tabs" class="tabs" role="tablist"></div>
+      <div id="legal-body" class="legal-doc scroll" tabindex="0"></div>
+      <div class="row end">
+        <button id="legal-decline" class="btn" type="button">I don't agree</button>
+        <button id="legal-accept" class="btn primary" type="button">I agree</button>
+      </div>
     </div>
   </section>
 

@@ -29,7 +29,7 @@ def _active_user(ctx, user_id: str) -> dict:
     return row
 
 
-async def _announce(ctx, channel: dict, *, created_for: list[str] = (), exclude: str | None = None) -> None:
+async def announce_dm(ctx, channel: dict, *, created_for: list[str] = (), exclude: str | None = None) -> None:
     """dm.created to `created_for`; dm.updated to every other recipient."""
     await ctx.hub.send_to_users(created_for, P.frame(P.DM_CREATED, _dm(channel)))
     others = [u["user_id"] for u in channel["recipients"] if u["user_id"] not in created_for and u["user_id"] != exclude]
@@ -80,7 +80,7 @@ async def create_group(ctx, conn, payload):
         _active_user(ctx, uid)
     channel = ctx.db.create_group_dm(conn.user_id, others)
     await _presence_for(ctx, [conn.user_id, *others])
-    await _announce(ctx, channel, created_for=[conn.user_id, *others])
+    await announce_dm(ctx, channel, created_for=[conn.user_id, *others])
     return {"channel": _dm(channel)}
 
 
@@ -90,7 +90,7 @@ async def update(ctx, conn, payload):
     name = P.opt_text(payload, "name", P.GROUP_DM_NAME_MAX)
     ctx.db.set_dm_name(channel["channel_id"], name or None)
     channel = ctx.db.get_channel(channel["channel_id"])
-    await _announce(ctx, channel)
+    await announce_dm(ctx, channel)
     return {"channel": _dm(channel)}
 
 
@@ -107,7 +107,7 @@ async def add_recipient(ctx, conn, payload):
     ctx.db.add_dm_recipient(channel["channel_id"], user_id)
     channel = ctx.db.get_channel(channel["channel_id"])
     await _presence_for(ctx, [*ids, user_id])
-    await _announce(ctx, channel, created_for=[user_id])
+    await announce_dm(ctx, channel, created_for=[user_id])
     return {"channel": _dm(channel)}
 
 
@@ -121,7 +121,7 @@ async def leave(ctx, conn, payload):
         ctx.db.remove_dm_recipient(channel["channel_id"], conn.user_id)
         fresh = ctx.db.get_channel(channel["channel_id"])
         if fresh is not None:
-            await _announce(ctx, fresh)
+            await announce_dm(ctx, fresh)
     for c in ctx.hub.conns_by_user.get(conn.user_id, ()):
         if c.channel_id == channel["channel_id"]:
             c.channel_id = None

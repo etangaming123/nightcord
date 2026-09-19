@@ -2,19 +2,26 @@
 // lifecycle and reconnects (PROTOCOL.md §3). The app itself lives in
 // actions.js / events.js / render.js and ./ui/*.
 
-import { ackCurrent, actions, loadAll, restoreView, setSessionHooks } from "./actions.js";
+import { ackCurrent, actions, loadAll, openInvite, restoreView, setSessionHooks } from "./actions.js";
 import { req } from "./api.js";
 import { Connection, NightcordError, certTrustUrl, normalizeServerUrl } from "./connection.js";
 import { resync, wireEvents } from "./events.js";
 import { applyPrefs } from "./prefs.js";
 import { ERR, LIMITS, PROTOCOL_VERSION, T } from "./protocol.js";
 import { flush, invalidate, setActions } from "./render.js";
-import { resetServerState, state } from "./state.js";
+import { currentChannel, resetServerState, state } from "./state.js";
 import * as store from "./storage.js";
 import { $, add, clear, h, setAvatarBase } from "./ui/dom.js";
-import { closeFullscreen, closeModal, closePopover, toast } from "./ui/modals.js";
+import { clearPending } from "./uploads.js";
+import { setupDropZone } from "./ui/composer.js";
+import { legalLinks, legalUpdateModal, renderLegalTabs, showLegalModal } from "./ui/legal.js";
+import { closeSearch, searchOpen } from "./ui/search.js";
+import { closeFullscreen, closeModal, closePopover, openModal, toast } from "./ui/modals.js";
 
 const IDLE_AFTER_MS = 10 * 60 * 1000;
+const BANNED_CLOSE = 4003;
+
+let pendingInvite = null; // ?invite=CODE, opened once logged in
 
 setActions(actions);
 
@@ -22,7 +29,7 @@ setActions(actions);
 // Screens
 
 function showScreen(which) {
-  for (const id of ["connect", "setup", "auth"]) $(`#screen-${id}`).hidden = which !== id;
+  for (const id of ["connect", "setup", "legal", "auth"]) $(`#screen-${id}`).hidden = which !== id;
   $("#app").hidden = which !== "app";
   if (which !== "app") document.title = "Nightcord";
 }
@@ -44,7 +51,8 @@ function showConnect({ error = null, prefill = "" } = {}) {
     }, h("div", { class: "meta" }, h("div", { class: "name" }, s.label), h("div", { class: "url" }, s.url)), remove));
   }
   const form = $("#connect-form");
-  if (prefill) form.address.value = prefill;
+  if (prefill) form.address.value = prefill.replace(/^(https?|wss?):\/\//i, "");
+  updateScheme();
   const box = $("#connect-error");
   box.hidden = !error;
   if (error) clear(box, error);
@@ -62,6 +70,42 @@ function connectError(url, err) {
   return parts;
 }
 
+// The address field shows the scheme the client will use: https:// (wss)
+// normally, http:// (ws) for a local server while the client itself is on http.
+function updateScheme() {
+  const value = $("#connect-form").address.value.trim();
+  let scheme = "https://";
+  try {
+    if (value && !/^[a-z]+:\/\//i.test(value) && normalizeServerUrl(value).startsWith("ws:")) scheme = "http://";
+  } catch { /* invalid so far; keep the default */ }
+  if (/^[a-z]+:\/\//i.test(value)) scheme = "";
+  $("#connect-scheme").textContent = scheme;
+  $("#connect-scheme").hidden = !scheme;
+}
+
+// Connecting reveals your IP address to the server owner, so warn first
+// (PROTOCOL.md §8b). Resolves true to go ahead.
+function ipWarning(url) {
+  const host = new URL(url).host;
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (ok) => { if (!done) { done = true; closeModal(); resolve(ok); } };
+    openModal({
+      title: "Only join servers you trust",
+      subtitle: host,
+      content: h("div", { class: "stack warning-body" },
+        h("p", {}, "Nightcord servers are run by people, not by Nightcord. The owner of this server and its staff can see your ",
+          h("strong", {}, "IP address"), " and everything you send there."),
+        h("p", { class: "muted small" }, "Connect only if you know who runs it. You'll see this once per server.")),
+      actions: [
+        h("button", { class: "btn", type: "button", on: { click: () => finish(false) } }, "Cancel"),
+        h("button", { class: "btn primary", type: "button", on: { click: () => finish(true) } }, "I trust this server"),
+      ],
+      onClose: () => finish(false),
+    });
+  });
+}
+
 async function connectTo(input) {
   let url;
   try {
@@ -70,11 +114,18 @@ async function connectTo(input) {
     showConnect({ error: e.message, prefill: input });
     return;
   }
+  if (!store.isTrusted(url) && !(await ipWarning(url))) {
+    showConnect({ prefill: input });
+    return;
+  }
+  store.setTrusted(url);
   disconnect();
-  const button = $("#connect-form button");
+  const button = $("#connect-form button[type=submit]");
   button.disabled = true;
   button.textContent = "Connecting…";
   const conn = new Connection(url);
+  let banned = null;
+  conn.on(T.ERROR, (p) => { if (p.code === ERR.IP_BANNED) banned = p.message; });
   try {
     await conn.open();
     state.conn = conn;
@@ -83,7 +134,7 @@ async function connectTo(input) {
   } catch (e) {
     conn.close();
     state.conn = null;
-    showConnect({ error: connectError(url, e), prefill: input });
+    showConnect({ error: banned ? banned : connectError(url, e), prefill: input });
     return;
   } finally {
     button.disabled = false;
@@ -105,18 +156,44 @@ async function connectTo(input) {
   const token = store.getToken(url);
   if (token) {
     try {
-      await enterApp(await req(T.AUTH_RESUME, { session_token: token }));
+      await enterApp(await req(T.AUTH_RESUME, { session_token: token, device_id: store.getDeviceId(url) }));
       return;
     } catch (e) {
+      if (e.code === ERR.DEVICE_BANNED) { showAuth({ message: e.message }); return; }
       if (e.code !== ERR.SESSION_EXPIRED) toast(e.message, { error: true });
       store.setToken(url, null);
     }
   }
-  showAuth();
+  if (needsLegal()) showLegal();
+  else showAuth();
+}
+
+// --- server rules (before creating an account) ---
+
+const needsLegal = () => !!state.info?.legal_version && store.getLegalAccepted(state.url) !== state.info.legal_version;
+
+async function showLegal() {
+  showScreen("legal");
+  $("#legal-server-name").textContent = state.info.server_name;
+  const body = clear($("#legal-body"), h("p", { class: "muted" }, "Loading…"));
+  try {
+    const docs = await req(T.LEGAL_GET);
+    state.info.legal_version = docs.legal_version;
+    if (!docs.legal_version) { showAuth(); return; }
+    renderLegalTabs(docs, $("#legal-tabs"), body);
+  } catch (e) {
+    clear(body, h("div", { class: "error-box" }, e.message));
+  }
+}
+
+async function openLegalDoc(which) {
+  try { showLegalModal(await req(T.LEGAL_GET), which); } catch (e) { toast(e.message, { error: true }); }
 }
 
 function disconnect() {
   if (state.conn) state.conn.close();
+  closeSearch();
+  clearPending();
   resetServerState();
   setAvatarBase(null);
   closeModal();
@@ -166,6 +243,7 @@ async function submitSetup(e) {
   button.disabled = true;
   try {
     const ok = await req(T.SETUP_CLAIM, {
+      device_id: store.getDeviceId(state.url),
       setup_code: form.code.value.trim(),
       username: form.username.value.trim(),
       password: form.password.value,
@@ -217,6 +295,10 @@ function showAuth({ message = null, info = false } = {}) {
   $("#auth-note-field").hidden = authMode !== "request";
   $("#auth-submit").textContent = { login: "Log in", register: "Create account", request: "Send request" }[authMode];
 
+  const links = legalLinks(state.info, openLegalDoc);
+  $("#auth-legal")?.remove();
+  if (links) { links.id = "auth-legal"; form.after(links); }
+
   const box = $("#auth-message");
   if (!message && policy === "off" && authMode === "login") {
     message = "This server isn't accepting new accounts.";
@@ -239,18 +321,28 @@ async function submitAuth(e) {
     if (authMode !== "login" && !LIMITS.USERNAME_RE.test(username)) {
       throw new Error("Username must be 3–32 characters: letters, digits, _ . -");
     }
+    const device_id = store.getDeviceId(state.url);
+    const accept_legal_version = store.getLegalAccepted(state.url) || undefined;
     if (authMode === "request") {
-      await req(T.AUTH_REQUEST_ACCOUNT, { username, password, note: form.note.value.trim() || undefined });
+      await req(T.AUTH_REQUEST_ACCOUNT, { username, password, note: form.note.value.trim() || undefined, device_id, accept_legal_version });
       form.reset();
       authMode = "login";
       showAuth({ message: "Request sent. You can log in once the server owner approves it.", info: true });
       return;
     }
-    const type = authMode === "register" ? T.AUTH_REGISTER : T.AUTH_LOGIN;
-    const ok = await req(type, { username, password });
+    const ok = authMode === "register"
+      ? await req(T.AUTH_REGISTER, { username, password, device_id, accept_legal_version })
+      : await req(T.AUTH_LOGIN, { username, password, device_id });
     form.password.value = "";
     await enterApp(ok);
   } catch (err) {
+    if (err.code === ERR.LEGAL_REQUIRED) {
+      // The documents changed since this device accepted them.
+      store.setLegalAccepted(state.url, null);
+      state.info = { ...state.info, ...(await req(T.SERVER_INFO).catch(() => ({}))) };
+      showLegal();
+      return;
+    }
     showAuth({ message: err.message });
   } finally {
     button.disabled = false;
@@ -260,7 +352,7 @@ async function submitAuth(e) {
 // ---------------------------------------------------------------------------
 // App
 
-async function enterApp({ session_token, user }) {
+async function enterApp({ session_token, user, legal_update_required }) {
   store.setToken(state.url, session_token);
   state.user = user;
   state.users.set(user.user_id, user);
@@ -274,11 +366,37 @@ async function enterApp({ session_token, user }) {
   } catch (e) {
     toast(e.message, { error: true });
   }
+  if (legal_update_required) await promptLegalUpdate();
+  if (pendingInvite) {
+    const code = pendingInvite;
+    pendingInvite = null;
+    openInvite(code);
+  }
+}
+
+async function promptLegalUpdate() {
+  try {
+    const docs = await req(T.LEGAL_GET);
+    if (!docs.legal_version) return;
+    legalUpdateModal(docs, {
+      onAccept: async () => {
+        const res = await req(T.LEGAL_ACCEPT, { legal_version: docs.legal_version });
+        state.user = { ...state.user, ...res.user };
+        store.setLegalAccepted(state.url, docs.legal_version);
+        closeModal();
+      },
+      onLogout: () => { closeModal(); logout(); },
+    });
+  } catch (e) {
+    toast(e.message, { error: true });
+  }
 }
 
 // Back to the login screen on the same connection.
 function toLogin(message) {
   const { conn, url, info } = state;
+  closeSearch();
+  clearPending();
   resetServerState();
   Object.assign(state, { conn, url, info });
   closeModal();
@@ -299,7 +417,12 @@ function switchServer() {
   showConnect();
 }
 
-setSessionHooks({ logout, switchServer });
+setSessionHooks({
+  logout,
+  switchServer,
+  accountDeleted: () => { store.setToken(state.url, null); toLogin("Your account was deleted."); },
+  legalChanged: () => { if (state.user && !state.user.is_server_owner && state.user.legal_version !== state.info.legal_version) promptLegalUpdate(); },
+});
 
 function setBanner(text) {
   const el = $("#status-banner");
@@ -308,8 +431,16 @@ function setBanner(text) {
 }
 
 function wireConnection(conn) {
-  conn.addEventListener("disconnected", () => {
+  conn.addEventListener("disconnected", (e) => {
     if (conn !== state.conn) return;
+    if (e.detail?.code === BANNED_CLOSE) {
+      // IP or device ban: don't keep reconnecting.
+      conn.close();
+      disconnect();
+      store.setLastServer(null);
+      showConnect({ error: e.detail.reason ? `${e.detail.reason}.` : "You've been banned from this server." });
+      return;
+    }
     state.connected = false;
     setBanner("Connection lost. Reconnecting…");
     invalidate("composer", "sidebar", "chat");
@@ -327,7 +458,7 @@ function wireConnection(conn) {
       if (!state.user) { setBanner(null); return; } // was on the auth screen
       const token = store.getToken(state.url);
       if (!token) throw new NightcordError(ERR.SESSION_EXPIRED, "Please log in again");
-      const ok = await req(T.AUTH_RESUME, { session_token: token });
+      const ok = await req(T.AUTH_RESUME, { session_token: token, device_id: store.getDeviceId(state.url) });
       state.user = ok.user;
       state.connected = true;
       setBanner(null);
@@ -335,7 +466,7 @@ function wireConnection(conn) {
       await resync();
     } catch (e) {
       setBanner(null);
-      if (e.code === ERR.SESSION_EXPIRED) {
+      if (e.code === ERR.SESSION_EXPIRED || e.code === ERR.DEVICE_BANNED) {
         store.setToken(state.url, null);
         toLogin("You were logged out. Please log in again.");
       }
@@ -374,10 +505,27 @@ function boot() {
     e.preventDefault();
     connectTo(e.currentTarget.address.value);
   });
+  $("#connect-form").address.addEventListener("input", updateScheme);
+  $("#connect-localhost").addEventListener("click", () => {
+    const input = $("#connect-form").address;
+    input.value = "localhost:8765";
+    updateScheme();
+    input.focus();
+  });
+  $("#legal-accept").addEventListener("click", () => {
+    store.setLegalAccepted(state.url, state.info.legal_version);
+    authMode = state.info.account_creation === "on" ? "register" : state.info.account_creation === "request" ? "request" : "login";
+    showAuth();
+  });
+  $("#legal-decline").addEventListener("click", () => {
+    disconnect();
+    store.setLastServer(null);
+    showConnect({ error: "You need to accept a server's rules to join it." });
+  });
   $("#auth-form").addEventListener("submit", submitAuth);
   $("#setup-form").addEventListener("submit", submitSetup);
   $("#setup-back").addEventListener("click", () => { setupStep = Math.max(0, setupStep - 1); showSetup(); });
-  for (const id of ["#auth-back", "#setup-cancel"]) {
+  for (const id of ["#auth-back", "#setup-cancel", "#legal-back"]) {
     $(id).addEventListener("click", () => {
       disconnect();
       store.setLastServer(null);
@@ -394,16 +542,25 @@ function boot() {
   setInterval(checkIdle, 30 * 1000);
   window.addEventListener("focus", () => { markActive(); ackCurrent(); });
   document.addEventListener("visibilitychange", () => { if (!document.hidden) ackCurrent(); });
-  // Escape closes the reply bar / inline edit even when focus is elsewhere.
+  // Escape closes the search panel / reply bar / inline edit even when focus is elsewhere.
   document.addEventListener("keydown", (e) => {
-    if (e.key !== "Escape" || !state.user || e.defaultPrevented) return;
-    if (state.editingId) actions.cancelEdit();
+    if (!state.user || $("#app").hidden) return;
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); actions.showSwitcher(); return; }
+    if (mod && e.key.toLowerCase() === "f" && !e.shiftKey && currentChannel()) { e.preventDefault(); actions.showSearch(); return; }
+    if (e.key !== "Escape" || e.defaultPrevented) return;
+    if (searchOpen()) closeSearch();
+    else if (state.editingId) actions.cancelEdit();
     else if (state.replyTo) actions.cancelReply();
   });
+  setupDropZone();
 
-  // ?server=host:port lets a server operator share a direct link.
-  const param = new URLSearchParams(location.search).get("server");
-  if (param) history.replaceState(null, "", location.pathname);
+  // ?server=host:port lets a server operator share a direct link;
+  // &invite=CODE opens that guild invite once logged in.
+  const params = new URLSearchParams(location.search);
+  const param = params.get("server");
+  pendingInvite = params.get("invite");
+  if (param || pendingInvite) history.replaceState(null, "", location.pathname);
   const last = store.getLastServer();
   showConnect();
   if (param) connectTo(param);

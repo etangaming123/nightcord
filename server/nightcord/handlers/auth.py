@@ -14,6 +14,7 @@ import bcrypt
 from .. import protocol as P
 from ..protocol import ProtocolError
 from . import handles
+from .legal import legal_version, require_accepted
 from .server import apply_config_updates
 
 LOGIN_ATTEMPTS = 10
@@ -83,11 +84,29 @@ def _require_setup_done(ctx) -> None:
         raise ProtocolError(P.SETUP_REQUIRED, "This server hasn't been set up yet")
 
 
+def _device(ctx, conn, payload) -> str | None:
+    device_id = P.opt_device_id(payload)
+    if ctx.db.is_device_banned(device_id):
+        raise ProtocolError(P.DEVICE_BANNED, "This device has been banned from this server")
+    conn.device_id = device_id
+    return device_id
+
+
+def _auth_ok(ctx, token: str, user: dict) -> dict:
+    version = legal_version(ctx)
+    return {
+        "session_token": token,
+        "user": user,
+        "legal_update_required": version is not None and user.get("legal_version") != version
+        and not user["is_server_owner"],
+    }
+
+
 async def _login_success(ctx, conn, user: dict) -> dict:
-    token = ctx.db.create_session(user["user_id"], conn.user_agent)
+    token = ctx.db.create_session(user["user_id"], conn.user_agent, ip=conn.remote, device_id=conn.device_id)
     conn.session_token = token
     await ctx.hub.authenticated(conn, user)
-    return {"session_token": token, "user": user}
+    return _auth_ok(ctx, token, user)
 
 
 def _check_new_username(ctx, username) -> str:
@@ -100,6 +119,7 @@ def _check_new_username(ctx, username) -> str:
 @handles(P.SETUP_CLAIM)
 async def setup_claim(ctx, conn, payload):
     ctx.login_throttle.check(conn.remote)
+    _device(ctx, conn, payload)
     if not setup_required(ctx):
         raise ProtocolError(P.SETUP_ALREADY_DONE, "This server already has an owner")
     code = P.req_str(payload, "setup_code", max_len=64)
@@ -122,6 +142,7 @@ async def setup_claim(ctx, conn, payload):
 async def register(ctx, conn, payload):
     ctx.login_throttle.check(conn.remote)
     _require_setup_done(ctx)
+    _device(ctx, conn, payload)
     policy = ctx.db.get_server_config()["account_creation"]
     if policy != "on":
         msg = (
@@ -132,9 +153,12 @@ async def register(ctx, conn, payload):
         raise ProtocolError(P.REGISTRATION_CLOSED, msg)
     username = _check_new_username(ctx, payload.get("username"))
     password = P.validate_password(payload.get("password"))
+    version = require_accepted(ctx, payload)
     user = ctx.db.create_user(username, await hash_password(password))
     if user is None:  # lost a race with a concurrent registration
         raise ProtocolError(P.USERNAME_TAKEN, "That username is taken")
+    if version:
+        user = ctx.db.update_profile(user["user_id"], {"legal_version": version})
     return await _login_success(ctx, conn, user)
 
 
@@ -142,6 +166,7 @@ async def register(ctx, conn, payload):
 async def request_account(ctx, conn, payload):
     ctx.login_throttle.check(conn.remote)
     _require_setup_done(ctx)
+    _device(ctx, conn, payload)
     policy = ctx.db.get_server_config()["account_creation"]
     if policy == "off":
         raise ProtocolError(P.REGISTRATION_CLOSED, "Registration is closed on this server")
@@ -152,15 +177,13 @@ async def request_account(ctx, conn, payload):
     note = P.opt_str(payload, "note")
     if note is not None:
         note = note.strip()[:500] or None
+    version = require_accepted(ctx, payload)
     user = ctx.db.create_user(username, await hash_password(password), status="pending", note=note)
     if user is None:
         raise ProtocolError(P.USERNAME_TAKEN, "That username is taken")
-    owner = ctx.db.get_server_owner_row()
-    if owner is not None:
-        await ctx.hub.send_to_user(
-            owner["user_id"],
-            P.frame(P.ADMIN_ACCOUNT_REQUESTED, {"user": ctx.db.admin_user(user["user_id"])}),
-        )
+    if version:
+        ctx.db.update_profile(user["user_id"], {"legal_version": version})
+    await ctx.hub.send_to_staff(P.frame(P.ADMIN_ACCOUNT_REQUESTED, {"user": ctx.db.admin_user(user["user_id"])}))
     return {"status": "pending"}
 
 
@@ -168,11 +191,14 @@ async def request_account(ctx, conn, payload):
 async def login(ctx, conn, payload):
     ctx.login_throttle.check(conn.remote, record=False)
     _require_setup_done(ctx)
+    _device(ctx, conn, payload)
     username = payload.get("username")
     password = payload.get("password")
     if not isinstance(username, str) or not isinstance(password, str):
         raise ProtocolError(P.BAD_REQUEST, "username and password are required")
     row = ctx.db.get_user_row_by_name(username)
+    if row is not None and row["status"] == "deleted":
+        row = None
     ok = await check_password(password, row["password_hash"] if row else _DUMMY_HASH)
     if row is None or not ok or row["status"] == "rejected":
         ctx.login_throttle.record(conn.remote)
@@ -189,14 +215,16 @@ async def login(ctx, conn, payload):
 @handles(P.AUTH_RESUME)
 async def resume(ctx, conn, payload):
     token = P.req_str(payload, "session_token", max_len=256)
+    device_id = _device(ctx, conn, payload)
     user_id = ctx.db.resume_session(token, conn.user_agent)
     row = ctx.db.get_user_row(user_id) if user_id else None
     if row is None or row["status"] != "active":
         raise ProtocolError(P.SESSION_EXPIRED, "Session expired; please log in again")
+    ctx.db.note_session(token, ip=conn.remote, device_id=device_id)
     user = ctx.db.get_user(user_id)
     conn.session_token = token
     await ctx.hub.authenticated(conn, user)
-    return {"session_token": token, "user": user}
+    return _auth_ok(ctx, token, user)
 
 
 @handles(P.AUTH_LOGOUT)

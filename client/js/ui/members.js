@@ -1,11 +1,12 @@
-// Member list (right column): grouped by highest role, then Online/Offline.
-// Ghost memberships never reach here: the server leaves them out (§7).
-// In a group DM it lists the recipients.
+// Member list (right column): members who can see the open channel, grouped
+// by their highest "display separately" (hoisted) role, then Online and
+// Offline — like Discord. Ghost memberships never reach here: the server
+// leaves them out (§7). In a group DM it lists the recipients.
 
-import { currentChannel, isDm, memberRoles, statusOf, userById } from "../state.js";
+import { currentChannel, hoistedRole, isDm, memberCanView, memberRoles, nameOf, statusOf, userById } from "../state.js";
 import { $, add, avatar, clear, displayName, h, statusLabel } from "./dom.js";
 
-function row(state, actions, user, { crown = false, color = null } = {}) {
+function row(state, actions, user, { crown = false, color = null, guild = false } = {}) {
   const status = statusOf(user.user_id);
   return h("button", {
     class: `member ${status === "offline" ? "offline" : ""}`, type: "button",
@@ -16,7 +17,7 @@ function row(state, actions, user, { crown = false, color = null } = {}) {
   },
   avatar(user, { status }),
   h("span", { class: "member-meta" },
-    h("span", { class: "name", style: color ? `color:${color}` : null }, displayName(user)),
+    h("span", { class: "name", style: color ? `color:${color}` : null }, guild ? nameOf(user) : displayName(user)),
     user.custom_status ? h("span", { class: "sub" }, user.custom_status) : null),
   crown ? h("span", { class: "crown", title: "Guild owner", "aria-label": "Guild owner" }, "♛") : null);
 }
@@ -54,12 +55,13 @@ export function renderMembers(state, actions) {
     return;
   }
   if (!state.guildId || (channel && isDm(channel))) return;
-  const byName = (a, b) => displayName(a.user).localeCompare(displayName(b.user), undefined, { sensitivity: "base" });
+  const byName = (a, b) => nameOf(a.user).localeCompare(nameOf(b.user), undefined, { sensitivity: "base" });
   const groups = new Map(); // role_id | "online" | "offline" -> { label, members }
-  const members = state.members.map((m) => ({ ...m, user: userById(m.user.user_id) || m.user }));
+  const viewable = channel && channel.kind === "text" ? (m) => memberCanView(m, channel) : () => true;
+  const members = state.members.filter(viewable).map((m) => ({ ...m, user: userById(m.user.user_id) || m.user }));
   for (const m of members.sort(byName)) {
     const online = statusOf(m.user.user_id) !== "offline";
-    const top = online ? memberRoles(m)[0] : null;
+    const top = online ? hoistedRole(m) : null;
     const key = online ? (top?.role_id || "online") : "offline";
     if (!groups.has(key)) groups.set(key, { label: top ? top.name : online ? "Online" : "Offline", position: top?.position ?? (online ? 0 : -1), members: [] });
     groups.get(key).members.push(m);
@@ -69,7 +71,8 @@ export function renderMembers(state, actions) {
     add(el, h("div", { class: "section-label" }, `${g.label} — ${g.members.length}`));
     for (const m of g.members) {
       const color = memberRoles(m).find((r) => r.color)?.color || null;
-      add(el, row(state, actions, m.user, { crown: m.is_owner, color }));
+      add(el, row(state, actions, m.user, { crown: m.is_owner, color, guild: true }));
     }
   }
+  if (!members.length) add(el, h("p", { class: "muted small pad" }, "Nobody else can see this channel."));
 }

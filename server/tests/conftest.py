@@ -106,7 +106,8 @@ def user(connect):
 
     async def _user(name: str) -> WsClient:
         c = await connect()
-        c.user = (await c.register(name))["user"]
+        res = await c.register(name)
+        c.user, c.token = res["user"], res["session_token"]
         c.uid = c.user["user_id"]
         return c
 

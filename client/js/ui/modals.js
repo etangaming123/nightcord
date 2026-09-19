@@ -16,12 +16,13 @@ export function closeModal() {
 export const modalOpen = () => !!current;
 
 // content: Node or array of Nodes. Returns the modal element.
-export function openModal({ title, subtitle, content, actions = [], onClose, wide = false }) {
+// dismissable: false keeps it open on Escape / backdrop clicks (a decision is required).
+export function openModal({ title, subtitle, content, actions = [], onClose, wide = false, dismissable = true, cls = "" }) {
   closeModal();
   closePopover();
   const modal = h(
     "div",
-    { class: `modal ${wide ? "wide" : ""}`, role: "dialog", "aria-modal": "true", "aria-label": title },
+    { class: `modal ${wide ? "wide" : ""} ${cls}`, role: "dialog", "aria-modal": "true", "aria-label": title },
     h("h2", {}, title),
     subtitle ? h("p", { class: "sub" }, subtitle) : null,
     content,
@@ -29,10 +30,10 @@ export function openModal({ title, subtitle, content, actions = [], onClose, wid
   );
   const backdrop = h("div", {
     class: "modal-backdrop",
-    on: { mousedown: (e) => { if (e.target === backdrop) { closeModal(); onClose?.(); } } },
+    on: { mousedown: (e) => { if (dismissable && e.target === backdrop) { closeModal(); onClose?.(); } } },
   }, modal);
   const onKey = (e) => {
-    if (e.key === "Escape") { e.stopPropagation(); closeModal(); onClose?.(); }
+    if (e.key === "Escape") { e.stopPropagation(); if (dismissable) { closeModal(); onClose?.(); } }
   };
   document.addEventListener("keydown", onKey, true);
   current = { backdrop, onKey, restoreFocus: document.activeElement };

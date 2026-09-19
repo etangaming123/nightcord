@@ -63,7 +63,7 @@ async def test_admin_users(connect, owner, user, ctx):
     await c3.login("newbie", pw)
 
     owner_id = ctx.db.get_server_owner_row()["user_id"]
-    assert await owner.err("admin.users.set_status", {"user_id": owner_id, "status": "disabled"}) == "forbidden"
+    assert await owner.err("admin.users.set_status", {"user_id": owner_id, "status": "disabled"}) == "bad_request"  # yourself
     assert await c3.err("admin.users.list") == "forbidden"
     found = (await owner.ok("admin.users.list", {"query": "NEW"}))["users"]
     assert [u["username"] for u in found] == ["newbie"]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .. import permissions as perm
 from .. import protocol as P
+from ..db import now_iso
 from ..protocol import ProtocolError
 
 
@@ -73,6 +74,42 @@ def require_channel_perm(ctx, conn, channel_id, flag: int) -> tuple[dict, int]:
 def require_server_owner(conn) -> None:
     if not conn.user["is_server_owner"]:
         raise ProtocolError(P.FORBIDDEN, "Only the server owner can do that")
+
+
+STAFF_LEVELS = {"none": 0, "moderator": 1, "admin": 2, "owner": 3}
+MODERATOR, ADMIN, OWNER = 1, 2, 3
+
+
+def staff_level(user: dict) -> int:
+    return STAFF_LEVELS.get(user.get("server_role") or "none", 0)
+
+
+def require_staff(conn, level: int) -> None:
+    if staff_level(conn.user) < level:
+        name = {MODERATOR: "server moderators", ADMIN: "server admins", OWNER: "the server owner"}[level]
+        raise ProtocolError(P.FORBIDDEN, f"Only {name} can do that")
+
+
+def require_outranks(ctx, conn, user_id: str) -> dict:
+    """A server-staff target: must exist and be strictly below the actor."""
+    from ..db import staff_level as row_level
+
+    row = ctx.db.get_user_row(user_id)
+    if row is None or row["status"] == "deleted":
+        raise ProtocolError(P.NOT_FOUND, "User not found")
+    if user_id == conn.user_id:
+        raise ProtocolError(P.BAD_REQUEST, "You can't do that to yourself")
+    if row_level(row) >= staff_level(conn.user):
+        raise ProtocolError(P.FORBIDDEN, "That user's server role is not below yours")
+    return row
+
+
+def check_muted(ctx, conn) -> None:
+    """Server-wide mute: no sending, reacting, typing, uploading or voice."""
+    until = conn.user.get("muted_until")
+    if until and (until == "permanent" or until > now_iso()):
+        when = "indefinitely" if until == "permanent" else f"until {until}"
+        raise ProtocolError(P.MUTED, f"You've been muted on this server {when}")
 
 
 def rank(ctx, guild_id: str, user_id: str) -> int:

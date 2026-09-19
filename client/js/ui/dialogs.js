@@ -109,10 +109,31 @@ export function leaveGuildDialog(guild, onLeave) {
 }
 
 // roles: guild roles (highest first, @everyone last); canSetPerms: MANAGE_ROLES.
-export function createChannelDialog({ roles, canSetPerms, onSubmit }) {
+// kind: text | voice | category; parentId: preselected category.
+export function createChannelDialog({ roles, canSetPerms, kind = "text", parentId = null, categories = [], voiceEnabled = false, onSubmit }) {
+  let current = kind;
   const preview = h("p", { class: "muted small hint" });
-  const input = h("input", { name: "name", required: true, maxLength: 40, placeholder: "new-channel", spellcheck: "false", autocapitalize: "off" });
-  const update = () => { preview.textContent = `Will be created as #${normalizeChannelName(input.value) || "…"}`; };
+  const input = h("input", { name: "name", required: true, maxLength: 40, spellcheck: "false", autocapitalize: "off" });
+  const kinds = h("div", { class: "radio-row kind-row" });
+  const parent = h("select", { name: "parent" },
+    h("option", { value: "" }, "No category"),
+    categories.map((c) => h("option", { value: c.channel_id, selected: c.channel_id === parentId }, c.name)));
+  const parentField = h("label", {}, "Category", parent);
+  const update = () => {
+    const text = current === "text";
+    input.placeholder = text ? "new-channel" : current === "voice" ? "Lounge" : "Text Channels";
+    preview.hidden = !text;
+    preview.textContent = `Will be created as #${normalizeChannelName(input.value) || "…"}`;
+    parentField.hidden = current === "category" || !categories.length;
+  };
+  const kindOption = (value, icon, label, sub, disabled = false) => h("label", { class: `radio-card kind ${disabled ? "disabled" : ""}` },
+    h("input", { type: "radio", name: "kind", value, checked: value === current, disabled, on: { change: () => { current = value; update(); } } }),
+    h("span", { class: "kind-icon", "aria-hidden": "true" }, icon),
+    h("span", {}, h("strong", {}, label), h("span", { class: "muted small block" }, sub)));
+  add(kinds,
+    kindOption("text", "#", "Text", "Messages, images, files, opinions and puns"),
+    kindOption("voice", "🔊", "Voice", voiceEnabled ? "Hang out together (audio coming soon)" : "Turned off by the server owner", !voiceEnabled),
+    kindOption("category", "▤", "Category", "Group channels together"));
   input.addEventListener("input", update);
   update();
   const privateBox = h("input", { type: "checkbox", name: "private" });
@@ -125,31 +146,51 @@ export function createChannelDialog({ roles, canSetPerms, onSubmit }) {
       h("span", { class: "role-dot", style: `background:${r.color || "var(--muted)"}` }), r.name)));
   privateBox.addEventListener("change", () => { roleList.hidden = !privateBox.checked; });
   formModal({
-    title: "Create channel",
-    submitLabel: "Create channel",
+    title: kind === "category" ? "Create category" : "Create channel",
+    submitLabel: "Create",
     fields: [
-      h("label", {}, "Channel name", input), preview,
-      canSetPerms ? h("label", { class: "check" }, privateBox, h("span", {}, "🔒 Private channel", h("span", { class: "muted small block" }, "Only selected roles can see it."))) : null,
+      h("div", { class: "field" }, h("span", { class: "field-label" }, "Type"), kinds),
+      h("label", {}, "Name", input), preview,
+      parentField,
+      canSetPerms ? h("label", { class: "check" }, privateBox, h("span", {}, "🔒 Private", h("span", { class: "muted small block" }, "Only selected roles can see it."))) : null,
       canSetPerms ? roleList : null,
     ],
     onSubmit: async (fd) => {
-      const name = normalizeChannelName(input.value);
-      if (!LIMITS.CHANNEL_NAME_RE.test(name)) throw new Error("Use letters, numbers, - or _ (up to 32).");
-      let overwrites;
+      let name;
+      if (current === "text") {
+        name = normalizeChannelName(input.value);
+        if (!LIMITS.CHANNEL_NAME_RE.test(name)) throw new Error("Use letters, numbers, - or _ (up to 32).");
+      } else {
+        name = input.value.trim().replace(/\s+/g, " ");
+        if (!name || name.length > LIMITS.CHANNEL_TITLE_MAX) throw new Error(`Names are 1–${LIMITS.CHANNEL_TITLE_MAX} characters.`);
+      }
+      const payload = { name, kind: current };
+      if (current !== "category" && parent.value) payload.parent_id = parent.value;
       if (privateBox.checked) {
         const everyone = roles.find((r) => r.is_everyone);
-        overwrites = [{ role_id: everyone.role_id, allow: 0, deny: PERMS.VIEW_CHANNEL },
+        payload.overwrites = [{ role_id: everyone.role_id, allow: 0, deny: PERMS.VIEW_CHANNEL },
           ...fd.getAll("role").map((role_id) => ({ role_id, allow: PERMS.VIEW_CHANNEL, deny: 0 }))];
       }
-      await onSubmit(name, overwrites);
+      await onSubmit(payload);
     },
   });
 }
 
+export function nicknameDialog(user, current, onSave) {
+  formModal({
+    title: "Change nickname",
+    subtitle: `Only shown in this guild. ${user.username}'s username stays the same.`,
+    submitLabel: "Save",
+    fields: [h("label", {}, "Nickname", h("input", { name: "nick", maxLength: LIMITS.NICKNAME_MAX, value: current || "", placeholder: user.display_name || user.username }))],
+    onSubmit: (fd) => onSave(String(fd.get("nick")).trim()),
+  });
+}
+
 export function deleteChannelDialog(channel, onDelete) {
+  const cat = channel.kind === "category";
   confirmModal({
-    title: `Delete #${channel.name}?`,
-    message: "All of its messages will be deleted too. This can't be undone.",
+    title: cat ? `Delete the ${channel.name} category?` : `Delete ${channel.kind === "voice" ? channel.name : `#${channel.name}`}?`,
+    message: cat ? "Its channels are kept and move out of the category." : "All of its messages will be deleted too. This can't be undone.",
     confirmLabel: "Delete channel",
     onConfirm: onDelete,
   });

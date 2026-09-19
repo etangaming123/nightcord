@@ -31,6 +31,8 @@ TYPING_INTERVAL = 3.0
 # Close code sent when a connection's session is revoked; the client's
 # reconnect then fails auth.resume and shows the login screen.
 SESSION_REVOKED_CLOSE = 4001
+# Close code for connections from a banned IP address or device.
+BANNED_CLOSE = 4003
 
 
 class Connection:
@@ -42,6 +44,7 @@ class Connection:
         self.session_token: str | None = None
         self.channel_id: str | None = None  # focused channel (channel.join)
         self.afk = False
+        self.device_id: str | None = None
         self._sent_times: collections.deque[float] = collections.deque()
         self._last_typing: dict[str, float] = {}
 
@@ -85,6 +88,10 @@ class Hub:
         self.conns_by_user: dict[str, set[Connection]] = collections.defaultdict(set)
         self.all_conns: set[Connection] = set()
         self._shown_status: dict[str, str] = {}  # last status others were told
+        # Voice placeholder: user_id -> state. Audio isn't implemented yet;
+        # this only tracks who sits in which voice channel.
+        self.voice: dict[str, dict] = {}
+        self._voice_conn: dict[str, Connection] = {}
 
     # --- connection lifecycle -----------------------------------------------
 
@@ -117,7 +124,62 @@ class Hub:
 
     async def remove(self, conn: Connection) -> None:
         self.all_conns.discard(conn)
+        if conn.user_id and self._voice_conn.get(conn.user_id) is conn:
+            await self.voice_leave(conn.user_id)
         await self.deauthenticate(conn)
+
+    async def close_where(self, pred: Callable[[Connection], bool], *, message: bytes = b"Banned") -> int:
+        n = 0
+        for conn in list(self.all_conns):
+            if pred(conn):
+                n += 1
+                if conn.user_id and self._voice_conn.get(conn.user_id) is conn:
+                    await self.voice_leave(conn.user_id)
+                await self.deauthenticate(conn)
+                await conn.ws.close(code=BANNED_CLOSE, message=message)
+        return n
+
+    # --- voice (placeholder) -------------------------------------------------
+
+    def voice_states(self, guild_id: str) -> list[dict]:
+        return [v for v in self.voice.values() if v["guild_id"] == guild_id]
+
+    async def _voice_event(self, guild_id: str, state: dict) -> None:
+        await self.send_to_guild(guild_id, P.frame(P.VOICE_STATE_UPDATED, state))
+
+    async def voice_join(self, conn: Connection, channel: dict) -> dict:
+        user_id = conn.user_id
+        old = self.voice.get(user_id)
+        if old and old["channel_id"] != channel["channel_id"]:
+            await self.voice_leave(user_id)
+            old = None
+        state = {
+            "guild_id": channel["guild_id"], "channel_id": channel["channel_id"], "user_id": user_id,
+            "self_mute": old["self_mute"] if old else False, "self_deaf": old["self_deaf"] if old else False,
+        }
+        self.voice[user_id] = state
+        self._voice_conn[user_id] = conn
+        await self._voice_event(channel["guild_id"], state)
+        return state
+
+    async def voice_leave(self, user_id: str) -> None:
+        state = self.voice.pop(user_id, None)
+        self._voice_conn.pop(user_id, None)
+        if state:
+            await self._voice_event(state["guild_id"], {**state, "channel_id": None})
+
+    async def voice_set(self, user_id: str, **flags: bool) -> dict | None:
+        state = self.voice.get(user_id)
+        if state is None:
+            return None
+        state.update(flags)
+        await self._voice_event(state["guild_id"], state)
+        return state
+
+    async def voice_drop_where(self, pred: Callable[[dict], bool]) -> None:
+        for uid, state in list(self.voice.items()):
+            if pred(state):
+                await self.voice_leave(uid)
 
     async def close_user(self, user_id: str, *, keep: Connection | None = None, only_revoked: bool = False) -> None:
         """Close a user's connections (all, or those whose session no longer exists)."""
@@ -191,6 +253,14 @@ class Hub:
         for conn in list(self.conns_by_user.get(user_id, ())):
             if conn is not exclude:
                 await conn.send(frame)
+
+    async def send_to_everyone(self, frame: dict) -> None:
+        for conn in list(self.all_conns):
+            if conn.user is not None:
+                await conn.send(frame)
+
+    async def send_to_staff(self, frame: dict, min_level: int = 1) -> None:
+        await self.send_to_users(self.db.staff_ids(min_level), frame)
 
     async def send_to_users(self, user_ids: Iterable[str], frame: dict) -> None:
         for uid in set(user_ids):

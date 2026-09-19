@@ -97,7 +97,7 @@ async def test_channel_crud_and_events(connect):
     ev = await b.drain()
     assert [e["type"] for e in ev] == ["channel.created"]
     assert {k: v for k, v in ev[0]["payload"].items() if k != "my_permissions"} == {k: v for k, v in ch.items() if k != "my_permissions"}
-    assert ev[0]["payload"]["my_permissions"] == 0b1000001111
+    assert ev[0]["payload"]["my_permissions"] == 229903
 
     upd = (await a.ok("channel.update", {"channel_id": ch["channel_id"], "name": "memes", "position": 0}))["channel"]
     assert upd["name"] == "memes"

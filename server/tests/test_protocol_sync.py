@@ -46,7 +46,7 @@ def test_every_request_type_has_a_handler():
 
 def test_error_codes_match():
     spec_section = SPEC.split("## 9. Errors", 1)[1].split("\n## ", 1)[0]
-    spec_codes = set(re.findall(r"`([a-z_]+)`", spec_section)) - {"code", "message"}
+    spec_codes = set(re.findall(r"`([a-z_]+)`", spec_section)) - {"code", "message", "retry_after"}
     assert spec_codes == set(P.ERROR_CODES)
     client_codes = set(re.findall(r':\s*"([a-z_]+)"', _client_block("ERR"))) - {"disconnected", "timeout"}
     assert client_codes == set(P.ERROR_CODES)

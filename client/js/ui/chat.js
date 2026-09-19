@@ -3,11 +3,15 @@
 
 import { LIMITS } from "../protocol.js";
 import {
-  can, channelTitle, currentChannel, currentGuild, isDm, mentionsMe, roleColor, statusOf, userById,
+  STAFF_LABEL, can, channelTitle, currentChannel, currentGuild, isDm, isPrivate, mentionsMe, nameOf, roleColor,
+  statusOf, userById,
 } from "../state.js";
-import { $, add, avatar, clear, displayName, h, iconBtn, idGt } from "./dom.js";
+import { renderAttachments } from "./attachments.js";
+import { $, add, avatar, clear, h, iconBtn, idGt } from "./dom.js";
 import { QUICK_REACTIONS } from "./emoji.js";
 import { plainText, render as renderMarkdown } from "./markdown.js";
+
+const displayName = (u) => nameOf(u);
 
 const GROUP_GAP_MS = 7 * 60 * 1000;
 const NEAR_BOTTOM_PX = 120;
@@ -61,23 +65,77 @@ export function renderChatHeader(state, actions) {
       add(header, h("span", { class: "hash", "aria-hidden": "true" }, "👥"));
     }
     add(header, h("span", { class: "title" }, channelTitle(channel)));
+    add(header, h("span", { class: "grow" }));
+    add(header, iconBtn("📌", "Pinned messages", (e) => actions.showPins(e.currentTarget)));
     if (channel.kind === "group_dm") {
       add(header, iconBtn("✎", "Rename group", () => actions.renameGroup(channel)));
       add(header, iconBtn("＋", "Add people", () => actions.addToGroup(channel)));
       add(header, iconBtn("👥", "Show members", actions.toggleMembers, { cls: "members-btn" }));
     }
+    add(header, searchButton(actions));
   } else if (channel) {
     add(header,
-      h("span", { class: "hash", "aria-hidden": "true" }, "#"),
+      h("span", { class: "hash", "aria-hidden": "true", title: isPrivate(channel) ? "Private channel" : null }, isPrivate(channel) ? "🔒" : "#"),
       h("span", { class: "title" }, channel.name),
+      channel.topic ? h("button", {
+        class: "topic", type: "button", title: channel.topic,
+        on: { click: () => actions.showTopic(channel) },
+      }, renderMarkdown(channel.topic.split("\n")[0], mdContext(state, actions))) : h("span", { class: "grow" }),
     );
+    if (channel.slowmode_seconds) add(header, h("span", { class: "slow-tag", title: `Slowmode: one message every ${channel.slowmode_seconds}s` }, "🐢"));
+    if (can("CREATE_INVITE") && !currentGuild()?.ghost) add(header, iconBtn("✉", "Invite people", () => actions.openInviteDialog(), { cls: "hide-narrow" }));
+    add(header, iconBtn("📌", "Pinned messages", (e) => actions.showPins(e.currentTarget)));
     add(header, iconBtn("👥", "Show members", actions.toggleMembers, { cls: "members-btn" }));
+    add(header, searchButton(actions));
   } else {
     add(header, h("span", { class: "title" }, currentGuild()?.name || (state.view === "home" ? "Direct Messages" : "")));
   }
 }
 
+function searchButton(actions) {
+  return h("button", {
+    class: "search-btn", type: "button", title: "Search (Ctrl+F)", "aria-label": "Search messages",
+    on: { click: () => actions.showSearch() },
+  }, h("span", {}, "Search"), h("span", { "aria-hidden": "true" }, "🔍"));
+}
+
 // --- message list ----------------------------------------------------------
+
+const JOIN_LINES = [
+  (n) => [n, " joined the party."],
+  (n) => ["Welcome, ", n, ". We hope you brought pizza."],
+  (n) => ["A wild ", n, " appeared."],
+  (n) => [n, " just landed."],
+  (n) => [n, " hopped into the guild."],
+  (n) => ["Everyone welcome ", n, "!"],
+  (n) => ["Glad you're here, ", n, "."],
+  (n) => [n, " just showed up!"],
+];
+
+// Join / leave / pin lines (PROTOCOL.md §4 Message: system messages).
+function systemNodes(m, state, actions) {
+  const d = new Date(m.sent_at);
+  const author = authorOf(m);
+  const who = h("button", { class: "sys-name", type: "button", on: { click: (e) => actions.openProfile(author.user_id, e.currentTarget) } }, displayName(author));
+  let icon;
+  let text;
+  if (m.type === "member_join") {
+    icon = h("span", { class: "sys-icon join", "aria-hidden": "true" }, "→");
+    text = JOIN_LINES[Number(BigInt(m.message_id) % BigInt(JOIN_LINES.length))](who);
+  } else if (m.type === "member_leave") {
+    icon = h("span", { class: "sys-icon leave", "aria-hidden": "true" }, "←");
+    text = [who, " left the guild."];
+  } else {
+    icon = h("span", { class: "sys-icon sys-pin", "aria-hidden": "true" }, "📌");
+    text = [who, " pinned ",
+      m.reply_to_id ? h("button", { class: "btn link", type: "button", on: { click: () => actions.jumpTo(m.reply_to_id) } }, "a message") : "a message",
+      " to this channel. ",
+      h("button", { class: "btn link", type: "button", on: { click: (e) => actions.showPins(e.currentTarget) } }, "See all pinned messages"), "."];
+  }
+  return h("div", { class: "msg msg-system", dataset: { id: m.message_id } },
+    icon, h("span", { class: "sys-text" }, text), stamp(d),
+    reactionsRow(m, state, actions), toolbar(m, state, actions));
+}
 
 function replyPreview(m, state, actions) {
   if (!m.reply_to_id) return null;
@@ -121,16 +179,19 @@ function reactionsRow(m, state, actions) {
 
 function toolbar(m, state, actions) {
   const channel = currentChannel();
-  const mine = m.author?.user_id === state.user?.user_id;
+  const system = m.type && m.type !== "default";
+  const mine = m.author?.user_id === state.user?.user_id && !system;
   const canReact = channel && can("ADD_REACTIONS", channel);
   const canSend = channel && can("SEND_MESSAGES", channel);
   const canDelete = mine || (channel && !isDm(channel) && can("MANAGE_MESSAGES", channel));
+  const canPin = !system && channel && (isDm(channel) || can("MANAGE_MESSAGES", channel));
   if (!state.connected) return null;
   return h("div", { class: "msg-toolbar", role: "toolbar", "aria-label": "Message actions" },
     canReact ? QUICK_REACTIONS.slice(0, 3).map((e) => iconBtn(e, `React ${e}`, () => actions.react(m, e), { cls: "quick" })) : null,
     canReact ? iconBtn("☺", "Add reaction", (e) => actions.pickReaction(m, e.currentTarget)) : null,
-    canSend ? iconBtn("↩", "Reply", () => actions.reply(m)) : null,
+    canSend && !system ? iconBtn("↩", "Reply", () => actions.reply(m)) : null,
     mine && canSend ? iconBtn("✎", "Edit", () => actions.startEdit(m)) : null,
+    canPin ? iconBtn("📌", m.pinned ? "Unpin" : "Pin", () => (m.pinned ? actions.unpinMessage(m) : actions.pinMessage(m)), { cls: m.pinned ? "on" : "" }) : null,
     canDelete ? iconBtn("🗑", "Delete (shift-click skips confirmation)", (e) => actions.deleteMessage(m, e.shiftKey), { cls: "danger" }) : null,
   );
 }
@@ -171,19 +232,25 @@ function messageNodes(m, prev, state, actions) {
   if (state.unreadMarker && idGt(m.message_id, state.unreadMarker) && (!prev || !idGt(prev.message_id, state.unreadMarker))) {
     nodes.push(h("div", { class: "new-divider", role: "separator" }, h("span", {}, "NEW")));
   }
+  if (m.type && m.type !== "default") {
+    nodes.push(systemNodes(m, state, actions));
+    return nodes;
+  }
   const author = authorOf(m);
-  const continued = !newDay && !m.reply_to_id && prev.author?.user_id === m.author?.user_id && d - pd < GROUP_GAP_MS;
+  const continued = !newDay && !m.reply_to_id && prev.author?.user_id === m.author?.user_id
+    && (!prev.type || prev.type === "default") && d - pd < GROUP_GAP_MS;
   const editing = state.editingId === m.message_id;
   const body = editing
     ? editBox(m, state, actions)
     : h("div", { class: "msg-body" },
-      renderMarkdown(m.content, mdContext(state, actions)),
+      m.content ? renderMarkdown(m.content, mdContext(state, actions)) : null,
       m.edited_at ? h("span", { class: "edited", title: `Edited ${fullFmt.format(new Date(m.edited_at))}` }, " (edited)") : null);
-  const cls = `msg ${mentionsMe(m) ? "mentioned" : ""} ${editing ? "editing" : ""}`;
+  const files = editing ? null : renderAttachments(m);
+  const cls = `msg ${mentionsMe(m) ? "mentioned" : ""} ${editing ? "editing" : ""} ${m.pinned ? "pinned" : ""}`;
   const profile = (e) => actions.openProfile(author.user_id, e.currentTarget);
   if (continued) {
     nodes.push(h("div", { class: `${cls} msg-line`, dataset: { id: m.message_id } },
-      stamp(d, { short: true }), body, reactionsRow(m, state, actions), editing ? null : toolbar(m, state, actions)));
+      stamp(d, { short: true }), body, files, reactionsRow(m, state, actions), editing ? null : toolbar(m, state, actions)));
   } else {
     const color = roleColor(author?.user_id);
     nodes.push(h("div", { class: `${cls} msg-group`, dataset: { id: m.message_id } },
@@ -191,9 +258,11 @@ function messageNodes(m, prev, state, actions) {
       h("button", { class: "avatar-btn", type: "button", "aria-label": `${displayName(author)}'s profile`, on: { click: profile } }, avatar(author, { size: "lg" })),
       h("div", { class: "msg-head" },
         h("button", { class: "msg-author", type: "button", style: color ? `color:${color}` : null, on: { click: profile } }, displayName(author)),
-        author?.is_server_owner ? h("span", { class: "tag", title: "Server owner" }, "OWNER") : null,
+        STAFF_LABEL[author?.server_role] ? h("span", { class: `tag staff ${author.server_role}`, title: STAFF_LABEL[author.server_role] },
+          { owner: "OWNER", admin: "ADMIN", moderator: "MOD" }[author.server_role]) : null,
         stamp(d)),
       body,
+      files,
       reactionsRow(m, state, actions),
       editing ? null : toolbar(m, state, actions)));
   }
@@ -245,7 +314,8 @@ export function renderChat(state, actions) {
     add(box, h("div", { class: "channel-intro" },
       h("div", { class: "intro-icon", "aria-hidden": "true" }, "#"),
       h("h2", {}, `Welcome to #${channel.name}`),
-      h("p", {}, `This is the start of #${channel.name} in ${currentGuild()?.name || "this guild"}.`)));
+      h("p", {}, `This is the start of #${channel.name} in ${currentGuild()?.name || "this guild"}.`),
+      channel.topic ? h("p", { class: "muted topic-intro" }, renderMarkdown(channel.topic, mdContext(state, actions))) : null));
   }
   if (!can("READ_HISTORY", channel) && !state.messages.length) {
     add(box, h("p", { class: "muted small pad" }, "You can't read this channel's history — only new messages appear here."));
@@ -257,6 +327,15 @@ export function renderChat(state, actions) {
     prev = m;
   }
   add(box, frag);
+  if (state.hasMoreAfter) {
+    add(box, h("div", { class: "history-edge" }, state.loadingOlder ? "Loading…" : "Scroll down for newer messages"));
+  }
+  $("#jump-present")?.remove();
+  if (state.hasMoreAfter) {
+    $("#chat").append(h("button", {
+      id: "jump-present", class: "jump-present", type: "button", on: { click: () => actions.jumpToPresent() },
+    }, "You're viewing older messages", h("strong", {}, "Jump to present ↓")));
+  }
 
   if (state.scrollTo === "bottom") {
     box.scrollTop = box.scrollHeight;
@@ -266,16 +345,28 @@ export function renderChat(state, actions) {
     else box.scrollTop = box.scrollHeight;
   } else if (state.scrollTo === "prepend") {
     box.scrollTop = box.scrollHeight - fromBottom;
-  } else if (nearBottom) {
+  } else if (nearBottom && !state.hasMoreAfter) {
     box.scrollTop = box.scrollHeight;
   } else {
     box.scrollTop = fromTop;
   }
   state.scrollTo = null;
+  pinned = box.scrollHeight - box.scrollTop - box.clientHeight < 4;
   box.onscroll = () => {
+    pinned = box.scrollHeight - box.scrollTop - box.clientHeight < 4;
     if (box.scrollTop < LOAD_OLDER_PX) actions.loadOlder();
-    if (box.scrollHeight - box.scrollTop - box.clientHeight < NEAR_BOTTOM_PX) actions.seenBottom();
+    if (box.scrollHeight - box.scrollTop - box.clientHeight < NEAR_BOTTOM_PX) {
+      if (state.hasMoreAfter) actions.loadNewer();
+      else actions.seenBottom();
+    }
   };
+}
+
+// Images and videos load after rendering; keep a bottom-pinned chat pinned.
+let pinned = true;
+export function mediaLoaded() {
+  const box = $("#messages");
+  if (pinned) box.scrollTop = box.scrollHeight;
 }
 
 export const isNearBottom = () => {

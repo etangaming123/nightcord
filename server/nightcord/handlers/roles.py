@@ -56,12 +56,13 @@ async def create(ctx, conn, payload):
     name = P.opt_text(payload, "name", P.ROLE_NAME_MAX) or "new role"
     color = P.validate_color(payload.get("color"))
     permissions = _perm_bits(payload, "permissions") or 0
+    hoist = P.opt_bool(payload, "hoist") or False
     _check_grantable(ctx, guild_id, conn.user_id, 0, permissions)
     my_rank = rank(ctx, guild_id, conn.user_id)
     # New roles go just below the creator's highest role (the top for the owner).
     role = ctx.db.create_role(
         guild_id, name=name, color=color, permissions=permissions,
-        position=None if my_rank == perm.OWNER_RANK else my_rank,
+        position=None if my_rank == perm.OWNER_RANK else my_rank, hoist=hoist,
     )
     ctx.db.add_audit(guild_id, conn.user_id, "role.create", role["role_id"], {"name": name})
     await ctx.hub.send_to_guild(guild_id, P.frame(P.ROLE_CREATED, role))
@@ -88,6 +89,11 @@ async def update(ctx, conn, payload):
         fields["name"] = name
     if "color" in payload:
         fields["color"] = P.validate_color(payload["color"])
+    hoist = P.opt_bool(payload, "hoist")
+    if hoist is not None:
+        if role["is_everyone"]:
+            raise ProtocolError(P.BAD_REQUEST, "@everyone can't be displayed separately")
+        fields["hoist"] = hoist
     permissions = _perm_bits(payload, "permissions")
     if permissions is not None:
         _check_grantable(ctx, guild["guild_id"], conn.user_id, role["permissions"], permissions)

@@ -18,8 +18,9 @@ import time
 from pathlib import Path
 from typing import Any, Iterable
 
+from . import files as F
 from .ids import new_id
-from .permissions import DEFAULT_EVERYONE
+from .permissions import DEFAULT_EVERYONE, OWNER_RANK
 
 SESSION_TTL_SECONDS = 30 * 24 * 3600
 
@@ -28,7 +29,11 @@ DEFAULT_SERVER_CONFIG = {
     "guild_creation": "on",
     "account_creation": "on",
     "guild_list_visible": True,
+    "max_upload_bytes": 25 * 1024 * 1024,
+    "voice_enabled": False,
 }
+
+STAFF_LEVELS = {"none": 0, "moderator": 1, "admin": 2, "owner": 3}
 
 MIGRATIONS: list[str] = [
     # 1 — Nightcord v2 schema.
@@ -185,7 +190,107 @@ MIGRATIONS: list[str] = [
         PRIMARY KEY (user_id, target_id)
     );
     """,
+    # 2 — Nightcord v3 (see _migration_2).
+    "_migration_2",
 ]
+
+MIGRATION_2 = """
+    ALTER TABLE users ADD COLUMN server_role TEXT NOT NULL DEFAULT 'none';
+    ALTER TABLE users ADD COLUMN muted_until TEXT;
+    ALTER TABLE users ADD COLUMN deleted_at TEXT;
+    ALTER TABLE users ADD COLUMN legal_version TEXT;
+    ALTER TABLE sessions ADD COLUMN last_ip TEXT;
+    ALTER TABLE sessions ADD COLUMN device_id TEXT;
+    ALTER TABLE guilds ADD COLUMN icon_id TEXT;
+    ALTER TABLE guilds ADD COLUMN system_channel_id TEXT;
+    ALTER TABLE guilds ADD COLUMN system_flags INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE guilds ADD COLUMN vanity_code TEXT;
+    CREATE UNIQUE INDEX guilds_vanity ON guilds(vanity_code) WHERE vanity_code IS NOT NULL;
+    ALTER TABLE channels ADD COLUMN parent_id TEXT;
+    ALTER TABLE channels ADD COLUMN topic TEXT;
+    ALTER TABLE channels ADD COLUMN slowmode_seconds INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE channels ADD COLUMN perms_synced INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE memberships ADD COLUMN nickname TEXT;
+    ALTER TABLE memberships ADD COLUMN invited_by TEXT;
+    ALTER TABLE memberships ADD COLUMN invite_code TEXT;
+    ALTER TABLE roles ADD COLUMN hoist INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE messages ADD COLUMN type TEXT NOT NULL DEFAULT 'default';
+    ALTER TABLE messages ADD COLUMN pinned_at TEXT;
+    ALTER TABLE messages ADD COLUMN pinned_by TEXT;
+    CREATE INDEX messages_pinned ON messages(channel_id, pinned_at) WHERE pinned_at IS NOT NULL;
+    ALTER TABLE invites ADD COLUMN max_uses INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE invites ADD COLUMN uses INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE invites ADD COLUMN expires_at TEXT;
+    ALTER TABLE invites ADD COLUMN revoked_at TEXT;
+    CREATE INDEX invites_by_guild ON invites(guild_id);
+    CREATE TABLE attachments (
+        attachment_id  TEXT PRIMARY KEY,
+        uploader_id    TEXT NOT NULL,
+        channel_id     TEXT NOT NULL REFERENCES channels(channel_id) ON DELETE CASCADE,
+        message_id     INTEGER REFERENCES messages(message_id) ON DELETE CASCADE,
+        filename       TEXT NOT NULL,
+        content_type   TEXT NOT NULL,
+        size           INTEGER NOT NULL,
+        width          INTEGER,
+        height         INTEGER,
+        created_at     TEXT NOT NULL
+    );
+    CREATE INDEX attachments_by_message ON attachments(message_id);
+    CREATE TABLE ip_bans (
+        cidr        TEXT PRIMARY KEY,
+        reason      TEXT,
+        banned_by   TEXT NOT NULL,
+        created_at  TEXT NOT NULL
+    );
+    CREATE TABLE device_bans (
+        device_id   TEXT PRIMARY KEY,
+        user_id     TEXT,
+        reason      TEXT,
+        banned_by   TEXT NOT NULL,
+        created_at  TEXT NOT NULL
+    );
+    CREATE TABLE server_audit_log (
+        entry_id       INTEGER PRIMARY KEY,
+        actor_user_id  TEXT NOT NULL,
+        action         TEXT NOT NULL,
+        target_id      TEXT,
+        details        TEXT NOT NULL DEFAULT '{}',
+        created_at     TEXT NOT NULL
+    )
+"""
+
+# Full-text search over message content; kept in sync by triggers.
+FTS_SQL = [
+    "CREATE VIRTUAL TABLE messages_fts USING fts5(content, content='messages', content_rowid='message_id', "
+    "tokenize='unicode61 remove_diacritics 2')",
+    "CREATE TRIGGER messages_fts_ai AFTER INSERT ON messages BEGIN "
+    "INSERT INTO messages_fts(rowid, content) VALUES (new.message_id, new.content); END",
+    "CREATE TRIGGER messages_fts_ad AFTER DELETE ON messages BEGIN "
+    "INSERT INTO messages_fts(messages_fts, rowid, content) VALUES ('delete', old.message_id, old.content); END",
+    "CREATE TRIGGER messages_fts_au AFTER UPDATE OF content ON messages BEGIN "
+    "INSERT INTO messages_fts(messages_fts, rowid, content) VALUES ('delete', old.message_id, old.content); "
+    "INSERT INTO messages_fts(rowid, content) VALUES (new.message_id, new.content); END",
+    "INSERT INTO messages_fts(messages_fts) VALUES ('rebuild')",
+]
+
+# Permission bits added to @everyone by migration 2: ATTACH_FILES | CONNECT | CHANGE_NICKNAME.
+_V3_EVERYONE_BITS = (1 << 15) | (1 << 16) | (1 << 17)
+
+
+def _migration_2(conn: sqlite3.Connection) -> None:
+    for stmt in MIGRATION_2.split(";"):
+        if stmt.strip():
+            conn.execute(stmt)
+    conn.execute("UPDATE roles SET permissions = permissions | ? WHERE role_id = guild_id", (_V3_EVERYONE_BITS,))
+    try:
+        conn.execute("SAVEPOINT fts")
+        for stmt in FTS_SQL:
+            conn.execute(stmt)
+        conn.execute("RELEASE fts")
+    except sqlite3.OperationalError:
+        # SQLite built without FTS5: search falls back to LIKE.
+        conn.execute("ROLLBACK TO fts")
+        conn.execute("RELEASE fts")
 
 INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O/1/I
 REPLY_PREVIEW_CHARS = 120
@@ -210,6 +315,15 @@ def _sid(v: int | None) -> str | None:
     return None if v is None else str(v)
 
 
+def staff_role(row: sqlite3.Row) -> str:
+    """owner | admin | moderator | none."""
+    return "owner" if row["is_server_owner"] else (row["server_role"] or "none")
+
+
+def staff_level(row: sqlite3.Row) -> int:
+    return STAFF_LEVELS[staff_role(row)]
+
+
 def _public_user(row: sqlite3.Row) -> dict:
     return {
         "user_id": row["user_id"],
@@ -219,6 +333,8 @@ def _public_user(row: sqlite3.Row) -> dict:
         "avatar_color": row["avatar_color"],
         "custom_status": row["custom_status"],
         "is_server_owner": bool(row["is_server_owner"]),
+        "server_role": staff_role(row),
+        "deleted": row["deleted_at"] is not None,
     }
 
 
@@ -228,6 +344,8 @@ def _self_user(row: sqlite3.Row) -> dict:
         "bio": row["bio"],
         "created_at": row["created_at"],
         "presence": row["presence_pref"],
+        "muted_until": row["muted_until"],
+        "legal_version": row["legal_version"],
     }
 
 
@@ -238,6 +356,10 @@ def _guild(row: sqlite3.Row) -> dict:
         "owner_user_id": row["owner_user_id"],
         "listed": bool(row["listed"]),
         "created_at": row["created_at"],
+        "icon_id": row["icon_id"],
+        "system_channel_id": row["system_channel_id"],
+        "system_flags": row["system_flags"],
+        "vanity_code": row["vanity_code"],
     }
 
 
@@ -250,6 +372,7 @@ def _role(row: sqlite3.Row) -> dict:
         "permissions": row["permissions"],
         "position": row["position"],
         "is_everyone": row["role_id"] == row["guild_id"],
+        "hoist": bool(row["hoist"]),
     }
 
 
@@ -263,6 +386,7 @@ class Database:
         self.conn.execute("PRAGMA journal_mode = WAL")
         self.conn.execute("PRAGMA busy_timeout = 5000")
         self._migrate()
+        self._file_secret: str | None = None
 
     def _migrate(self) -> None:
         version = self.conn.execute("PRAGMA user_version").fetchone()[0]
@@ -274,6 +398,9 @@ class Database:
         for i, sql in enumerate(MIGRATIONS[version:], start=version + 1):
             self.conn.execute("BEGIN IMMEDIATE")
             try:
+                if sql == "_migration_2":
+                    _migration_2(self.conn)
+                    sql = ""
                 for stmt in sql.split(";"):
                     if stmt.strip():
                         self.conn.execute(stmt)
@@ -282,6 +409,7 @@ class Database:
             except Exception:
                 self.conn.execute("ROLLBACK")
                 raise
+        self.has_fts = self._one("SELECT 1 FROM sqlite_master WHERE name = 'messages_fts'") is not None
 
     def close(self) -> None:
         self.conn.close()
@@ -317,6 +445,19 @@ class Database:
                     key, json.dumps(val),
                 )
         return self.get_server_config()
+
+    def file_secret(self) -> str:
+        """Per-server key for signing attachment URLs (never sent to clients)."""
+        if self._file_secret is None:
+            row = self._one("SELECT value FROM server_config WHERE key = 'file_secret'")
+            if row is None:
+                secret = secrets.token_hex(32)
+                self._exec(
+                    "INSERT OR IGNORE INTO server_config(key, value) VALUES ('file_secret', ?)", json.dumps(secret)
+                )
+                row = self._one("SELECT value FROM server_config WHERE key = 'file_secret'")
+            self._file_secret = json.loads(row["value"])
+        return self._file_secret
 
     # --- users ---------------------------------------------------------------
 
@@ -383,7 +524,10 @@ class Database:
             )
 
     def update_profile(self, user_id: str, fields: dict) -> dict:
-        allowed = {"display_name", "bio", "avatar_color", "custom_status", "avatar_id", "presence_pref"}
+        allowed = {
+            "display_name", "bio", "avatar_color", "custom_status", "avatar_id", "presence_pref",
+            "server_role", "muted_until", "legal_version",
+        }
         with self._tx():
             for key, val in fields.items():
                 assert key in allowed, key
@@ -393,28 +537,75 @@ class Database:
     def get_server_owner_row(self) -> sqlite3.Row | None:
         return self._one("SELECT * FROM users WHERE is_server_owner = 1")
 
+    def _admin_user(self, r: sqlite3.Row) -> dict:
+        last = self._one(
+            "SELECT last_ip, last_seen FROM sessions WHERE user_id = ? AND last_ip IS NOT NULL "
+            "ORDER BY last_seen DESC LIMIT 1",
+            r["user_id"],
+        )
+        devices = self._one(
+            "SELECT COUNT(DISTINCT device_id) AS n FROM sessions WHERE user_id = ? AND device_id IS NOT NULL",
+            r["user_id"],
+        )["n"]
+        return {
+            **_public_user(r),
+            "status": r["status"],
+            "created_at": r["created_at"],
+            "note": r["note"],
+            "muted_until": r["muted_until"],
+            "last_ip": last["last_ip"] if last else None,
+            "last_seen": last["last_seen"] if last else None,
+            "device_count": devices,
+        }
+
     def list_users(self, *, status: str | None = None, query: str | None = None, limit: int = 200) -> list[dict]:
         sql = "SELECT * FROM users WHERE 1=1"
         args: list[Any] = []
         if status:
             sql += " AND status = ?"
             args.append(status)
+        else:
+            sql += " AND status != 'deleted'"
         if query:
             sql += " AND (username_lower LIKE ? ESCAPE '\\' OR lower(display_name) LIKE ? ESCAPE '\\')"
             like = "%" + _like_escape(query.lower()) + "%"
             args += [like, like]
         sql += " ORDER BY created_at LIMIT ?"
         args.append(limit)
-        return [
-            {**_public_user(r), "status": r["status"], "created_at": r["created_at"], "note": r["note"]}
-            for r in self._all(sql, *args)
-        ]
+        return [self._admin_user(r) for r in self._all(sql, *args)]
 
     def admin_user(self, user_id: str) -> dict | None:
         r = self.get_user_row(user_id)
-        if r is None:
-            return None
-        return {**_public_user(r), "status": r["status"], "created_at": r["created_at"], "note": r["note"]}
+        return self._admin_user(r) if r else None
+
+    def staff_ids(self, min_level: int = 1) -> list[str]:
+        return [
+            r["user_id"]
+            for r in self._all("SELECT * FROM users WHERE is_server_owner = 1 OR server_role != 'none'")
+            if staff_level(r) >= min_level and r["status"] == "active"
+        ]
+
+    def anonymize_user(self, user_id: str) -> dict:
+        """Account deletion: keeps messages (shown as Deleted User), frees the
+        username and drops everything else. Returns what the caller must clean
+        up on disk: {avatar_id, attachment_ids}."""
+        row = self.get_user_row(user_id)
+        attachment_ids = [
+            r["attachment_id"] for r in self._all("SELECT attachment_id FROM attachments WHERE uploader_id = ?", user_id)
+        ]
+        with self._tx():
+            self._exec(
+                "UPDATE users SET username = ?, username_lower = ?, password_hash = '!', status = 'deleted', "
+                "deleted_at = ?, display_name = NULL, bio = NULL, avatar_id = NULL, avatar_color = NULL, "
+                "custom_status = NULL, note = NULL, server_role = 'none', muted_until = NULL WHERE user_id = ?",
+                f"deleted-{user_id}", f"deleted-{user_id}", now_iso(), user_id,
+            )
+            self._exec("DELETE FROM sessions WHERE user_id = ?", user_id)
+            self._exec("DELETE FROM attachments WHERE uploader_id = ?", user_id)
+            self._exec("DELETE FROM reactions WHERE user_id = ?", user_id)
+            self._exec("DELETE FROM notify_prefs WHERE user_id = ?", user_id)
+            self._exec("DELETE FROM read_states WHERE user_id = ?", user_id)
+        return {"avatar_id": row["avatar_id"], "attachment_ids": attachment_ids}
 
     def search_users(self, query: str, *, exclude: str, limit: int = 20) -> list[dict]:
         like = _like_escape(query.lower()) + "%"
@@ -436,16 +627,40 @@ class Database:
 
     # --- sessions ------------------------------------------------------------
 
-    def create_session(self, user_id: str, user_agent: str | None = None) -> str:
+    def create_session(
+        self, user_id: str, user_agent: str | None = None, *, ip: str | None = None, device_id: str | None = None
+    ) -> str:
         token = secrets.token_urlsafe(32)
         ts = now_iso()
         self._exec(
-            "INSERT INTO sessions(session_id, token_hash, user_id, created_at, last_seen, expires_at, user_agent) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO sessions(session_id, token_hash, user_id, created_at, last_seen, expires_at, user_agent, "
+            "last_ip, device_id) VALUES (?,?,?,?,?,?,?,?,?)",
             new_id(), hash_token(token), user_id, ts, ts, time.time() + SESSION_TTL_SECONDS,
-            (user_agent or "")[:300] or None,
+            (user_agent or "")[:300] or None, ip, device_id,
         )
         return token
+
+    def session_user_id(self, token: str) -> str | None:
+        """user_id for a valid session token, without extending it."""
+        row = self._one(
+            "SELECT user_id FROM sessions WHERE token_hash = ? AND expires_at >= ?", hash_token(token), time.time()
+        )
+        return row["user_id"] if row else None
+
+    def note_session(self, token: str, *, ip: str | None, device_id: str | None) -> None:
+        self._exec(
+            "UPDATE sessions SET last_ip = COALESCE(?, last_ip), device_id = COALESCE(?, device_id) "
+            "WHERE token_hash = ?",
+            ip, device_id, hash_token(token),
+        )
+
+    def device_ids_of(self, user_id: str) -> list[str]:
+        return [
+            r["device_id"]
+            for r in self._all(
+                "SELECT DISTINCT device_id FROM sessions WHERE user_id = ? AND device_id IS NOT NULL", user_id
+            )
+        ]
 
     def resume_session(self, token: str, user_agent: str | None = None) -> str | None:
         """Returns user_id and extends expiry, or None if invalid/expired."""
@@ -524,20 +739,53 @@ class Database:
                 "INSERT INTO memberships(guild_id, user_id, role, ghost, joined_at) VALUES (?,?,'owner',0,?)",
                 guild_id, owner_user_id, ts,
             )
+            general = new_id()
             self._exec(
                 "INSERT INTO channels(channel_id, guild_id, kind, name, position, created_at) "
                 "VALUES (?,?,'text','general',0,?)",
-                new_id(), guild_id, ts,
+                general, guild_id, ts,
             )
+            # #general is preselected for join/leave messages; they start switched off.
+            self._exec("UPDATE guilds SET system_channel_id = ? WHERE guild_id = ?", general, guild_id)
         return self.get_guild(guild_id), self.list_channels(guild_id)
 
-    def update_guild(self, guild_id: str, *, name: str | None, listed: bool | None) -> dict:
+    def update_guild(self, guild_id: str, fields: dict) -> dict:
+        allowed = {"name", "listed", "icon_id", "system_channel_id", "system_flags", "vanity_code", "owner_user_id"}
         with self._tx():
-            if name is not None:
-                self._exec("UPDATE guilds SET name = ? WHERE guild_id = ?", name, guild_id)
-            if listed is not None:
-                self._exec("UPDATE guilds SET listed = ? WHERE guild_id = ?", int(listed), guild_id)
+            for key, val in fields.items():
+                assert key in allowed, key
+                if key == "listed":
+                    val = int(val)
+                self._exec(f"UPDATE guilds SET {key} = ? WHERE guild_id = ?", val, guild_id)
         return self.get_guild(guild_id)
+
+    def vanity_taken(self, code: str, guild_id: str) -> bool:
+        return self._one(
+            "SELECT 1 FROM guilds WHERE vanity_code = ? AND guild_id != ?", code, guild_id
+        ) is not None
+
+    def transfer_guild(self, guild_id: str, new_owner: str) -> None:
+        with self._tx():
+            self._exec("UPDATE memberships SET role = 'member' WHERE guild_id = ? AND role = 'owner'", guild_id)
+            self._exec(
+                "UPDATE memberships SET role = 'owner', ghost = 0 WHERE guild_id = ? AND user_id = ?", guild_id, new_owner
+            )
+            self._exec("UPDATE guilds SET owner_user_id = ? WHERE guild_id = ?", new_owner, guild_id)
+
+    def owned_guild_ids(self, user_id: str) -> list[str]:
+        return [r["guild_id"] for r in self._all("SELECT guild_id FROM guilds WHERE owner_user_id = ?", user_id)]
+
+    def successor(self, guild_id: str, leaving: str) -> str | None:
+        """Highest-ranked remaining visible member (earliest joined on ties)."""
+        rows = self._all(
+            "SELECT m.user_id, m.joined_at, COALESCE(MAX(r.position), 0) AS rank FROM memberships m "
+            "LEFT JOIN member_roles mr ON mr.guild_id = m.guild_id AND mr.user_id = m.user_id "
+            "LEFT JOIN roles r ON r.role_id = mr.role_id "
+            "WHERE m.guild_id = ? AND m.ghost = 0 AND m.user_id != ? GROUP BY m.user_id "
+            "ORDER BY rank DESC, m.joined_at LIMIT 1",
+            guild_id, leaving,
+        )
+        return rows[0]["user_id"] if rows else None
 
     def delete_guild(self, guild_id: str) -> None:
         with self._tx():
@@ -552,6 +800,11 @@ class Database:
             user_id,
         )
         return [{**_guild(r), "ghost": bool(r["ghost"])} for r in rows]
+
+    def member_count(self, guild_id: str) -> int:
+        return self._one(
+            "SELECT COUNT(*) AS n FROM memberships WHERE guild_id = ? AND ghost = 0", guild_id
+        )["n"]
 
     def list_public_guilds(self) -> list[dict]:
         rows = self._all(
@@ -591,11 +844,15 @@ class Database:
             "timed_out_until": row["timed_out_until"],
         }
 
-    def add_membership(self, guild_id: str, user_id: str, *, ghost: bool = False) -> None:
+    def add_membership(
+        self, guild_id: str, user_id: str, *, ghost: bool = False,
+        invited_by: str | None = None, invite_code: str | None = None,
+    ) -> None:
         with self._tx():
             self._exec(
-                "INSERT INTO memberships(guild_id, user_id, role, ghost, joined_at) VALUES (?,?,'member',?,?)",
-                guild_id, user_id, int(ghost), now_iso(),
+                "INSERT INTO memberships(guild_id, user_id, role, ghost, joined_at, invited_by, invite_code) "
+                "VALUES (?,?,'member',?,?,?,?)",
+                guild_id, user_id, int(ghost), now_iso(), invited_by, invite_code,
             )
             # Existing history starts out read; only new messages are unread.
             self._exec(
@@ -612,6 +869,11 @@ class Database:
                 "(SELECT channel_id FROM channels WHERE guild_id = ?)",
                 user_id, guild_id,
             )
+
+    def set_nickname(self, guild_id: str, user_id: str, nickname: str | None) -> None:
+        self._exec(
+            "UPDATE memberships SET nickname = ? WHERE guild_id = ? AND user_id = ?", nickname, guild_id, user_id
+        )
 
     def set_timeout(self, guild_id: str, user_id: str, until: str | None) -> None:
         self._exec(
@@ -638,6 +900,9 @@ class Database:
                 "joined_at": r["joined_at"],
                 "timed_out_until": r["timed_out_until"],
                 "is_owner": r["role"] == "owner",
+                "nickname": r["nickname"],
+                "invited_by": r["invited_by"],
+                "invite_code": r["invite_code"],
             }
             for r in rows
             if r["user_id"] in users
@@ -711,7 +976,10 @@ class Database:
     def count_roles(self, guild_id: str) -> int:
         return self._one("SELECT COUNT(*) AS n FROM roles WHERE guild_id = ?", guild_id)["n"]
 
-    def create_role(self, guild_id: str, *, name: str, color: str | None, permissions: int, position: int | None = None) -> dict:
+    def create_role(
+        self, guild_id: str, *, name: str, color: str | None, permissions: int,
+        position: int | None = None, hoist: bool = False,
+    ) -> dict:
         role_id = new_id()
         with self._tx():
             top = self._one("SELECT MAX(position) AS p FROM roles WHERE guild_id = ?", guild_id)["p"] or 0
@@ -721,16 +989,18 @@ class Database:
                 guild_id, pos,
             )
             self._exec(
-                "INSERT INTO roles(role_id, guild_id, name, color, permissions, position, created_at) "
-                "VALUES (?,?,?,?,?,?,?)",
-                role_id, guild_id, name, color, permissions, pos, now_iso(),
+                "INSERT INTO roles(role_id, guild_id, name, color, permissions, position, created_at, hoist) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                role_id, guild_id, name, color, permissions, pos, now_iso(), int(hoist),
             )
         return self.get_role(role_id)
 
     def update_role(self, role_id: str, fields: dict) -> dict:
         with self._tx():
             for key, val in fields.items():
-                assert key in ("name", "color", "permissions"), key
+                assert key in ("name", "color", "permissions", "hoist"), key
+                if key == "hoist":
+                    val = int(val)
                 self._exec(f"UPDATE roles SET {key} = ? WHERE role_id = ?", val, role_id)
         return self.get_role(role_id)
 
@@ -780,6 +1050,10 @@ class Database:
         if row["guild_id"] is not None:
             base["position"] = row["position"]
             base["overwrites"] = self.list_overwrites(row["channel_id"])
+            base["parent_id"] = row["parent_id"]
+            base["topic"] = row["topic"]
+            base["slowmode_seconds"] = row["slowmode_seconds"]
+            base["perms_synced"] = bool(row["perms_synced"])
         else:
             base["owner_user_id"] = row["owner_user_id"]
             ids = self.dm_recipient_ids(row["channel_id"])
@@ -800,16 +1074,22 @@ class Database:
         )
         return [self._channel(r) for r in rows]
 
-    def create_channel(self, guild_id: str, name: str, overwrites: list[dict] | None = None) -> dict:
+    def count_channels(self, guild_id: str) -> int:
+        return self._one("SELECT COUNT(*) AS n FROM channels WHERE guild_id = ?", guild_id)["n"]
+
+    def create_channel(
+        self, guild_id: str, name: str, overwrites: list[dict] | None = None, *,
+        kind: str = "text", parent_id: str | None = None, topic: str | None = None, perms_synced: bool = False,
+    ) -> dict:
         channel_id = new_id()
         with self._tx():
             pos = self._one(
                 "SELECT COALESCE(MAX(position), -1) + 1 AS pos FROM channels WHERE guild_id = ?", guild_id
             )["pos"]
             self._exec(
-                "INSERT INTO channels(channel_id, guild_id, kind, name, position, created_at) "
-                "VALUES (?,?,'text',?,?,?)",
-                channel_id, guild_id, name, pos, now_iso(),
+                "INSERT INTO channels(channel_id, guild_id, kind, name, position, created_at, parent_id, topic, "
+                "perms_synced) VALUES (?,?,?,?,?,?,?,?,?)",
+                channel_id, guild_id, kind, name, pos, now_iso(), parent_id, topic, int(perms_synced),
             )
             for o in overwrites or []:
                 self._exec(
@@ -818,13 +1098,24 @@ class Database:
                 )
         return self.get_channel(channel_id)
 
-    def update_channel(self, channel_id: str, *, name: str | None, position: int | None) -> dict:
+    def update_channel(self, channel_id: str, fields: dict) -> dict:
+        allowed = {"name", "position", "topic", "slowmode_seconds", "perms_synced", "parent_id"}
         with self._tx():
-            if name is not None:
-                self._exec("UPDATE channels SET name = ? WHERE channel_id = ?", name, channel_id)
-            if position is not None:
-                self._exec("UPDATE channels SET position = ? WHERE channel_id = ?", position, channel_id)
+            for key, val in fields.items():
+                assert key in allowed, key
+                if key == "perms_synced":
+                    val = int(val)
+                self._exec(f"UPDATE channels SET {key} = ? WHERE channel_id = ?", val, channel_id)
         return self.get_channel(channel_id)
+
+    def reorder_channels(self, items: list[dict]) -> None:
+        with self._tx():
+            for it in items:
+                self._exec(
+                    "UPDATE channels SET position = ?, parent_id = ?, "
+                    "perms_synced = CASE WHEN ? IS NULL THEN 0 ELSE perms_synced END WHERE channel_id = ?",
+                    it["position"], it["parent_id"], it["parent_id"], it["channel_id"],
+                )
 
     def list_overwrites(self, channel_id: str) -> list[dict]:
         return [
@@ -844,10 +1135,44 @@ class Database:
                         channel_id, o["role_id"], o["allow"], o["deny"],
                     )
 
-    def delete_channel(self, channel_id: str) -> None:
+    def delete_channel(self, channel_id: str) -> list[str]:
+        """Deletes a channel; a category's children move to the top level.
+        Returns the ids of those children."""
         with self._tx():
+            children = [
+                r["channel_id"] for r in self._all("SELECT channel_id FROM channels WHERE parent_id = ?", channel_id)
+            ]
+            # Children keep the category's permissions by copying its overwrites.
+            for cid in children:
+                row = self.channel_row(cid)
+                if row["perms_synced"]:
+                    self._exec("DELETE FROM channel_overwrites WHERE channel_id = ?", cid)
+                    self._exec(
+                        "INSERT INTO channel_overwrites(channel_id, role_id, allow, deny) "
+                        "SELECT ?, role_id, allow, deny FROM channel_overwrites WHERE channel_id = ?",
+                        cid, channel_id,
+                    )
+            self._exec("UPDATE channels SET parent_id = NULL, perms_synced = 0 WHERE parent_id = ?", channel_id)
+            self._exec("UPDATE guilds SET system_channel_id = NULL WHERE system_channel_id = ?", channel_id)
             self._exec("DELETE FROM channels WHERE channel_id = ?", channel_id)
             self._exec("DELETE FROM notify_prefs WHERE target_id = ?", channel_id)
+        return children
+
+    def attachment_ids_in_channel(self, channel_id: str) -> list[str]:
+        return [
+            r["attachment_id"]
+            for r in self._all("SELECT attachment_id FROM attachments WHERE channel_id = ?", channel_id)
+        ]
+
+    def attachment_ids_in_guild(self, guild_id: str) -> list[str]:
+        return [
+            r["attachment_id"]
+            for r in self._all(
+                "SELECT a.attachment_id FROM attachments a JOIN channels c ON c.channel_id = a.channel_id "
+                "WHERE c.guild_id = ?",
+                guild_id,
+            )
+        ]
 
     # --- direct messages -----------------------------------------------------
 
@@ -999,6 +1324,11 @@ class Database:
         users = self.public_users(
             [r["author_user_id"] for r in rows] + [r["author_user_id"] for r in replies.values()]
         )
+        attachments: dict[int, list[dict]] = {}
+        for a in self._all(
+            f"SELECT * FROM attachments WHERE message_id IN ({marks}) ORDER BY attachment_id", *ids
+        ):
+            attachments.setdefault(a["message_id"], []).append(self._attachment(a))
         out = []
         for r in rows:
             reply = replies.get(r["reply_to_id"]) if r["reply_to_id"] is not None else None
@@ -1018,8 +1348,78 @@ class Database:
                 "mentions": json.loads(r["mentions"]),
                 "mention_everyone": bool(r["mention_everyone"]),
                 "reactions": reactions.get(r["message_id"], []),
+                "type": r["type"],
+                "pinned": r["pinned_at"] is not None,
+                "attachments": attachments.get(r["message_id"], []),
             })
         return out
+
+    # --- attachments ---------------------------------------------------------
+
+    def _attachment(self, a: sqlite3.Row) -> dict:
+        return {
+            "attachment_id": a["attachment_id"],
+            "filename": a["filename"],
+            "content_type": a["content_type"],
+            "size": a["size"],
+            "width": a["width"],
+            "height": a["height"],
+            "url": F.signed_url(self.file_secret(), a["attachment_id"], a["filename"]),
+        }
+
+    def create_attachment(
+        self, attachment_id: str, *, uploader_id: str, channel_id: str, filename: str, content_type: str,
+        size: int, width: int | None, height: int | None,
+    ) -> dict:
+        self._exec(
+            "INSERT INTO attachments(attachment_id, uploader_id, channel_id, message_id, filename, content_type, "
+            "size, width, height, created_at) VALUES (?,?,?,NULL,?,?,?,?,?,?)",
+            attachment_id, uploader_id, channel_id, filename, content_type, size, width, height, now_iso(),
+        )
+        return self._attachment(self.attachment_row(attachment_id))
+
+    def attachment_row(self, attachment_id: str) -> sqlite3.Row | None:
+        return self._one("SELECT * FROM attachments WHERE attachment_id = ?", attachment_id)
+
+    def pending_attachment_count(self, user_id: str) -> int:
+        return self._one(
+            "SELECT COUNT(*) AS n FROM attachments WHERE uploader_id = ? AND message_id IS NULL", user_id
+        )["n"]
+
+    def claimable_attachments(self, ids: list[str], user_id: str, channel_id: str) -> bool:
+        if not ids:
+            return True
+        marks = ",".join("?" * len(ids))
+        n = self._one(
+            f"SELECT COUNT(*) AS n FROM attachments WHERE attachment_id IN ({marks}) AND uploader_id = ? "
+            f"AND channel_id = ? AND message_id IS NULL",
+            *ids, user_id, channel_id,
+        )["n"]
+        return n == len(ids)
+
+    def message_attachment_ids(self, message_id: int) -> list[str]:
+        return [
+            r["attachment_id"]
+            for r in self._all("SELECT attachment_id FROM attachments WHERE message_id = ?", message_id)
+        ]
+
+    def stale_attachment_ids(self, older_than_iso: str) -> list[str]:
+        rows = self._all(
+            "SELECT attachment_id FROM attachments WHERE message_id IS NULL AND created_at < ?", older_than_iso
+        )
+        ids = [r["attachment_id"] for r in rows]
+        if ids:
+            with self._tx():
+                for aid in ids:
+                    self._exec("DELETE FROM attachments WHERE attachment_id = ?", aid)
+        return ids
+
+    def all_attachment_ids(self) -> set[str]:
+        return {r["attachment_id"] for r in self._all("SELECT attachment_id FROM attachments")}
+
+    def storage_stats(self) -> dict:
+        r = self._one("SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS bytes FROM attachments")
+        return {"count": r["n"], "bytes": r["bytes"]}
 
     def create_message(
         self,
@@ -1030,15 +1430,19 @@ class Database:
         reply_to_id: int | None = None,
         mentions: list[str] | None = None,
         mention_everyone: bool = False,
+        type_: str = "default",
+        attachment_ids: list[str] | None = None,
     ) -> dict:
         message_id = int(new_id())
         with self._tx():
             self._exec(
                 "INSERT INTO messages(message_id, channel_id, author_user_id, content, sent_at, "
-                "reply_to_id, mentions, mention_everyone) VALUES (?,?,?,?,?,?,?,?)",
+                "reply_to_id, mentions, mention_everyone, type) VALUES (?,?,?,?,?,?,?,?,?)",
                 message_id, channel_id, author_user_id, content, now_iso(),
-                reply_to_id, json.dumps(mentions or []), int(mention_everyone),
+                reply_to_id, json.dumps(mentions or []), int(mention_everyone), type_,
             )
+            for aid in attachment_ids or []:
+                self._exec("UPDATE attachments SET message_id = ? WHERE attachment_id = ?", message_id, aid)
             self._exec("UPDATE channels SET last_message_id = ? WHERE channel_id = ?", message_id, channel_id)
             # Your own message is never unread.
             self._exec(
@@ -1082,6 +1486,113 @@ class Database:
             guild_id, user_id, since_iso,
         )
         return [(r["channel_id"], r["message_id"]) for r in rows]
+
+    def last_sent_at(self, channel_id: str, user_id: str) -> str | None:
+        row = self._one(
+            "SELECT MAX(sent_at) AS t FROM messages WHERE channel_id = ? AND author_user_id = ? AND type = 'default'",
+            channel_id, user_id,
+        )
+        return row["t"] if row else None
+
+    def around(self, channel_id: str, message_id: int, limit: int) -> tuple[list[dict], bool, bool]:
+        """Messages centered on message_id, oldest-first: (messages, has_more_before, has_more_after)."""
+        half = limit // 2
+        before = self._all(
+            "SELECT * FROM messages WHERE channel_id = ? AND message_id < ? ORDER BY message_id DESC LIMIT ?",
+            channel_id, message_id, half + 1,
+        )
+        after = self._all(
+            "SELECT * FROM messages WHERE channel_id = ? AND message_id >= ? ORDER BY message_id LIMIT ?",
+            channel_id, message_id, limit - half + 1,
+        )
+        more_before = len(before) > half
+        more_after = len(after) > limit - half
+        rows = list(reversed(before[:half])) + after[: limit - half]
+        return self._messages(rows), more_before, more_after
+
+    def history_after(self, channel_id: str, after_message_id: int, limit: int) -> tuple[list[dict], bool]:
+        rows = self._all(
+            "SELECT * FROM messages WHERE channel_id = ? AND message_id > ? ORDER BY message_id LIMIT ?",
+            channel_id, after_message_id, limit + 1,
+        )
+        return self._messages(rows[:limit]), len(rows) > limit
+
+    # --- pins ----------------------------------------------------------------
+
+    def pin_count(self, channel_id: str) -> int:
+        return self._one(
+            "SELECT COUNT(*) AS n FROM messages WHERE channel_id = ? AND pinned_at IS NOT NULL", channel_id
+        )["n"]
+
+    def set_pinned(self, message_id: int, by: str | None) -> dict:
+        if by is None:
+            self._exec("UPDATE messages SET pinned_at = NULL, pinned_by = NULL WHERE message_id = ?", message_id)
+        else:
+            self._exec(
+                "UPDATE messages SET pinned_at = ?, pinned_by = ? WHERE message_id = ?", now_iso(), by, message_id
+            )
+        return self.get_message(message_id)
+
+    def pins(self, channel_id: str) -> list[dict]:
+        rows = self._all(
+            "SELECT * FROM messages WHERE channel_id = ? AND pinned_at IS NOT NULL ORDER BY pinned_at DESC",
+            channel_id,
+        )
+        return self._messages(rows)
+
+    # --- search --------------------------------------------------------------
+
+    def search(
+        self, channel_ids: list[str], *, query: str | None, author_id: str | None, has: str | None,
+        pinned: bool | None, before: int | None, after: int | None, offset: int, limit: int,
+    ) -> tuple[list[dict], int]:
+        if not channel_ids:
+            return [], 0
+        where = [f"m.channel_id IN ({','.join('?' * len(channel_ids))})", "m.type = 'default'"]
+        args: list[Any] = list(channel_ids)
+        join = ""
+        if query:
+            if self.has_fts:
+                # Each word as a quoted prefix term: no FTS syntax from users.
+                terms = [t.replace('"', '""') for t in query.split() if t]
+                if terms:
+                    join = "JOIN messages_fts f ON f.rowid = m.message_id"
+                    where.append("messages_fts MATCH ?")
+                    args.append(" ".join(f'"{t}"*' for t in terms))
+            else:
+                for t in query.split():
+                    where.append("lower(m.content) LIKE ? ESCAPE '\\'")
+                    args.append("%" + _like_escape(t.lower()) + "%")
+        if author_id:
+            where.append("m.author_user_id = ?")
+            args.append(author_id)
+        if has == "file":
+            where.append("EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.message_id)")
+        elif has == "image":
+            where.append(
+                "EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.message_id AND a.content_type LIKE 'image/%')"
+            )
+        elif has == "video":
+            where.append(
+                "EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.message_id AND a.content_type LIKE 'video/%')"
+            )
+        elif has == "link":
+            where.append("(m.content LIKE '%http://%' OR m.content LIKE '%https://%')")
+        if pinned:
+            where.append("m.pinned_at IS NOT NULL")
+        if before is not None:
+            where.append("m.message_id < ?")
+            args.append(before)
+        if after is not None:
+            where.append("m.message_id > ?")
+            args.append(after)
+        cond = " AND ".join(where)
+        total = self._one(f"SELECT COUNT(*) AS n FROM messages m {join} WHERE {cond}", *args)["n"]
+        rows = self._all(
+            f"SELECT m.* FROM messages m {join} WHERE {cond} ORDER BY m.message_id DESC LIMIT ? OFFSET ?",
+            *args, limit, offset,
+        )
+        return self._messages(rows), total
 
     def history(
         self, channel_id: str, before_message_id: int | None, limit: int
@@ -1198,21 +1709,77 @@ class Database:
 
     # --- invites -------------------------------------------------------------
 
-    def create_invite(self, guild_id: str, created_by: str) -> str:
+    def _invite(self, r: sqlite3.Row, users: dict[str, dict] | None = None) -> dict:
+        users = users if users is not None else self.public_users([r["created_by"]])
+        return {
+            "code": r["code"],
+            "guild_id": r["guild_id"],
+            "inviter": users.get(r["created_by"]),
+            "uses": r["uses"],
+            "max_uses": r["max_uses"],
+            "expires_at": r["expires_at"],
+            "created_at": r["created_at"],
+        }
+
+    def create_invite(
+        self, guild_id: str, created_by: str, *, max_uses: int = 0, max_age_seconds: int = 0
+    ) -> dict:
+        expires = iso_in(max_age_seconds) if max_age_seconds else None
         while True:
             code = "".join(secrets.choice(INVITE_ALPHABET) for _ in range(8))
             try:
                 self._exec(
-                    "INSERT INTO invites(code, guild_id, created_by, created_at) VALUES (?,?,?,?)",
-                    code, guild_id, created_by, now_iso(),
+                    "INSERT INTO invites(code, guild_id, created_by, created_at, max_uses, expires_at) "
+                    "VALUES (?,?,?,?,?,?)",
+                    code, guild_id, created_by, now_iso(), max_uses, expires,
                 )
-                return code
+                return self._invite(self._one("SELECT * FROM invites WHERE code = ?", code))
             except sqlite3.IntegrityError:
                 continue
 
+    def invite_row(self, code: str) -> sqlite3.Row | None:
+        return self._one("SELECT * FROM invites WHERE code = ?", code.strip().upper())
+
+    def invite_state(self, code: str) -> tuple[str, sqlite3.Row | None, dict | None]:
+        """("ok" | "invalid" | "expired", invite row or None, guild or None).
+        Also resolves vanity codes (row None, guild set)."""
+        code = code.strip()
+        row = self.invite_row(code)
+        if row is None:
+            g = self._one("SELECT * FROM guilds WHERE vanity_code = ?", code.lower())
+            return ("ok", None, _guild(g)) if g else ("invalid", None, None)
+        if row["revoked_at"]:
+            return "invalid", row, None
+        guild = self.get_guild(row["guild_id"])
+        if (row["expires_at"] and row["expires_at"] <= now_iso()) or (
+            row["max_uses"] and row["uses"] >= row["max_uses"]
+        ):
+            return "expired", row, guild
+        return "ok", row, guild
+
+    def use_invite(self, code: str) -> None:
+        self._exec("UPDATE invites SET uses = uses + 1 WHERE code = ?", code)
+
+    def list_invites(self, guild_id: str, created_by: str | None = None) -> list[dict]:
+        """Active invites (not revoked, expired or used up), newest first."""
+        sql = (
+            "SELECT * FROM invites WHERE guild_id = ? AND revoked_at IS NULL "
+            "AND (expires_at IS NULL OR expires_at > ?) AND (max_uses = 0 OR uses < max_uses)"
+        )
+        args: list[Any] = [guild_id, now_iso()]
+        if created_by is not None:
+            sql += " AND created_by = ?"
+            args.append(created_by)
+        rows = self._all(sql + " ORDER BY created_at DESC", *args)
+        users = self.public_users(r["created_by"] for r in rows)
+        return [self._invite(r, users) for r in rows]
+
+    def revoke_invite(self, code: str) -> None:
+        self._exec("UPDATE invites SET revoked_at = ? WHERE code = ?", now_iso(), code)
+
     def resolve_invite(self, code: str) -> str | None:
-        row = self._one("SELECT guild_id FROM invites WHERE code = ?", code.strip().upper())
-        return row["guild_id"] if row else None
+        status, _, guild = self.invite_state(code)
+        return guild["guild_id"] if status == "ok" and guild else None
 
     # --- bans ----------------------------------------------------------------
 
@@ -1237,6 +1804,89 @@ class Database:
             for r in rows
             if r["user_id"] in users
         ]
+
+    # --- server-wide bans (IP / device) --------------------------------------
+
+    def ip_bans(self) -> list[dict]:
+        rows = self._all("SELECT * FROM ip_bans ORDER BY created_at DESC")
+        users = self.public_users(r["banned_by"] for r in rows)
+        return [
+            {"cidr": r["cidr"], "reason": r["reason"], "banned_by": users.get(r["banned_by"]), "created_at": r["created_at"]}
+            for r in rows
+        ]
+
+    def ip_ban_cidrs(self) -> list[str]:
+        return [r["cidr"] for r in self._all("SELECT cidr FROM ip_bans")]
+
+    def add_ip_ban(self, cidr: str, reason: str | None, by: str) -> None:
+        self._exec(
+            "INSERT OR REPLACE INTO ip_bans(cidr, reason, banned_by, created_at) VALUES (?,?,?,?)",
+            cidr, reason, by, now_iso(),
+        )
+
+    def remove_ip_ban(self, cidr: str) -> bool:
+        return self._exec("DELETE FROM ip_bans WHERE cidr = ?", cidr).rowcount > 0
+
+    def device_bans(self) -> list[dict]:
+        rows = self._all("SELECT * FROM device_bans ORDER BY created_at DESC")
+        users = self.public_users([r["banned_by"] for r in rows] + [r["user_id"] for r in rows if r["user_id"]])
+        return [
+            {
+                "device_id": r["device_id"], "user": users.get(r["user_id"]) if r["user_id"] else None,
+                "reason": r["reason"], "banned_by": users.get(r["banned_by"]), "created_at": r["created_at"],
+            }
+            for r in rows
+        ]
+
+    def is_device_banned(self, device_id: str | None) -> bool:
+        if not device_id:
+            return False
+        return self._one("SELECT 1 FROM device_bans WHERE device_id = ?", device_id) is not None
+
+    def add_device_ban(self, device_id: str, user_id: str | None, reason: str | None, by: str) -> None:
+        self._exec(
+            "INSERT OR REPLACE INTO device_bans(device_id, user_id, reason, banned_by, created_at) VALUES (?,?,?,?,?)",
+            device_id, user_id, reason, by, now_iso(),
+        )
+
+    def remove_device_ban(self, device_id: str) -> bool:
+        return self._exec("DELETE FROM device_bans WHERE device_id = ?", device_id).rowcount > 0
+
+    # --- server audit log ------------------------------------------------------
+
+    def add_server_audit(self, actor: str, action: str, target_id: str | None = None, details: dict | None = None) -> None:
+        self._exec(
+            "INSERT INTO server_audit_log(entry_id, actor_user_id, action, target_id, details, created_at) "
+            "VALUES (?,?,?,?,?,?)",
+            int(new_id()), actor, action, target_id, json.dumps(details or {}), now_iso(),
+        )
+
+    def list_server_audit(self, before: int | None, limit: int) -> tuple[list[dict], bool]:
+        sql = "SELECT * FROM server_audit_log"
+        args: list[Any] = []
+        if before is not None:
+            sql += " WHERE entry_id < ?"
+            args.append(before)
+        rows = self._all(sql + " ORDER BY entry_id DESC LIMIT ?", *args, limit + 1)
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        users = self.public_users(r["actor_user_id"] for r in rows)
+        return [
+            {
+                "entry_id": str(r["entry_id"]), "actor": users.get(r["actor_user_id"]), "action": r["action"],
+                "target_id": r["target_id"], "details": json.loads(r["details"]), "created_at": r["created_at"],
+            }
+            for r in rows
+        ], has_more
+
+    def stats(self) -> dict:
+        n = lambda sql: self._one(sql)["n"]  # noqa: E731
+        return {
+            "users": n("SELECT COUNT(*) AS n FROM users WHERE status = 'active'"),
+            "guilds": n("SELECT COUNT(*) AS n FROM guilds"),
+            "messages": n("SELECT COUNT(*) AS n FROM messages"),
+            "attachments": self.storage_stats(),
+        }
 
     # --- audit log -----------------------------------------------------------
 

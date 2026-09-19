@@ -1,8 +1,11 @@
-"""aiohttp application: GET /ws (the protocol), GET / (cert-trust page) and
-GET /avatars/{avatar_id} (profile pictures)."""
+"""aiohttp application: GET /ws (the protocol), GET / (cert-trust page),
+GET /avatars/{avatar_id} (profile pictures and guild icons), and the
+attachment routes POST /upload and GET /files/{id}/{name}."""
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import secrets
 
@@ -13,15 +16,18 @@ from .config import Config
 from .db import Database
 from .dispatch import dispatch
 from .handlers import Ctx
+from .handlers import files as file_routes
+from .handlers.admin import ip_matches
 from .handlers.auth import LoginThrottle, hash_setup_code, setup_required
 from .handlers.server import public_config
 from .handlers.users import AVATAR_ID_RE, AVATAR_TYPES, avatar_dir
-from .hub import Connection, Hub
+from .hub import BANNED_CLOSE, Connection, Hub
 from .permissions import PermissionService
 
 log = logging.getLogger("nightcord.app")
 
 CTX_KEY = web.AppKey("ctx", Ctx)
+SWEEPER_KEY = web.AppKey("sweeper", asyncio.Task)
 
 LANDING_HTML = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -76,6 +82,19 @@ async def avatar(request: web.Request) -> web.StreamResponse:
     )
 
 
+def client_ip(ctx, request: web.Request) -> str | None:
+    """The peer address, or the first X-Forwarded-For hop behind a trusted proxy."""
+    if ctx.config.trust_proxy:
+        fwd = request.headers.get("X-Forwarded-For")
+        if fwd:
+            return fwd.split(",")[0].strip()
+    return request.remote
+
+
+def ip_banned(ctx, ip: str | None) -> bool:
+    return ip_matches(ip, ctx.db.ip_ban_cidrs())
+
+
 async def websocket(request: web.Request) -> web.StreamResponse:
     ctx = request.app[CTX_KEY]
     origin = request.headers.get("Origin")
@@ -85,7 +104,13 @@ async def websocket(request: web.Request) -> web.StreamResponse:
 
     ws = web.WebSocketResponse(heartbeat=30.0, max_msg_size=P.MAX_FRAME_BYTES)
     await ws.prepare(request)
-    conn = Connection(ws, request.remote, request.headers.get("User-Agent"))
+    ip = client_ip(ctx, request)
+    if ip_banned(ctx, ip):
+        # Tell the client why before closing, so it can show a message.
+        await ws.send_json(P.frame(P.ERROR, P.error_payload(P.IP_BANNED, "Your IP address is banned from this server")))
+        await ws.close(code=BANNED_CLOSE, message=b"Banned")
+        return ws
+    conn = Connection(ws, ip, request.headers.get("User-Agent"))
     ctx.hub.add(conn)
     try:
         async for msg in ws:
@@ -124,14 +149,26 @@ def create_app(config: Config, db: Database | None = None, *, setup_code: str | 
     app.router.add_get("/", landing)
     app.router.add_get("/ws", websocket)
     app.router.add_get("/avatars/{avatar_id}", avatar)
+    app.router.add_post("/upload", file_routes.upload)
+    app.router.add_route("OPTIONS", "/upload", file_routes.upload_preflight)
+    app.router.add_get("/files/{attachment_id}/{filename}", file_routes.download)
+
+    async def on_startup(app: web.Application) -> None:
+        app[SWEEPER_KEY] = asyncio.create_task(file_routes.sweeper(app))
 
     async def on_shutdown(app: web.Application) -> None:
+        task = app.get(SWEEPER_KEY)
+        if task:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
         # Close sockets first so open handlers return and shutdown doesn't stall.
         await app[CTX_KEY].hub.close_all()
 
     async def on_cleanup(app: web.Application) -> None:
         db.close()
 
+    app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
     app.on_cleanup.append(on_cleanup)
     return app

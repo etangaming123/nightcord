@@ -67,33 +67,41 @@ async def update(ctx, conn, payload):
     return {"user": user}
 
 
+def store_image(ctx, data_b64) -> str:
+    """Validates a base64 avatar/icon image and stores it; returns its id."""
+    if not isinstance(data_b64, str):
+        raise ProtocolError(P.AVATAR_INVALID, "'data_b64' must be a base64 string or null")
+    try:
+        data = base64.b64decode(data_b64, validate=True)
+    except (binascii.Error, ValueError):
+        raise ProtocolError(P.AVATAR_INVALID, "Image isn't valid base64") from None
+    if len(data) > P.AVATAR_MAX_BYTES:
+        raise ProtocolError(P.AVATAR_INVALID, "Image must be at most 40 KB")
+    ext = _sniff_image(data)
+    if ext is None:
+        raise ProtocolError(P.AVATAR_INVALID, "Image must be a PNG, JPEG or WebP")
+    image_id = f"{new_id()}.{ext}"
+    folder = avatar_dir(ctx)
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / image_id).write_bytes(data)
+    return image_id
+
+
+def drop_image(ctx, image_id: str | None) -> None:
+    if image_id and AVATAR_ID_RE.match(image_id):
+        try:
+            (avatar_dir(ctx) / image_id).unlink(missing_ok=True)
+        except OSError as e:
+            log.warning("couldn't delete image %s: %s", image_id, e)
+
+
 @handles(P.USER_AVATAR_SET)
 async def avatar_set(ctx, conn, payload):
     data_b64 = payload.get("data_b64")
     old = conn.user.get("avatar_id")
-    avatar_id = None
-    if data_b64 is not None:
-        if not isinstance(data_b64, str):
-            raise ProtocolError(P.AVATAR_INVALID, "'data_b64' must be a base64 string or null")
-        try:
-            data = base64.b64decode(data_b64, validate=True)
-        except (binascii.Error, ValueError):
-            raise ProtocolError(P.AVATAR_INVALID, "Avatar isn't valid base64") from None
-        if len(data) > P.AVATAR_MAX_BYTES:
-            raise ProtocolError(P.AVATAR_INVALID, "Avatar must be at most 40 KB")
-        ext = _sniff_image(data)
-        if ext is None:
-            raise ProtocolError(P.AVATAR_INVALID, "Avatar must be a PNG, JPEG or WebP image")
-        avatar_id = f"{new_id()}.{ext}"
-        folder = avatar_dir(ctx)
-        folder.mkdir(parents=True, exist_ok=True)
-        (folder / avatar_id).write_bytes(data)
+    avatar_id = None if data_b64 is None else store_image(ctx, data_b64)
     user = ctx.db.update_profile(conn.user_id, {"avatar_id": avatar_id})
-    if old and AVATAR_ID_RE.match(old):
-        try:
-            (avatar_dir(ctx) / old).unlink(missing_ok=True)
-        except OSError as e:
-            log.warning("couldn't delete old avatar %s: %s", old, e)
+    drop_image(ctx, old)
     await broadcast_user(ctx, user)
     return {"user": user}
 
@@ -127,6 +135,57 @@ async def sessions_revoke(ctx, conn, payload):
     elif not ctx.db.delete_session_by_id(conn.user_id, session_id):
         raise ProtocolError(P.NOT_FOUND, "Session not found")
     await ctx.hub.close_user(conn.user_id, keep=conn, only_revoked=True)
+    return {}
+
+
+async def delete_account(ctx, user_id: str, *, keep=None) -> None:
+    """Delete an account (PROTOCOL.md §5 Users, user.delete): guilds it owns
+    pass to the highest-ranked member (or are deleted when empty), it leaves
+    every guild and group DM, and its messages stay as "Deleted User"."""
+    from .dms import announce_dm
+    from .files import delete_files
+    from .guilds import drop_member, remove_guild, transfer_guild
+
+    audience = ctx.db.audience_of(user_id)
+    await ctx.hub.voice_leave(user_id)
+    for guild_id in ctx.db.owned_guild_ids(user_id):
+        heir = ctx.db.successor(guild_id, user_id)
+        if heir is None:
+            await remove_guild(ctx, ctx.db.get_guild(guild_id))
+        else:
+            await transfer_guild(ctx, guild_id, heir)
+    for g in ctx.db.list_user_guilds(user_id):
+        await drop_member(ctx, g["guild_id"], user_id, "left", ghost=g["ghost"])
+    for channel in ctx.db.list_dms(user_id) + [ctx.db.get_channel(c) for c in ctx.db.dm_channel_ids(user_id)]:
+        if channel and channel["kind"] == "group_dm" and ctx.db.is_dm_recipient(channel["channel_id"], user_id):
+            ctx.db.remove_dm_recipient(channel["channel_id"], user_id)
+            fresh = ctx.db.get_channel(channel["channel_id"])
+            if fresh is not None:
+                await announce_dm(ctx, fresh)
+    leftovers = ctx.db.anonymize_user(user_id)
+    # `keep` (the deleting connection) stays open, logged out, to get its reply.
+    await ctx.hub.close_user(user_id, keep=keep)
+    if keep is not None:
+        await ctx.hub.deauthenticate(keep)
+    drop_image(ctx, leftovers["avatar_id"])
+    delete_files(ctx, leftovers["attachment_ids"])
+    await ctx.hub.send_to_users(audience, P.frame(P.USER_UPDATED, ctx.db.public_user(user_id)))
+
+
+@handles(P.USER_DELETE)
+async def delete(ctx, conn, payload):
+    password = payload.get("password")
+    if not isinstance(password, str):
+        raise ProtocolError(P.BAD_REQUEST, "'password' is required")
+    if conn.user["is_server_owner"]:
+        raise ProtocolError(P.FORBIDDEN, "The server owner's account can't be deleted")
+    ctx.login_throttle.check(conn.remote, record=False)
+    row = ctx.db.get_user_row(conn.user_id)
+    if not await check_password(password, row["password_hash"]):
+        ctx.login_throttle.record(conn.remote)
+        raise ProtocolError(P.INVALID_CURRENT_PASSWORD, "Your password is wrong")
+    ctx.db.add_server_audit(conn.user_id, "user.delete_self", conn.user_id, {"username": row["username"]})
+    await delete_account(ctx, conn.user_id, keep=conn)
     return {}
 
 

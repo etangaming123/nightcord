@@ -25,9 +25,12 @@ def apply_config_updates(payload: dict) -> dict:
         if key in _CONFIG_ENUMS:
             if val not in _CONFIG_ENUMS[key]:
                 raise ProtocolError(P.BAD_REQUEST, f"'{key}' must be one of {_CONFIG_ENUMS[key]}")
-        elif key == "guild_list_visible":
+        elif key in ("guild_list_visible", "voice_enabled"):
             if not isinstance(val, bool):
-                raise ProtocolError(P.BAD_REQUEST, "'guild_list_visible' must be a boolean")
+                raise ProtocolError(P.BAD_REQUEST, f"'{key}' must be a boolean")
+        elif key == "max_upload_bytes":
+            if not isinstance(val, int) or isinstance(val, bool) or not 1024 * 1024 <= val <= P.MAX_UPLOAD_BYTES_CEILING:
+                raise ProtocolError(P.BAD_REQUEST, "'max_upload_bytes' must be between 1 MB and 1 GB")
         elif key == "server_name":
             val = P.validate_server_name(val)
         else:
@@ -40,8 +43,11 @@ def apply_config_updates(payload: dict) -> dict:
 async def info(ctx, conn, payload):
     from .auth import setup_required
 
+    from .legal import legal_info
+
     return {
         **public_config(ctx),
+        **legal_info(ctx),
         "protocol_version": P.PROTOCOL_VERSION,
         "setup_required": setup_required(ctx),
     }
@@ -50,5 +56,14 @@ async def info(ctx, conn, payload):
 @handles(P.SERVER_CONFIG_UPDATE)
 async def config_update(ctx, conn, payload):
     require_server_owner(conn)
-    ctx.db.set_server_config(apply_config_updates(payload))
+    updates = apply_config_updates(payload)
+    ctx.db.set_server_config(updates)
+    if updates:
+        ctx.db.add_server_audit(conn.user_id, "config.update", None, updates)
+    if updates.get("voice_enabled") is False:
+        await ctx.hub.voice_drop_where(lambda s: True)
+    if updates:
+        from .legal import legal_info
+
+        await ctx.hub.send_to_everyone(P.frame(P.SERVER_CONFIG_UPDATED, {**public_config(ctx), **legal_info(ctx)}))
     return {"config": public_config(ctx)}

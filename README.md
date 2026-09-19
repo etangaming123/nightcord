@@ -8,25 +8,40 @@ direct messages between anyone on the server.
 - `server/` holds the Python server: aiohttp, SQLite, and bcrypt.
 - `client/` holds the client: vanilla JS modules with no build step.
 
-## What's in it (v2)
+## What's in it (v3)
 
 - **Chat:** markdown (`**bold**`, `*italic*`, `` `code` ``, code blocks, quotes, `||spoilers||`), replies, emoji
-  reactions, edit and delete, @mentions and @everyone, typing indicators, unread and mention badges that sync across
-  your devices.
+  reactions, edit and delete, pins, @mentions and @everyone, typing indicators, unread and mention badges that sync
+  across your devices.
+- **Files:** upload with the + button, paste, or drag and drop. Images and videos show inline, text files open in a
+  viewer, anything else downloads. The server owner sets the size limit.
+- **Search:** Ctrl/Cmd+F searches a guild or conversation, with `from:`, `in:`, `has:image|file|video|link` and
+  `pinned:true`. Results jump straight to the message. Ctrl/Cmd+K opens a quick switcher.
+- **Guild layout:** channel categories (collapsible, drag to reorder, permissions that sync like Discord's), channel
+  topics, slowmode, a guild icon, per-guild nicknames, and optional join/leave messages.
+- **Invites:** expiry and use limits, a list of active invites with who made them, revoking, a permanent public
+  link, "invited by" on every member, and share links that open straight into an invite card.
+- **Voice channels (preview):** you can join a voice channel and everyone sees who's in it, but there's no audio
+  yet. The server owner turns them on.
 - **Direct messages:** 1:1 and group DMs (up to 10 people) with anyone on the server.
 - **Profiles:** display name, avatar image, profile color, bio, custom status, and online / idle / do not disturb /
   invisible status (idle kicks in after 10 minutes away).
 - **User settings:** account and password, profile editor with live preview, logged-in devices, dark/light theme, font
   size, compact mode, desktop notifications and sound. Per-guild and per-channel mute and notification levels live in
   the guild and channel menus.
-- **Roles and permissions:** colored roles with 15 permissions, role hierarchy, and per-channel overrides for private
-  and read-only channels.
+- **Roles and permissions:** colored roles with 19 permissions, role hierarchy, roles displayed separately in the
+  member list, and per-channel overrides for private and read-only channels.
 - **Moderation:** kick, ban (optionally deleting recent messages), timeouts, and an audit log.
-- **Server owner:** first-run setup in the browser, an Admin panel for account requests, users and guilds, and read-only
-  "ghost" joins into any guild.
+- **Server staff:** the owner can appoint server **admins** and **moderators**. Moderators handle account requests,
+  mute people server-wide, and ban IP addresses and devices. Admins can also delete accounts, reset passwords and
+  manage every guild. Everything staff do is in a server audit log.
+- **Server owner:** first-run setup in the browser, server settings (upload limit, voice), Terms of Service and
+  Privacy Policy pages, and read-only "ghost" joins into any guild.
+- **Safety prompts:** before connecting to a new server the client warns that its owner can see your IP address, and
+  if the server has rules, people read and accept them before creating an account (and again when they change).
 
-Deferred (see PROTOCOL.md §10): friend and message requests, attachments, search, channel categories and topics, guild
-icons, expiring invites, voice.
+Deferred (see PROTOCOL.md §10): friend and message requests, voice audio, custom emoji and stickers, banners and
+themes, link embeds.
 
 ## Run a server
 
@@ -48,7 +63,17 @@ On first start the server does two things:
 - It generates a **self-signed TLS certificate** in `data/`. The cert includes `localhost`, `127.0.0.1`, and every
   entry in `public_hostnames`.
 
-Databases from Nightcord v1 aren't compatible; the server refuses to open one. Move or delete the old `data/` folder.
+Databases from Nightcord v2 upgrade in place the first time v3 starts. Databases from v1 aren't compatible; the server
+refuses to open one. Move or delete the old `data/` folder.
+
+Uploaded files are stored in `data/files/`, and the rules pages in `data/legal/terms.md` and `data/legal/privacy.md`.
+You can edit those two files by hand or in the client.
+
+### Behind a reverse proxy
+
+If people reach the server through nginx, Caddy or a tunnel, set `trust_proxy = true` in `nightcord.toml` so the
+server sees real client IPs (for IP bans and the Accounts list). Leave it off when clients connect directly;
+otherwise anyone could fake their address.
 
 ### Letting browsers trust the certificate
 
@@ -68,8 +93,9 @@ The server rejects WebSocket connections from browser origins that aren't in `al
 
 ### Admin
 
-Most admin work happens in the client: log in as the server owner and open **User settings (⚙) → Server admin**. You
-get a live badge when someone asks for an account. The CLI works too, and is safe to run while the server is up:
+Most admin work happens in the client: log in as the server owner (or a staff member) and open **User settings (⚙) →
+Server admin**. Staff get a live badge when someone asks for an account, and staff actions are also in each person's
+profile and right-click menu. The CLI works too, and is safe to run while the server is up:
 
 ```sh
 python nightcord_server.py pending list                 # account requests (account_creation = request)
@@ -82,6 +108,11 @@ python nightcord_server.py config set account_creation request   # off | request
 python nightcord_server.py config set guild_creation off         # off | on
 python nightcord_server.py config set guild_list_visible false
 python nightcord_server.py config set server_name "Night Owls"
+python nightcord_server.py config set max_upload_mb 50             # per-file upload limit
+python nightcord_server.py config set voice_enabled true           # voice channels (preview, no audio)
+python nightcord_server.py staff list                   # server admins and moderators
+python nightcord_server.py staff set <username> moderator        # or: admin | none
+python nightcord_server.py ipban list                   # or: ipban add|remove 203.0.113.0/24
 python nightcord_server.py guilds                       # every guild + ID
 python nightcord_server.py owner reset-password         # locked out? prints a new owner password
 ```
@@ -91,10 +122,11 @@ python nightcord_server.py owner reset-password         # locked out? prints a n
 - **Hosted:** push to `main` and the `Deploy client to GitHub Pages` workflow publishes `client/`. To enable it, go to
   *Settings → Pages → Source: GitHub Actions*.
 - **Share a direct link:** `https://you.github.io/nightcord/?server=chat.example.com:8765` opens the client already
-  pointed at that server.
-- **Address format:** enter `host:port` and the client uses `wss://`. You can also give a full `ws://` or `wss://` URL.
+  pointed at that server. Invite links from the client add `&invite=CODE` and open the invite card.
+- **Address format:** enter `host:port` (the field already shows `https://`) and the client uses `wss://`. You can
+  also paste a full `ws://` or `wss://` URL. The `localhost:8765` chip fills in a server on your own computer.
 - **Tips:** right-click guilds, channels and members for menus; ↑ in an empty message box edits your last message;
-  Shift-click the delete button to skip the confirmation.
+  Shift-click the delete button to skip the confirmation; Ctrl/Cmd+K jumps anywhere; drag channels to reorder them.
 
 ## Local development
 

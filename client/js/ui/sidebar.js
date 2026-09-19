@@ -2,9 +2,10 @@
 // the DM list on Home, plus the user panel.
 
 import {
-  can, dmTitle, guildBadge, homeBadge, isMuted, isPrivate, isUnread, mentionCount, sortDms, statusOf, userById,
+  can, channelTree, dmTitle, guildBadge, homeBadge, isMuted, isPrivate, isStaff, isUnread, memberById, mentionCount,
+  nameOf, sortDms, statusOf, userById, voiceEnabled, voiceIn,
 } from "../state.js";
-import { $, add, avatar, clear, displayName, h, iconBtn, initials } from "./dom.js";
+import { $, add, avatar, avatarUrl, clear, displayName, h, iconBtn, initials } from "./dom.js";
 
 function badge(n) {
   return n ? h("span", { class: "badge", "aria-label": `${n} mentions` }, n > 99 ? "99+" : String(n)) : null;
@@ -34,7 +35,8 @@ export function renderRail(state, actions) {
         click: () => actions.openGuild(g.guild_id),
         contextmenu: (e) => { e.preventDefault(); actions.guildMenu(g, { x: e.clientX, y: e.clientY }); },
       },
-    }, initials(g.name), g.ghost ? h("span", { class: "ghost-badge", "aria-hidden": "true" }, "👻") : null, badge(mentions)));
+    }, g.icon_id ? h("img", { src: avatarUrl(g.icon_id), alt: "", draggable: "false" }) : initials(g.name),
+    g.ghost ? h("span", { class: "ghost-badge", "aria-hidden": "true" }, "👻") : null, badge(mentions)));
   }
   add(rail, h("button", {
     class: "guild-icon add", type: "button", title: "Create or join a guild", "aria-label": "Create or join a guild",
@@ -71,34 +73,160 @@ function renderGuild(state, actions) {
     on: { click: (e) => actions.guildMenu(guild, e.currentTarget) },
   }, h("span", { class: "title", title: guild.name }, guild.name), h("span", { class: "chev", "aria-hidden": "true" }, "▾")));
 
-  add(list, h("div", { class: "section-label" },
-    h("span", {}, "Text channels"),
-    can("MANAGE_CHANNELS") ? iconBtn("+", "Create channel", actions.createChannel) : null,
-  ));
-  for (const c of state.channels) {
-    const active = c.channel_id === state.channelId;
-    const unread = isUnread(c.channel_id) && !active;
-    const muted = isMuted(c.channel_id, c.guild_id);
-    const open = () => { if (!active) actions.openChannel(c.channel_id); else actions.toggleNav(false); };
+  const manage = can("MANAGE_CHANNELS");
+  const drag = dragController(state, actions, manage);
+  const tree = channelTree();
+  const showVoice = voiceEnabled();
+  const visible = (c) => showVoice || c.kind !== "voice";
+  for (const c of tree.loose.filter(visible)) add(list, channelRow(c, state, actions, drag));
+  if (!tree.categories.length && manage) {
+    add(list, h("div", { class: "section-label" }, h("span", {}, "Channels"), iconBtn("+", "Create channel", () => actions.createChannel())));
+  }
+  for (const { cat, channels } of tree.categories) {
+    const collapsed = actions.isCollapsed(cat.channel_id);
+    const kids = channels.filter(visible);
     add(list, h("div", {
-      class: `channel ${active ? "active" : ""} ${unread && !muted ? "unread" : ""} ${muted ? "muted" : ""}`,
-      role: "link", tabindex: "0", "aria-current": active ? "page" : null,
+      class: `category ${collapsed ? "collapsed" : ""}`, role: "button", tabindex: "0", "aria-expanded": String(!collapsed),
+      ...drag.attrs(cat),
       on: {
-        click: open,
-        keydown: (e) => { if (e.key === "Enter" && e.target === e.currentTarget) open(); },
-        contextmenu: (e) => { e.preventDefault(); actions.channelMenu(c, { x: e.clientX, y: e.clientY }); },
+        ...drag.handlers(cat),
+        click: () => actions.toggleCategory(cat.channel_id),
+        keydown: (e) => { if (e.key === "Enter" && e.target === e.currentTarget) actions.toggleCategory(cat.channel_id); },
+        contextmenu: (e) => { e.preventDefault(); actions.channelMenu(cat, { x: e.clientX, y: e.clientY }); },
       },
     },
-    h("span", { class: "hash", "aria-hidden": "true", title: isPrivate(c) ? "Private channel" : null }, isPrivate(c) ? "🔒" : "#"),
-    h("span", { class: "name" }, c.name),
-    badge(active ? 0 : mentionCount(c.channel_id)),
-    h("span", { class: "actions" },
-      can("MANAGE_CHANNELS", c) ? iconBtn("⚙", "Edit channel", () => actions.channelSettings(c)) : null,
-      iconBtn("⋯", "Channel options", (e) => actions.channelMenu(c, e.currentTarget)))));
+    h("span", { class: "cat-chev", "aria-hidden": "true" }, "▾"),
+    h("span", { class: "cat-name" }, cat.name),
+    can("MANAGE_CHANNELS", cat) ? iconBtn("+", `Create channel in ${cat.name}`, () => actions.createChannel({ parentId: cat.channel_id }), { cls: "cat-add" }) : null));
+    for (const c of kids) {
+      // Collapsed categories still show the open channel and unread ones, like Discord.
+      if (collapsed && c.channel_id !== state.channelId && !(isUnread(c.channel_id) && !isMuted(c.channel_id, c.guild_id)) && !voiceIn(c.channel_id).length) continue;
+      add(list, channelRow(c, state, actions, drag));
+    }
   }
   if (!state.channels.length && state.members.length) {
     add(list, h("p", { class: "muted small pad" }, "No channels you can see yet."));
   }
+  if (manage && state.channels.length) {
+    add(list, h("button", { class: "btn link add-channel", type: "button", on: { click: () => actions.createChannel() } }, "＋ Add a channel"));
+  }
+}
+
+function channelRow(c, state, actions, drag) {
+  if (c.kind === "voice") return voiceRow(c, state, actions, drag);
+  const active = c.channel_id === state.channelId;
+  const unread = isUnread(c.channel_id) && !active;
+  const muted = isMuted(c.channel_id, c.guild_id);
+  const open = () => { if (!active) actions.openChannel(c.channel_id); else actions.toggleNav(false); };
+  return h("div", {
+    class: `channel ${active ? "active" : ""} ${unread && !muted ? "unread" : ""} ${muted ? "muted" : ""} ${c.parent_id ? "nested" : ""}`,
+    role: "link", tabindex: "0", "aria-current": active ? "page" : null,
+    ...drag.attrs(c),
+    on: {
+      ...drag.handlers(c),
+      click: open,
+      keydown: (e) => { if (e.key === "Enter" && e.target === e.currentTarget) open(); },
+      contextmenu: (e) => { e.preventDefault(); actions.channelMenu(c, { x: e.clientX, y: e.clientY }); },
+    },
+  },
+  h("span", { class: "hash", "aria-hidden": "true", title: isPrivate(c) ? "Private channel" : null }, isPrivate(c) ? "🔒" : "#"),
+  h("span", { class: "name" }, c.name),
+  badge(active ? 0 : mentionCount(c.channel_id)),
+  h("span", { class: "actions" },
+    can("CREATE_INVITE") && !state.guilds.get(state.guildId)?.ghost ? iconBtn("✉", "Invite people", () => actions.openInviteDialog()) : null,
+    can("MANAGE_CHANNELS", c) ? iconBtn("⚙", "Edit channel", () => actions.channelSettings(c)) : null));
+}
+
+function voiceRow(c, state, actions, drag) {
+  const here = voiceIn(c.channel_id);
+  const mine = state.myVoice?.channel_id === c.channel_id;
+  const canJoin = can("CONNECT", c);
+  return h("div", { class: "voice-block" },
+    h("div", {
+      class: `channel voice ${mine ? "active" : ""} ${c.parent_id ? "nested" : ""} ${canJoin ? "" : "locked"}`,
+      role: "button", tabindex: "0", title: canJoin ? `Join ${c.name}` : "You can't join this channel",
+      ...drag.attrs(c),
+      on: {
+        ...drag.handlers(c),
+        click: () => { if (canJoin) actions.joinVoice(c); },
+        keydown: (e) => { if (e.key === "Enter" && e.target === e.currentTarget && canJoin) actions.joinVoice(c); },
+        contextmenu: (e) => { e.preventDefault(); actions.channelMenu(c, { x: e.clientX, y: e.clientY }); },
+      },
+    },
+    h("span", { class: "hash", "aria-hidden": "true" }, isPrivate(c) ? "🔒" : "🔊"),
+    h("span", { class: "name" }, c.name),
+    h("span", { class: "actions" }, can("MANAGE_CHANNELS", c) ? iconBtn("⚙", "Edit channel", () => actions.channelSettings(c)) : null)),
+    here.length ? h("div", { class: "voice-users" }, here.map((v) => {
+      const u = userById(v.user_id) || memberById(v.user_id)?.user || { username: "…", user_id: v.user_id };
+      return h("button", {
+        class: "voice-user", type: "button",
+        on: { click: (e) => actions.openProfile(v.user_id, e.currentTarget) },
+      }, avatar(u, { size: "xs" }), h("span", { class: "name" }, nameOf(u)),
+      v.self_deaf ? h("span", { class: "vflag", title: "Deafened" }, "🔕") : v.self_mute ? h("span", { class: "vflag", title: "Muted" }, "🔇") : null);
+    })) : null);
+}
+
+// Drag and drop to reorder channels and categories (needs Manage Channels).
+function dragController(state, actions, enabled) {
+  let dragId = null;
+  const byId = (id) => state.channels.find((c) => c.channel_id === id);
+  const clearMarks = () => document.querySelectorAll(".drop-before, .drop-after, .drop-into").forEach((el) => el.classList.remove("drop-before", "drop-after", "drop-into"));
+  const zone = (e, target) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const y = (e.clientY - r.top) / r.height;
+    const dragged = byId(dragId);
+    if (target.kind === "category" && dragged?.kind !== "category") return y < 0.5 ? "before" : "into";
+    return y < 0.5 ? "before" : "after";
+  };
+  const drop = (target, where) => {
+    const dragged = byId(dragId);
+    if (!dragged || dragged.channel_id === target.channel_id) return;
+    const tree = channelTree();
+    if (dragged.kind === "category") {
+      const cats = tree.categories.map((c) => c.cat.channel_id).filter((id) => id !== dragged.channel_id);
+      const anchor = target.kind === "category" ? target.channel_id : target.parent_id;
+      let i = anchor ? cats.indexOf(anchor) : 0;
+      if (anchor && where === "after") i += 1;
+      cats.splice(Math.max(0, i), 0, dragged.channel_id);
+      actions.reorderChannels([
+        ...tree.loose.map((c) => ({ channel_id: c.channel_id, parent_id: null })),
+        ...cats.flatMap((id) => [{ channel_id: id, parent_id: null },
+          ...tree.categories.find((c) => c.cat.channel_id === id).channels.map((c) => ({ channel_id: c.channel_id, parent_id: id }))]),
+      ]);
+      return;
+    }
+    const order = actions.sidebarOrder().filter((o) => o.channel_id !== dragged.channel_id);
+    let parent;
+    let index;
+    if (target.kind === "category") {
+      const at = order.findIndex((o) => o.channel_id === target.channel_id);
+      if (where === "into") { parent = target.channel_id; index = at + 1; } else {
+        // Just above a category header: the end of the top-level list.
+        parent = null;
+        index = order.findIndex((o) => byId(o.channel_id)?.kind === "category");
+      }
+    } else {
+      parent = target.parent_id || null;
+      index = order.findIndex((o) => o.channel_id === target.channel_id) + (where === "after" ? 1 : 0);
+    }
+    order.splice(index < 0 ? order.length : index, 0, { channel_id: dragged.channel_id, parent_id: parent });
+    actions.reorderChannels(order);
+  };
+  return {
+    attrs: () => (enabled ? { draggable: "true" } : {}),
+    handlers: (c) => (!enabled ? {} : {
+      dragstart: (e) => { dragId = c.channel_id; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", c.name); e.currentTarget.classList.add("dragging"); },
+      dragend: (e) => { dragId = null; e.currentTarget.classList.remove("dragging"); clearMarks(); },
+      dragover: (e) => {
+        if (!dragId || dragId === c.channel_id) return;
+        e.preventDefault();
+        clearMarks();
+        e.currentTarget.classList.add(`drop-${zone(e, c)}`);
+      },
+      dragleave: (e) => e.currentTarget.classList.remove("drop-before", "drop-after", "drop-into"),
+      drop: (e) => { e.preventDefault(); const where = zone(e, c); clearMarks(); drop(c, where); dragId = null; },
+    }),
+  };
 }
 
 function renderHome(state, actions) {
@@ -144,19 +272,46 @@ function renderUserPanel(state, actions) {
   if (!state.user) return;
   const me = state.user;
   const status = statusOf(me.user_id);
-  const pending = state.user.is_server_owner && state.pendingAccounts;
-  clear(panel,
+  const pending = isStaff(1) && state.pendingAccounts;
+  clear(panel, voicePanel(state, actions),
     h("button", {
       class: "me", type: "button", title: "Set status", "aria-haspopup": "menu",
       on: { click: (e) => actions.statusMenu(e.currentTarget) },
     },
     avatar(me, { status: me.presence === "invisible" && state.connected ? "invisible" : status }),
     h("span", { class: "who" },
-      h("span", { class: "name" }, displayName(me)),
+      h("span", { class: "name" }, nameOf(me)),
       h("span", { class: "sub" }, me.custom_status || (me.presence === "invisible" ? "Invisible" : me.username)))),
     h("button", {
       class: "icon-btn gear", type: "button", title: "User settings", "aria-label": "User settings",
       on: { click: () => actions.userSettings() },
     }, "⚙", pending ? h("span", { class: "badge small" }, String(pending)) : null),
   );
+}
+
+// "Voice connected" strip above the user panel (placeholder: no audio yet).
+function voicePanel(state, actions) {
+  const v = state.myVoice;
+  if (!v) return null;
+  const guild = state.guilds.get(v.guild_id);
+  const ch = v.guild_id === state.guildId ? state.channels.find((c) => c.channel_id === v.channel_id) : null;
+  return h("div", { class: "voice-panel" },
+    h("div", { class: "vp-top" },
+      h("span", { class: "vp-meta" },
+        h("span", { class: "vp-status" }, "Voice connected"),
+        h("button", {
+          class: "vp-where btn link", type: "button",
+          on: { click: () => actions.openGuild(v.guild_id) },
+        }, `${ch ? ch.name : "voice"} / ${guild?.name || ""}`)),
+      iconBtn("✆", "Disconnect", () => actions.leaveVoice(), { cls: "vp-leave" })),
+    h("div", { class: "vp-note muted small" }, "Audio isn't available yet — others can see you're here."),
+    h("div", { class: "vp-buttons" },
+      h("button", {
+        class: `btn small-btn ${v.self_mute ? "on" : ""}`, type: "button", "aria-pressed": String(!!v.self_mute),
+        on: { click: () => actions.setVoiceFlags({ self_mute: !v.self_mute }) },
+      }, v.self_mute ? "🔇 Unmute" : "🎙 Mute"),
+      h("button", {
+        class: `btn small-btn ${v.self_deaf ? "on" : ""}`, type: "button", "aria-pressed": String(!!v.self_deaf),
+        on: { click: () => actions.setVoiceFlags({ self_deaf: !v.self_deaf }) },
+      }, v.self_deaf ? "🔕 Undeafen" : "🎧 Deafen")));
 }

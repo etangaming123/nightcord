@@ -8,9 +8,10 @@ const BACKOFF_START_MS = 1000;
 const BACKOFF_MAX_MS = 30000;
 
 export class NightcordError extends Error {
-  constructor(code, message) {
+  constructor(code, message, data = {}) {
     super(message || code);
     this.code = code;
+    this.data = data; // extra error fields, e.g. retry_after for slowmode
   }
 }
 
@@ -82,7 +83,7 @@ export class Connection extends EventTarget {
           reject(new NightcordError(ERR.DISCONNECTED, "Could not connect to the server"));
           return;
         }
-        this.#emit("disconnected", { code: e.code });
+        this.#emit("disconnected", { code: e.code, reason: e.reason });
         if (!this.closedByUser) this.#scheduleReconnect();
       });
     });
@@ -142,7 +143,7 @@ export class Connection extends EventTarget {
       clearTimeout(waiter.timer);
       const okType = AUTH_OK_TYPES.has(waiter.type) ? T.AUTH_OK : `${waiter.type}.result`;
       if (msg.type === okType) waiter.resolve(payload);
-      else waiter.reject(new NightcordError(payload.code || ERR.BAD_REQUEST, payload.message));
+      else waiter.reject(new NightcordError(payload.code || ERR.BAD_REQUEST, payload.message, payload));
       return;
     }
     this.#emit(msg.type, payload);

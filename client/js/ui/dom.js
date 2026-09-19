@@ -47,19 +47,33 @@ export function colorFor(name) {
 }
 
 export function displayName(user) {
+  if (user?.deleted) return "Deleted User";
   return user?.display_name || user?.username || "Unknown user";
 }
 
-// Where avatar images live: the server's https origin (same host as /ws).
+// Where avatar images and files live: the server's https origin (same host as /ws).
 let avatarBase = null;
+let httpBase = null;
 export function setAvatarBase(wsUrl) {
-  if (!wsUrl) { avatarBase = null; return; }
+  if (!wsUrl) { avatarBase = null; httpBase = null; return; }
   const u = new URL(wsUrl);
   u.protocol = u.protocol === "wss:" ? "https:" : "http:";
   u.pathname = "/avatars/";
   avatarBase = u.toString();
+  httpBase = u.origin;
 }
 export const avatarUrl = (avatarId) => (avatarBase && avatarId ? avatarBase + encodeURIComponent(avatarId) : null);
+// An absolute URL for a server path like /files/… or /upload.
+export const serverUrl = (path) => (httpBase ? httpBase + path : null);
+
+export function fmtBytes(n) {
+  if (n < 1024) return `${n} B`;
+  const units = ["KB", "MB", "GB"];
+  let v = n / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${v < 10 ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
+}
 
 const STATUS_LABEL = { online: "Online", idle: "Idle", dnd: "Do Not Disturb", offline: "Offline", invisible: "Invisible" };
 export const statusLabel = (s) => STATUS_LABEL[s] || "Offline";

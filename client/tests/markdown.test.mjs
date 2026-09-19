@@ -1,6 +1,6 @@
 // node client/tests/markdown.test.mjs — tokenizer checks (no DOM needed).
 import assert from "node:assert/strict";
-import { parse, parseInline } from "../js/ui/markdown.js";
+import { parse, parseDocument, parseInline } from "../js/ui/markdown.js";
 
 const t = (text) => ({ type: "text", text });
 
@@ -51,3 +51,14 @@ for (const s of ["*".repeat(2000), "**".repeat(1000) + "x", "_".repeat(2000), "|
   assert.ok(performance.now() - start < 500, `slow parse: ${s.slice(0, 10)}…`);
 }
 console.log("markdown tokenizer: ok");
+
+// Documents (Terms of Service / Privacy Policy).
+const doc = parseDocument("# Rules\n\nBe **nice**.\nReally.\n\n- one\n- two\n\n1. first\n2. second\n\n---\nSee [our site](https://example.com) and [bad](javascript:alert(1)).");
+assert.deepEqual(doc[0], { type: "heading", level: 1, children: [t("Rules")] });
+assert.deepEqual(doc[1], { type: "paragraph", children: [t("Be "), { type: "bold", children: [t("nice")] }, t(".\nReally.")] });
+assert.deepEqual(doc[2], { type: "list", ordered: false, items: [[t("one")], [t("two")]] });
+assert.deepEqual(doc[3], { type: "list", ordered: true, items: [[t("first")], [t("second")]] });
+assert.deepEqual(doc[4], { type: "hr" });
+assert.deepEqual(doc[5].children[1], { type: "link", href: "https://example.com", children: [t("our site")] });
+assert.ok(!JSON.stringify(doc[5]).includes('"href":"javascript'));
+assert.deepEqual(parseDocument("<h1>x</h1>"), [{ type: "paragraph", children: [t("<h1>x</h1>")] }]);
