@@ -55,3 +55,10 @@ def test_error_codes_match():
 def test_version_matches():
     assert f"Version: `{P.PROTOCOL_VERSION}`" in SPEC
     assert f'PROTOCOL_VERSION = "{P.PROTOCOL_VERSION}"' in CLIENT
+
+
+def test_permission_flags_match():
+    rows = dict(re.findall(r"^\| `([A-Z_]+)` \| (\d+) \|", SPEC, re.M))
+    assert {k: int(v) for k, v in rows.items()} == P.PERMS
+    client = dict(re.findall(r"^\s+([A-Z_]+): (\d+),", _client_block("PERMS"), re.M))
+    assert {k: int(v) for k, v in client.items()} == P.PERMS

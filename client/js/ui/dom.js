@@ -9,6 +9,7 @@ export function h(tag, attrs = {}, ...children) {
     else if (key === "text") el.textContent = val;
     else if (key === "on") for (const [ev, fn] of Object.entries(val)) el.addEventListener(ev, fn);
     else if (key === "dataset") Object.assign(el.dataset, val);
+    else if (key === "style" && typeof val === "object") Object.assign(el.style, val);
     else if (key in el && typeof val !== "string") el[key] = val;
     else el.setAttribute(key, val === true ? "" : val);
   }
@@ -25,6 +26,12 @@ function append(el, children) {
 
 export const $ = (sel, root = document) => root.querySelector(sel);
 
+// Like el.append(), but skips null/false children (native append would print "null").
+export function add(el, ...children) {
+  append(el, children);
+  return el;
+}
+
 export function clear(el, ...children) {
   el.replaceChildren();
   append(el, children);
@@ -39,14 +46,38 @@ export function colorFor(name) {
   return AVATAR_COLORS[hash % AVATAR_COLORS.length];
 }
 
-export function avatar(name, { size = "", online = null } = {}) {
-  const initial = [...String(name || "?")][0].toUpperCase();
-  return h(
-    "div",
-    { class: `avatar ${size}`, style: `background:${colorFor(name)}`, "aria-hidden": "true" },
-    initial,
-    online === null ? null : h("span", { class: `dot ${online ? "on" : ""}` }),
-  );
+export function displayName(user) {
+  return user?.display_name || user?.username || "Unknown user";
+}
+
+// Where avatar images live: the server's https origin (same host as /ws).
+let avatarBase = null;
+export function setAvatarBase(wsUrl) {
+  if (!wsUrl) { avatarBase = null; return; }
+  const u = new URL(wsUrl);
+  u.protocol = u.protocol === "wss:" ? "https:" : "http:";
+  u.pathname = "/avatars/";
+  avatarBase = u.toString();
+}
+export const avatarUrl = (avatarId) => (avatarBase && avatarId ? avatarBase + encodeURIComponent(avatarId) : null);
+
+const STATUS_LABEL = { online: "Online", idle: "Idle", dnd: "Do Not Disturb", offline: "Offline", invisible: "Invisible" };
+export const statusLabel = (s) => STATUS_LABEL[s] || "Offline";
+
+// user: PublicUser (or anything with username/avatar_id/avatar_color).
+// status: null (no dot) or online | idle | dnd | offline.
+export function avatar(user, { size = "", status = null } = {}) {
+  const name = user?.username || "?";
+  const url = avatarUrl(user?.avatar_id);
+  const el = h("div", {
+    class: `avatar ${size}`,
+    style: url ? null : `background:${user?.avatar_color || colorFor(name)}`,
+    "aria-hidden": "true",
+  });
+  if (url) el.append(h("img", { src: url, alt: "", loading: "lazy", decoding: "async", draggable: "false" }));
+  else el.append([...displayName(user)][0].toUpperCase());
+  if (status) el.append(h("span", { class: `dot ${status}`, title: statusLabel(status) }));
+  return el;
 }
 
 export function initials(name) {
@@ -55,16 +86,21 @@ export function initials(name) {
   return letters.join("").toUpperCase();
 }
 
-// Renders text with http(s) URLs as links; everything stays text-node safe.
-const URL_RE = /\bhttps?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]]/g;
-export function linkify(text) {
-  const out = [];
-  let last = 0;
-  for (const m of text.matchAll(URL_RE)) {
-    if (m.index > last) out.push(text.slice(last, m.index));
-    out.push(h("a", { href: m[0], target: "_blank", rel: "noopener noreferrer nofollow" }, m[0]));
-    last = m.index + m[0].length;
-  }
-  if (last < text.length) out.push(text.slice(last));
-  return out;
+export function iconBtn(glyph, label, onClick, { cls = "" } = {}) {
+  return h("button", {
+    class: `icon-btn ${cls}`, type: "button", title: label, "aria-label": label,
+    on: { click: (e) => { e.stopPropagation(); onClick(e); } },
+  }, glyph);
 }
+
+// Compare snowflake id strings numerically.
+export function idGt(a, b) {
+  if (!a) return false;
+  if (!b) return true;
+  return a.length !== b.length ? a.length > b.length : a > b;
+}
+
+const shortFmt = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
+const fullFmt = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
+export const fmtDate = (iso) => (iso ? shortFmt.format(new Date(iso)) : "");
+export const fmtDateTime = (iso) => (iso ? fullFmt.format(new Date(iso)) : "");

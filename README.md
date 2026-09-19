@@ -1,11 +1,32 @@
 # Nightcord
 
 Self-hosted, Discord-style chat. You run a small Python **server**. Friends connect to it from a static web **client**
-hosted on GitHub Pages. One server can host many **guilds**, each with its own text channels and members.
+hosted on GitHub Pages. One server can host many **guilds**, each with its own channels, roles and members, plus
+direct messages between anyone on the server.
 
 - `docs/PROTOCOL.md` is the wire protocol and the source of truth. If the code disagrees with it, the code is wrong.
 - `server/` holds the Python server: aiohttp, SQLite, and bcrypt.
 - `client/` holds the client: vanilla JS modules with no build step.
+
+## What's in it (v2)
+
+- **Chat:** markdown (`**bold**`, `*italic*`, `` `code` ``, code blocks, quotes, `||spoilers||`), replies, emoji
+  reactions, edit and delete, @mentions and @everyone, typing indicators, unread and mention badges that sync across
+  your devices.
+- **Direct messages:** 1:1 and group DMs (up to 10 people) with anyone on the server.
+- **Profiles:** display name, avatar image, profile color, bio, custom status, and online / idle / do not disturb /
+  invisible status (idle kicks in after 10 minutes away).
+- **User settings:** account and password, profile editor with live preview, logged-in devices, dark/light theme, font
+  size, compact mode, desktop notifications and sound. Per-guild and per-channel mute and notification levels live in
+  the guild and channel menus.
+- **Roles and permissions:** colored roles with 15 permissions, role hierarchy, and per-channel overrides for private
+  and read-only channels.
+- **Moderation:** kick, ban (optionally deleting recent messages), timeouts, and an audit log.
+- **Server owner:** first-run setup in the browser, an Admin panel for account requests, users and guilds, and read-only
+  "ghost" joins into any guild.
+
+Deferred (see PROTOCOL.md §10): friend and message requests, attachments, search, channel categories and topics, guild
+icons, expiring invites, voice.
 
 ## Run a server
 
@@ -21,10 +42,13 @@ python nightcord_server.py --config nightcord.toml
 
 On first start the server does two things:
 
-- It creates the **server-owner** account (`owner`) and prints its password **once**. Save it.
-  To get a new password, run `python nightcord_server.py owner reset-password`.
+- It prints a one-time **setup code**. Open the client, connect to the server, and it walks you through setup: enter
+  the code, choose the server-owner username and password, and pick the server name and account/guild policies. Until
+  then nobody can register or log in. A new code is printed on every start until setup is done.
 - It generates a **self-signed TLS certificate** in `data/`. The cert includes `localhost`, `127.0.0.1`, and every
   entry in `public_hostnames`.
+
+Databases from Nightcord v1 aren't compatible; the server refuses to open one. Move or delete the old `data/` folder.
 
 ### Letting browsers trust the certificate
 
@@ -42,25 +66,25 @@ If connecting fails, the client shows this link automatically.
 The server rejects WebSocket connections from browser origins that aren't in `allowed_origins`. Add your Pages origin
 (e.g. `https://you.github.io`). Using `--allow-origin '*'` disables the check.
 
-### Admin CLI
+### Admin
 
-Admin commands are safe to run while the server is up.
+Most admin work happens in the client: log in as the server owner and open **User settings (⚙) → Server admin**. You
+get a live badge when someone asks for an account. The CLI works too, and is safe to run while the server is up:
 
 ```sh
 python nightcord_server.py pending list                 # account requests (account_creation = request)
 python nightcord_server.py pending approve <username>
 python nightcord_server.py pending reject <username>
+python nightcord_server.py users list [--status disabled]
+python nightcord_server.py users disable <username>     # or: users enable <username>
 python nightcord_server.py config show
 python nightcord_server.py config set account_creation request   # off | request | on
 python nightcord_server.py config set guild_creation off         # off | on
 python nightcord_server.py config set guild_list_visible false
-python nightcord_server.py guilds                       # every guild + ID (for ghost joins)
-python nightcord_server.py owner reset-password
+python nightcord_server.py config set server_name "Night Owls"
+python nightcord_server.py guilds                       # every guild + ID
+python nightcord_server.py owner reset-password         # locked out? prints a new owner password
 ```
-
-The same settings are also editable in the client. Log in as `owner` and click ⚙ in the user panel. That panel also
-has **ghost join**: the owner can read any guild by its ID. Ghost joins are read-only and invisible to the guild's
-members.
 
 ## Use the client
 
@@ -69,6 +93,8 @@ members.
 - **Share a direct link:** `https://you.github.io/nightcord/?server=chat.example.com:8765` opens the client already
   pointed at that server.
 - **Address format:** enter `host:port` and the client uses `wss://`. You can also give a full `ws://` or `wss://` URL.
+- **Tips:** right-click guilds, channels and members for menus; ↑ in an empty message box edits your last message;
+  Shift-click the delete button to skip the confirmation.
 
 ## Local development
 
@@ -77,30 +103,19 @@ members.
 cd server && python nightcord_server.py --no-tls --port 8765 --data-dir data-dev
 
 # terminal 2: client
-python -m http.server -d client 8000
+python client/localhost.py
 ```
 
-Open http://localhost:8000/?server=localhost:8765. The default allowed origins already include `localhost:8000` and
+Open http://127.0.0.1:8000/?server=localhost:8765. The default allowed origins already include `localhost:8000` and
 `127.0.0.1:8000`.
 
 Run the tests:
 
 ```sh
 cd server && pip install -r requirements-dev.txt && pytest
+node client/tests/markdown.test.mjs
 ```
 
-`tests/test_protocol_sync.py` fails whenever `docs/PROTOCOL.md`, `server/nightcord/protocol.py` and
-`client/js/protocol.js` disagree on message types or error codes.
-
-## Scope (v1)
-
-v1 includes:
-
-- accounts, with open, by-request, or closed registration
-- guilds, with invites and a public directory
-- text channels
-- live messages and history scroll-back
-- presence
-- server-owner ghost joins
-
-Deferred features are listed in PROTOCOL.md §10: roles, moderation, edits and deletes, attachments, DMs, and voice.
+`client/js/protocol.js` is generated from `server/nightcord/protocol.py`; after changing message types, error codes or
+limits, run `python server/tools/gen_client_protocol.py`. `server/tests/test_protocol_sync.py` fails whenever
+`docs/PROTOCOL.md`, `protocol.py` and `protocol.js` disagree on message types, error codes or permission bits.

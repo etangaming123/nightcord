@@ -16,32 +16,37 @@ async def _guild_with_member(connect):
 
 async def test_send_and_receive(connect):
     a, b, gid, cid = await _guild_with_member(connect)
-    await a.ok("channel.join", {"channel_id": cid})
-    await b.ok("channel.join", {"channel_id": cid})
     res = await a.ok("message.send", {"channel_id": cid, "content": "  hello  "})
-    events_a = await a.drain()
-    events_b = await b.drain()
-    for events in (events_a, events_b):
+    # Delivery doesn't depend on channel.join: every viewer gets message.new.
+    for events in (await a.drain(), await b.drain()):
         assert len(events) == 1 and events[0]["type"] == "message.new"
         msg = events[0]["payload"]
         assert msg["message_id"] == res["message_id"]
         assert msg["content"] == "hello"
-        assert msg["author_username"] == "alice"
-
-    # After leaving, no more live messages.
-    await b.ok("channel.leave", {"channel_id": cid})
-    await a.ok("message.send", {"channel_id": cid, "content": "again"})
-    assert await b.drain() == []
+        assert msg["author"]["username"] == "alice"
+        assert msg["guild_id"] == gid
+        assert msg["reactions"] == [] and msg["reply_to"] is None and msg["edited_at"] is None
 
 
-async def test_join_switches_channel(connect):
+async def test_typing_goes_to_focused_connections(connect):
     a, b, gid, general = await _guild_with_member(connect)
     other = (await a.ok("channel.create", {"guild_id": gid, "name": "other"}))["channel"]["channel_id"]
     await b.drain()
-    await b.ok("channel.join", {"channel_id": general})
     await b.ok("channel.join", {"channel_id": other})
-    await a.ok("message.send", {"channel_id": general, "content": "x"})
+    await a.ok("typing.start", {"channel_id": general})
     assert await b.drain() == []
+    await b.ok("channel.join", {"channel_id": general})
+    await a.ok("typing.start", {"channel_id": general})  # throttled: already sent within 3 s
+    assert await b.drain() == []
+    await a.ok("typing.start", {"channel_id": other})
+    assert await b.drain() == []
+    await b.ok("channel.join", {"channel_id": other})
+    a2 = await connect()
+    await a2.login("alice", "password123")
+    await a2.ok("typing.start", {"channel_id": other})
+    assert await b.drain() == [
+        {"type": "typing.started", "payload": {"channel_id": other, "guild_id": gid, "user_id": a.user["user_id"]}}
+    ]
 
 
 async def test_message_validation_and_access(connect):
@@ -90,7 +95,9 @@ async def test_channel_crud_and_events(connect):
     ch = (await a.ok("channel.create", {"guild_id": gid, "name": "random"}))["channel"]
     assert ch["position"] == 1
     ev = await b.drain()
-    assert ev == [{"type": "channel.created", "payload": ch}]
+    assert [e["type"] for e in ev] == ["channel.created"]
+    assert {k: v for k, v in ev[0]["payload"].items() if k != "my_permissions"} == {k: v for k, v in ch.items() if k != "my_permissions"}
+    assert ev[0]["payload"]["my_permissions"] == 0b1000001111
 
     upd = (await a.ok("channel.update", {"channel_id": ch["channel_id"], "name": "memes", "position": 0}))["channel"]
     assert upd["name"] == "memes"

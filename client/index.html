@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="dark light">
   <title>Nightcord</title>
   <meta name="description" content="Nightcord — chat on servers you run yourself.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%237aa2f7'/%3E%3Cpath d='M20.5 7a9 9 0 1 0 4.5 16.8A10 10 0 0 1 20.5 7z' fill='%231a1b26'/%3E%3C/svg%3E">
@@ -26,6 +26,63 @@
         <button type="submit" class="btn primary">Connect</button>
       </form>
       <div id="connect-error" class="error-box" hidden></div>
+    </div>
+  </section>
+
+  <!-- First-run setup: claim a server that has no owner yet (PROTOCOL.md §8a) -->
+  <section id="screen-setup" class="screen" hidden>
+    <div class="card wide">
+      <button id="setup-cancel" class="btn link" type="button">← Servers</button>
+      <h1 class="server-title">Set up your server</h1>
+      <p id="setup-server-url" class="muted small mono"></p>
+      <ol id="setup-steps" class="steps" aria-label="Setup steps">
+        <li>Setup code</li><li>Owner account</li><li>Server settings</li>
+      </ol>
+      <form id="setup-form" class="stack" autocomplete="off" novalidate>
+        <div class="setup-step stack">
+          <p class="muted">This server has no owner yet. The server printed a one-time <strong>setup code</strong> in its console when it started.</p>
+          <label>Setup code
+            <input name="code" required placeholder="ABCD-EFGH-JKLM" spellcheck="false" autocapitalize="characters" class="mono">
+          </label>
+        </div>
+        <div class="setup-step stack" hidden>
+          <p class="muted">Create the server-owner account. It manages accounts, server settings and can read any guild.</p>
+          <label>Username
+            <input name="username" required minlength="3" maxlength="32" autocomplete="username" spellcheck="false" autocapitalize="off">
+          </label>
+          <label>Password
+            <input name="password" type="password" required minlength="8" maxlength="72" autocomplete="new-password">
+          </label>
+          <label>Confirm password
+            <input name="confirm" type="password" required minlength="8" maxlength="72" autocomplete="new-password">
+          </label>
+        </div>
+        <div class="setup-step stack" hidden>
+          <label>Server name
+            <input name="server_name" required maxlength="64">
+          </label>
+          <label>Who can create accounts?
+            <select name="account_creation">
+              <option value="on">Anyone (open registration)</option>
+              <option value="request">People who ask — I approve each one</option>
+              <option value="off">Nobody (closed)</option>
+            </select>
+          </label>
+          <label>Who can create guilds?
+            <select name="guild_creation">
+              <option value="on">Everyone</option>
+              <option value="off">Only me</option>
+            </select>
+          </label>
+          <label class="check"><input type="checkbox" name="guild_list_visible" checked> Allow a public guild directory</label>
+          <p class="muted small">You can change all of this later in User settings → Server.</p>
+        </div>
+        <div class="row end">
+          <button id="setup-back" class="btn" type="button" hidden>Back</button>
+          <button id="setup-next" class="btn primary" type="submit">Continue</button>
+        </div>
+      </form>
+      <div id="setup-message" class="error-box" hidden></div>
     </div>
   </section>
 
@@ -65,12 +122,15 @@
       <div id="status-banner" hidden></div>
       <div id="messages" class="scroll" tabindex="0" aria-live="polite"></div>
       <form id="composer" autocomplete="off"></form>
+      <div id="typing" aria-live="polite"></div>
     </main>
     <aside id="member-list" class="scroll" aria-label="Members"></aside>
     <div id="drawer-scrim" hidden></div>
   </div>
 
+  <div id="fullscreen-root"></div>
   <div id="modal-root"></div>
+  <div id="popover-root"></div>
   <div id="toast-root" aria-live="polite"></div>
 </body>
 </html>

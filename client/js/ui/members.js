@@ -1,27 +1,75 @@
-// Member list (right column). Ghost memberships never reach here: the server
-// already excludes them from guild.members / presence (PROTOCOL.md §7).
+// Member list (right column): grouped by highest role, then Online/Offline.
+// Ghost memberships never reach here: the server leaves them out (§7).
+// In a group DM it lists the recipients.
 
-import { $, avatar, clear, h } from "./dom.js";
+import { currentChannel, isDm, memberRoles, statusOf, userById } from "../state.js";
+import { $, add, avatar, clear, displayName, h, statusLabel } from "./dom.js";
 
-export function renderMembers(state) {
+function row(state, actions, user, { crown = false, color = null } = {}) {
+  const status = statusOf(user.user_id);
+  return h("button", {
+    class: `member ${status === "offline" ? "offline" : ""}`, type: "button",
+    on: {
+      click: (e) => actions.openProfile(user.user_id, e.currentTarget, { placement: "left" }),
+      contextmenu: (e) => { e.preventDefault(); actions.memberMenu(user.user_id, { x: e.clientX, y: e.clientY }); },
+    },
+  },
+  avatar(user, { status }),
+  h("span", { class: "member-meta" },
+    h("span", { class: "name", style: color ? `color:${color}` : null }, displayName(user)),
+    user.custom_status ? h("span", { class: "sub" }, user.custom_status) : null),
+  crown ? h("span", { class: "crown", title: "Guild owner", "aria-label": "Guild owner" }, "♛") : null);
+}
+
+// 1:1 DMs show the other person's profile instead of a member list.
+function dmProfile(user, actions) {
+  const status = statusOf(user.user_id);
+  return h("div", { class: "profile dm-profile" },
+    h("div", { class: "profile-banner", style: `background:${user.avatar_color || "var(--accent)"}` }),
+    h("div", { class: "profile-avatar" }, avatar(user, { size: "xl", status })),
+    h("div", { class: "profile-card" },
+      h("div", { class: "profile-name" }, displayName(user)),
+      h("div", { class: "profile-username" }, user.username),
+      user.custom_status ? h("div", { class: "profile-status" }, user.custom_status) : null,
+      h("div", { class: "muted small" }, statusLabel(status)),
+      h("div", { class: "profile-actions" },
+        h("button", { class: "btn", type: "button", on: { click: (e) => actions.openProfile(user.user_id, e.currentTarget, { placement: "left" }) } }, "View full profile"))));
+}
+
+export function renderMembers(state, actions) {
   const el = clear($("#member-list"));
-  if (!state.guildId) return;
-  const guild = state.guilds.get(state.guildId);
-  const byName = (a, b) => a.username.localeCompare(b.username, undefined, { sensitivity: "base" });
-  const online = state.members.filter((m) => state.online.has(m.user_id)).sort(byName);
-  const offline = state.members.filter((m) => !state.online.has(m.user_id)).sort(byName);
-  const section = (label, list, isOnline) => {
-    if (!list.length) return;
-    el.append(h("div", { class: "section-label" }, `${label} — ${list.length}`));
-    for (const m of list) {
-      const isOwner = m.role === "owner" || m.user_id === guild?.owner_user_id;
-      el.append(h("div", { class: `member ${isOnline ? "" : "offline"}` },
-        avatar(m.username, { online: isOnline }),
-        h("span", { class: "name" }, m.username),
-        isOwner ? h("span", { class: "crown", title: "Guild owner", "aria-label": "Guild owner" }, "♛") : null,
-      ));
+  const channel = currentChannel();
+  if (state.view === "home") {
+    if (channel?.kind === "dm") {
+      const other = channel.recipients.find((u) => u.user_id !== state.user.user_id);
+      if (other) add(el, dmProfile(userById(other.user_id) || other, actions));
+      return;
     }
-  };
-  section("Online", online, true);
-  section("Offline", offline, false);
+    if (!channel || channel.kind !== "group_dm") return;
+    add(el, h("div", { class: "section-label" }, `Members — ${channel.recipients.length}`));
+    for (const r of channel.recipients) {
+      const u = userById(r.user_id) || r;
+      add(el, row(state, actions, u, { crown: u.user_id === channel.owner_user_id }));
+    }
+    return;
+  }
+  if (!state.guildId || (channel && isDm(channel))) return;
+  const byName = (a, b) => displayName(a.user).localeCompare(displayName(b.user), undefined, { sensitivity: "base" });
+  const groups = new Map(); // role_id | "online" | "offline" -> { label, members }
+  const members = state.members.map((m) => ({ ...m, user: userById(m.user.user_id) || m.user }));
+  for (const m of members.sort(byName)) {
+    const online = statusOf(m.user.user_id) !== "offline";
+    const top = online ? memberRoles(m)[0] : null;
+    const key = online ? (top?.role_id || "online") : "offline";
+    if (!groups.has(key)) groups.set(key, { label: top ? top.name : online ? "Online" : "Offline", position: top?.position ?? (online ? 0 : -1), members: [] });
+    groups.get(key).members.push(m);
+  }
+  const ordered = [...groups.values()].sort((a, b) => b.position - a.position);
+  for (const g of ordered) {
+    add(el, h("div", { class: "section-label" }, `${g.label} — ${g.members.length}`));
+    for (const m of g.members) {
+      const color = memberRoles(m).find((r) => r.color)?.color || null;
+      add(el, row(state, actions, m.user, { crown: m.is_owner, color }));
+    }
+  }
 }

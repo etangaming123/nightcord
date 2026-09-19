@@ -1,9 +1,12 @@
-"""auth.* handlers (PROTOCOL.md §3, §5 Auth, §8)."""
+"""auth.* and setup.claim handlers (PROTOCOL.md §3, §5 Auth, §8, §8a)."""
 
 from __future__ import annotations
 
 import asyncio
 import collections
+import hashlib
+import hmac
+import re
 import time
 
 import bcrypt
@@ -11,6 +14,7 @@ import bcrypt
 from .. import protocol as P
 from ..protocol import ProtocolError
 from . import handles
+from .server import apply_config_updates
 
 LOGIN_ATTEMPTS = 10
 LOGIN_WINDOW = 60.0
@@ -21,7 +25,7 @@ _DUMMY_HASH = bcrypt.hashpw(b"nightcord-dummy-password", bcrypt.gensalt()).decod
 
 
 class LoginThrottle:
-    """Per-IP cap on auth attempts: failed logins, and every register/request."""
+    """Per-IP cap on auth attempts: failed logins, and every register/request/claim."""
 
     def __init__(self, attempts: int = LOGIN_ATTEMPTS, window: float = LOGIN_WINDOW):
         self.attempts = attempts
@@ -65,8 +69,22 @@ def hash_password_sync(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
+def hash_setup_code(code: str) -> str:
+    # Dashes, spaces and case don't matter when typing the code.
+    return hashlib.sha256(re.sub(r"[^A-Z0-9]", "", code.upper()).encode()).hexdigest()
+
+
+def setup_required(ctx) -> bool:
+    return ctx.db.get_server_owner_row() is None
+
+
+def _require_setup_done(ctx) -> None:
+    if setup_required(ctx):
+        raise ProtocolError(P.SETUP_REQUIRED, "This server hasn't been set up yet")
+
+
 async def _login_success(ctx, conn, user: dict) -> dict:
-    token = ctx.db.create_session(user["user_id"])
+    token = ctx.db.create_session(user["user_id"], conn.user_agent)
     conn.session_token = token
     await ctx.hub.authenticated(conn, user)
     return {"session_token": token, "user": user}
@@ -74,14 +92,36 @@ async def _login_success(ctx, conn, user: dict) -> dict:
 
 def _check_new_username(ctx, username) -> str:
     username = P.validate_username(username)
-    if username.lower() in P.RESERVED_USERNAMES or ctx.db.get_user_row_by_name(username):
+    if ctx.db.get_user_row_by_name(username):
         raise ProtocolError(P.USERNAME_TAKEN, "That username is taken")
     return username
+
+
+@handles(P.SETUP_CLAIM)
+async def setup_claim(ctx, conn, payload):
+    ctx.login_throttle.check(conn.remote)
+    if not setup_required(ctx):
+        raise ProtocolError(P.SETUP_ALREADY_DONE, "This server already has an owner")
+    code = P.req_str(payload, "setup_code", max_len=64)
+    if ctx.setup_code_hash is None or not hmac.compare_digest(hash_setup_code(code), ctx.setup_code_hash):
+        raise ProtocolError(P.INVALID_SETUP_CODE, "That setup code is wrong; check the server console")
+    username = _check_new_username(ctx, payload.get("username"))
+    password = P.validate_password(payload.get("password"))
+    config = {k: payload[k] for k in ("server_name", "account_creation", "guild_creation", "guild_list_visible") if k in payload}
+    updates = apply_config_updates(config)
+    user = ctx.db.create_user(username, await hash_password(password), is_server_owner=True)
+    if user is None:
+        raise ProtocolError(P.USERNAME_TAKEN, "That username is taken")
+    if updates:
+        ctx.db.set_server_config(updates)
+    ctx.setup_code_hash = None
+    return await _login_success(ctx, conn, user)
 
 
 @handles(P.AUTH_REGISTER)
 async def register(ctx, conn, payload):
     ctx.login_throttle.check(conn.remote)
+    _require_setup_done(ctx)
     policy = ctx.db.get_server_config()["account_creation"]
     if policy != "on":
         msg = (
@@ -101,6 +141,7 @@ async def register(ctx, conn, payload):
 @handles(P.AUTH_REQUEST_ACCOUNT)
 async def request_account(ctx, conn, payload):
     ctx.login_throttle.check(conn.remote)
+    _require_setup_done(ctx)
     policy = ctx.db.get_server_config()["account_creation"]
     if policy == "off":
         raise ProtocolError(P.REGISTRATION_CLOSED, "Registration is closed on this server")
@@ -114,12 +155,19 @@ async def request_account(ctx, conn, payload):
     user = ctx.db.create_user(username, await hash_password(password), status="pending", note=note)
     if user is None:
         raise ProtocolError(P.USERNAME_TAKEN, "That username is taken")
+    owner = ctx.db.get_server_owner_row()
+    if owner is not None:
+        await ctx.hub.send_to_user(
+            owner["user_id"],
+            P.frame(P.ADMIN_ACCOUNT_REQUESTED, {"user": ctx.db.admin_user(user["user_id"])}),
+        )
     return {"status": "pending"}
 
 
 @handles(P.AUTH_LOGIN)
 async def login(ctx, conn, payload):
     ctx.login_throttle.check(conn.remote, record=False)
+    _require_setup_done(ctx)
     username = payload.get("username")
     password = payload.get("password")
     if not isinstance(username, str) or not isinstance(password, str):
@@ -133,17 +181,19 @@ async def login(ctx, conn, payload):
         raise ProtocolError(
             P.REGISTRATION_PENDING_APPROVAL, "Your account is waiting for the server owner's approval"
         )
+    if row["status"] == "disabled":
+        raise ProtocolError(P.ACCOUNT_DISABLED, "This account has been disabled by the server owner")
     return await _login_success(ctx, conn, ctx.db.get_user(row["user_id"]))
 
 
 @handles(P.AUTH_RESUME)
 async def resume(ctx, conn, payload):
     token = P.req_str(payload, "session_token", max_len=256)
-    user_id = ctx.db.resume_session(token)
-    user = ctx.db.get_user(user_id) if user_id else None
+    user_id = ctx.db.resume_session(token, conn.user_agent)
     row = ctx.db.get_user_row(user_id) if user_id else None
-    if user is None or row["status"] != "active":
+    if row is None or row["status"] != "active":
         raise ProtocolError(P.SESSION_EXPIRED, "Session expired; please log in again")
+    user = ctx.db.get_user(user_id)
     conn.session_token = token
     await ctx.hub.authenticated(conn, user)
     return {"session_token": token, "user": user}

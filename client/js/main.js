@@ -1,57 +1,28 @@
-// Nightcord client controller: screens, state and protocol flow
-// (PROTOCOL.md §3). Rendering lives in ./ui/*.
+// Nightcord client entry: screens (connect, first-run setup, auth), session
+// lifecycle and reconnects (PROTOCOL.md §3). The app itself lives in
+// actions.js / events.js / render.js and ./ui/*.
 
+import { ackCurrent, actions, loadAll, restoreView, setSessionHooks } from "./actions.js";
+import { req } from "./api.js";
 import { Connection, NightcordError, certTrustUrl, normalizeServerUrl } from "./connection.js";
+import { resync, wireEvents } from "./events.js";
+import { applyPrefs } from "./prefs.js";
 import { ERR, LIMITS, PROTOCOL_VERSION, T } from "./protocol.js";
+import { flush, invalidate, setActions } from "./render.js";
+import { resetServerState, state } from "./state.js";
 import * as store from "./storage.js";
-import { $, clear, h } from "./ui/dom.js";
-import { closeModal, toast } from "./ui/modals.js";
-import { renderChannelSidebar, renderRail } from "./ui/sidebar.js";
-import { renderChat, appendMessage, renderComposer, renderChatHeader, scrollToBottom } from "./ui/chat.js";
-import { renderMembers } from "./ui/members.js";
-import * as dialogs from "./ui/dialogs.js";
+import { $, add, clear, h, setAvatarBase } from "./ui/dom.js";
+import { closeFullscreen, closeModal, closePopover, toast } from "./ui/modals.js";
 
-// ---------------------------------------------------------------------------
-// State
+const IDLE_AFTER_MS = 10 * 60 * 1000;
 
-const state = {
-  url: null, // canonical ws(s)://…/ws of the connected server
-  conn: null,
-  info: null, // server.info.result
-  user: null,
-  guilds: new Map(), // guild_id -> Guild (+ ghost)
-  guildId: null,
-  channels: [], // of current guild, sorted
-  channelId: null,
-  members: [], // of current guild (non-ghost)
-  online: new Set(),
-  messages: [], // of current channel, oldest first
-  messageIds: new Set(),
-  hasMore: false,
-  loadingOlder: false,
-  connected: false,
-};
-
-export const getState = () => state;
-
-const currentGuild = () => state.guilds.get(state.guildId) || null;
-const currentChannel = () => state.channels.find((c) => c.channel_id === state.channelId) || null;
-const isGuildOwner = () => {
-  const g = currentGuild();
-  return !!g && !g.ghost && g.owner_user_id === state.user?.user_id;
-};
-
-function req(type, payload) {
-  if (!state.conn) return Promise.reject(new NightcordError(ERR.DISCONNECTED, "Not connected"));
-  return state.conn.request(type, payload);
-}
+setActions(actions);
 
 // ---------------------------------------------------------------------------
 // Screens
 
 function showScreen(which) {
-  $("#screen-connect").hidden = which !== "connect";
-  $("#screen-auth").hidden = which !== "auth";
+  for (const id of ["connect", "setup", "auth"]) $(`#screen-${id}`).hidden = which !== id;
   $("#app").hidden = which !== "app";
   if (which !== "app") document.title = "Nightcord";
 }
@@ -64,7 +35,7 @@ function showConnect({ error = null, prefill = "" } = {}) {
       class: "icon-btn", type: "button", title: "Forget this server", "aria-label": `Forget ${s.label}`,
       on: { click: (e) => { e.stopPropagation(); store.removeServer(s.url); showConnect(); } },
     }, "×");
-    list.append(h("li", {
+    add(list, h("li", {
       class: "saved-server", tabindex: "0", role: "button",
       on: {
         click: () => connectTo(s.url),
@@ -118,18 +89,23 @@ async function connectTo(input) {
     button.disabled = false;
     button.textContent = "Connect";
   }
-  if (state.info.protocol_version && state.info.protocol_version.split(".")[0] !== PROTOCOL_VERSION.split(".")[0]) {
-    toast(`Server speaks protocol ${state.info.protocol_version}; this client expects ${PROTOCOL_VERSION}.`, { error: true, ms: 8000 });
+  if (state.info.protocol_version && state.info.protocol_version !== PROTOCOL_VERSION) {
+    toast(`Server speaks protocol ${state.info.protocol_version}; this client expects ${PROTOCOL_VERSION}. Some things may not work.`, { error: true, ms: 8000 });
   }
+  setAvatarBase(url);
   wireEvents(conn);
+  wireConnection(conn);
   store.saveServer(url, state.info.server_name);
   store.setLastServer(url);
 
+  if (state.info.setup_required) {
+    showSetup();
+    return;
+  }
   const token = store.getToken(url);
   if (token) {
     try {
-      const ok = await req(T.AUTH_RESUME, { session_token: token });
-      await enterApp(ok);
+      await enterApp(await req(T.AUTH_RESUME, { session_token: token }));
       return;
     } catch (e) {
       if (e.code !== ERR.SESSION_EXPIRED) toast(e.message, { error: true });
@@ -141,12 +117,76 @@ async function connectTo(input) {
 
 function disconnect() {
   if (state.conn) state.conn.close();
-  Object.assign(state, {
-    conn: null, url: null, info: null, user: null, guilds: new Map(), guildId: null,
-    channels: [], channelId: null, members: [], online: new Set(), messages: [],
-    messageIds: new Set(), hasMore: false, connected: false,
-  });
+  resetServerState();
+  setAvatarBase(null);
   closeModal();
+  closePopover();
+  closeFullscreen();
+}
+
+// --- first-run setup ---
+
+let setupStep = 0;
+
+function showSetup({ message = null } = {}) {
+  showScreen("setup");
+  $("#setup-server-url").textContent = state.url;
+  const form = $("#setup-form");
+  if (!form.server_name.value) form.server_name.value = state.info.server_name || "";
+  for (const [i, step] of [...form.querySelectorAll(".setup-step")].entries()) step.hidden = i !== setupStep;
+  for (const [i, dot] of [...document.querySelectorAll("#setup-steps li")].entries()) {
+    dot.classList.toggle("done", i < setupStep);
+    dot.setAttribute("aria-current", i === setupStep ? "step" : "false");
+  }
+  $("#setup-back").hidden = setupStep === 0;
+  $("#setup-next").textContent = setupStep === 2 ? "Finish setup" : "Continue";
+  const box = $("#setup-message");
+  box.hidden = !message;
+  box.textContent = message || "";
+  form.querySelector(".setup-step:not([hidden]) input, .setup-step:not([hidden]) select")?.focus();
+}
+
+async function submitSetup(e) {
+  e.preventDefault();
+  const form = e.currentTarget;
+  const step = form.querySelectorAll(".setup-step")[setupStep];
+  for (const input of step.querySelectorAll("input, select")) {
+    if (!input.reportValidity()) return;
+  }
+  if (setupStep === 1) {
+    if (!LIMITS.USERNAME_RE.test(form.username.value.trim())) { showSetup({ message: "Username must be 3–32 characters: letters, digits, _ . -" }); return; }
+    if (form.password.value !== form.confirm.value) { showSetup({ message: "The passwords don't match." }); return; }
+  }
+  if (setupStep < 2) {
+    setupStep += 1;
+    showSetup();
+    return;
+  }
+  const button = $("#setup-next");
+  button.disabled = true;
+  try {
+    const ok = await req(T.SETUP_CLAIM, {
+      setup_code: form.code.value.trim(),
+      username: form.username.value.trim(),
+      password: form.password.value,
+      server_name: form.server_name.value.trim(),
+      account_creation: form.account_creation.value,
+      guild_creation: form.guild_creation.value,
+      guild_list_visible: form.guild_list_visible.checked,
+    });
+    state.info = await req(T.SERVER_INFO);
+    store.saveServer(state.url, state.info.server_name);
+    form.reset();
+    setupStep = 0;
+    await enterApp(ok);
+    toast("Your server is ready. Create a guild to get started!");
+  } catch (err) {
+    if (err.code === ERR.INVALID_SETUP_CODE) setupStep = 0;
+    if (err.code === ERR.SETUP_ALREADY_DONE) { state.info.setup_required = false; showAuth({ message: err.message }); return; }
+    showSetup({ message: err.message });
+  } finally {
+    button.disabled = false;
+  }
 }
 
 // --- auth screen ---
@@ -166,7 +206,7 @@ function showAuth({ message = null, info = false } = {}) {
   const tabs = clear($("#auth-tabs"));
   tabs.hidden = modes.length < 2;
   for (const [mode, label] of modes) {
-    tabs.append(h("button", {
+    add(tabs, h("button", {
       class: "tab", type: "button", role: "tab", "aria-selected": String(mode === authMode),
       on: { click: () => { authMode = mode; showAuth(); } },
     }, label));
@@ -223,201 +263,56 @@ async function submitAuth(e) {
 async function enterApp({ session_token, user }) {
   store.setToken(state.url, session_token);
   state.user = user;
+  state.users.set(user.user_id, user);
   state.connected = true;
   showScreen("app");
-  renderAll();
-  await loadGuilds();
-  const last = store.getLast(state.url);
-  const target = state.guilds.has(last.guildId) ? last.guildId : state.guilds.keys().next().value;
-  if (target) await openGuild(target);
-  else renderAll();
-}
-
-async function loadGuilds() {
-  const { guilds } = await req(T.GUILD_LIST);
-  state.guilds = new Map(guilds.map((g) => [g.guild_id, g]));
-  renderRail(state, actions);
-}
-
-async function openGuild(guildId) {
-  if (!state.guilds.has(guildId)) return;
-  if (state.channelId && state.conn?.isOpen) req(T.CHANNEL_LEAVE, { channel_id: state.channelId }).catch(() => {});
-  state.guildId = guildId;
-  state.channelId = null;
-  state.channels = [];
-  state.members = [];
-  state.online = new Set();
-  resetMessages();
-  store.setLast(state.url, { guildId });
-  renderAll();
+  invalidate();
+  flush();
   try {
-    const [ch, mem, pres] = await Promise.all([
-      req(T.CHANNEL_LIST, { guild_id: guildId }),
-      req(T.GUILD_MEMBERS, { guild_id: guildId }),
-      req(T.PRESENCE_LIST, { guild_id: guildId }),
-    ]);
-    if (state.guildId !== guildId) return;
-    state.channels = sortChannels(ch.channels);
-    state.members = mem.members;
-    state.online = new Set(pres.online_user_ids);
-  } catch (e) {
-    toast(e.message, { error: true });
-    return;
-  }
-  renderAll();
-  const remembered = (store.getLast(state.url).channels || {})[guildId];
-  const target = state.channels.find((c) => c.channel_id === remembered) || state.channels[0];
-  if (target) await openChannel(target.channel_id);
-}
-
-function sortChannels(list) {
-  return [...list].sort((a, b) => a.position - b.position || (a.channel_id.length - b.channel_id.length) || (a.channel_id < b.channel_id ? -1 : 1));
-}
-
-function resetMessages() {
-  state.messages = [];
-  state.messageIds = new Set();
-  state.hasMore = false;
-  state.loadingOlder = false;
-}
-
-async function openChannel(channelId) {
-  state.channelId = channelId;
-  resetMessages();
-  const last = store.getLast(state.url);
-  store.setLast(state.url, { channels: { ...(last.channels || {}), [state.guildId]: channelId } });
-  document.body.querySelector("#app").classList.remove("nav-open");
-  $("#drawer-scrim").hidden = true;
-  renderAll();
-  try {
-    await req(T.CHANNEL_JOIN, { channel_id: channelId });
-    const page = await req(T.CHANNEL_HISTORY, { channel_id: channelId, limit: LIMITS.HISTORY_PAGE });
-    if (state.channelId !== channelId) return;
-    // Live messages may have arrived between join and history; merge.
-    const live = state.messages;
-    resetMessages();
-    for (const m of [...page.messages, ...live]) addMessage(m);
-    state.hasMore = page.has_more;
+    await loadAll();
+    await restoreView();
   } catch (e) {
     toast(e.message, { error: true });
   }
-  renderChat(state, actions);
-  scrollToBottom();
 }
 
-function addMessage(m) {
-  if (state.messageIds.has(m.message_id)) return false;
-  state.messageIds.add(m.message_id);
-  state.messages.push(m);
-  return true;
+// Back to the login screen on the same connection.
+function toLogin(message) {
+  const { conn, url, info } = state;
+  resetServerState();
+  Object.assign(state, { conn, url, info });
+  closeModal();
+  closePopover();
+  closeFullscreen();
+  showAuth(message ? { message } : {});
 }
 
-async function loadOlder() {
-  if (state.loadingOlder || !state.hasMore || !state.messages.length) return;
-  const channelId = state.channelId;
-  state.loadingOlder = true;
-  try {
-    const page = await req(T.CHANNEL_HISTORY, {
-      channel_id: channelId,
-      before_message_id: state.messages[0].message_id,
-      limit: LIMITS.HISTORY_PAGE,
-    });
-    if (state.channelId !== channelId) return;
-    const older = page.messages.filter((m) => !state.messageIds.has(m.message_id));
-    older.forEach((m) => state.messageIds.add(m.message_id));
-    state.messages = [...older, ...state.messages];
-    state.hasMore = page.has_more;
-    renderChat(state, actions);
-  } catch (e) {
-    toast(e.message, { error: true });
-  } finally {
-    state.loadingOlder = false;
-  }
+async function logout() {
+  try { await req(T.AUTH_LOGOUT); } catch { /* the token dies with the session anyway */ }
+  store.setToken(state.url, null);
+  toLogin();
 }
 
-async function sendMessage(content) {
-  const channelId = state.channelId;
-  const res = await req(T.MESSAGE_SEND, { channel_id: channelId, content });
-  return res.message_id;
+function switchServer() {
+  disconnect();
+  store.setLastServer(null);
+  showConnect();
 }
 
-function renderAll() {
-  renderRail(state, actions);
-  renderChannelSidebar(state, actions, { isOwner: isGuildOwner() });
-  renderChatHeader(state, actions);
-  renderChat(state, actions);
-  renderComposer(state, actions);
-  renderMembers(state);
-  const g = currentGuild();
-  const c = currentChannel();
-  document.title = c && g ? `#${c.name} · ${g.name} — Nightcord` : g ? `${g.name} — Nightcord` : "Nightcord";
+setSessionHooks({ logout, switchServer });
+
+function setBanner(text) {
+  const el = $("#status-banner");
+  el.hidden = !text;
+  el.textContent = text || "";
 }
 
-// ---------------------------------------------------------------------------
-// Live events
-
-function wireEvents(conn) {
-  conn.on(T.MESSAGE_NEW, (m) => {
-    if (m.channel_id !== state.channelId) return;
-    if (addMessage(m)) appendMessage(state, m);
-  });
-
-  conn.on(T.PRESENCE_UPDATE, ({ guild_id, user_id, status }) => {
-    if (guild_id !== state.guildId) return;
-    if (status === "online") state.online.add(user_id);
-    else state.online.delete(user_id);
-    renderMembers(state);
-  });
-
-  conn.on(T.GUILD_MEMBER_JOINED, ({ guild_id, member }) => {
-    if (guild_id !== state.guildId) return;
-    if (!state.members.some((m) => m.user_id === member.user_id)) state.members.push(member);
-    renderMembers(state);
-  });
-
-  conn.on(T.GUILD_MEMBER_LEFT, ({ guild_id, user_id }) => {
-    if (guild_id !== state.guildId) return;
-    state.members = state.members.filter((m) => m.user_id !== user_id);
-    state.online.delete(user_id);
-    renderMembers(state);
-  });
-
-  conn.on(T.GUILD_UPDATED, (guild) => {
-    const existing = state.guilds.get(guild.guild_id);
-    if (!existing) return;
-    state.guilds.set(guild.guild_id, { ...existing, ...guild });
-    renderAll();
-  });
-
-  conn.on(T.CHANNEL_CREATED, (ch) => {
-    if (ch.guild_id !== state.guildId || state.channels.some((c) => c.channel_id === ch.channel_id)) return;
-    state.channels = sortChannels([...state.channels, ch]);
-    renderChannelSidebar(state, actions, { isOwner: isGuildOwner() });
-  });
-
-  conn.on(T.CHANNEL_UPDATED, (ch) => {
-    if (ch.guild_id !== state.guildId) return;
-    state.channels = sortChannels(state.channels.map((c) => (c.channel_id === ch.channel_id ? ch : c)));
-    renderAll();
-  });
-
-  conn.on(T.CHANNEL_DELETED, ({ guild_id, channel_id }) => {
-    if (guild_id !== state.guildId) return;
-    state.channels = state.channels.filter((c) => c.channel_id !== channel_id);
-    if (state.channelId === channel_id) {
-      toast("This channel was deleted.");
-      if (state.channels[0]) openChannel(state.channels[0].channel_id);
-      else { state.channelId = null; resetMessages(); renderAll(); }
-    } else {
-      renderChannelSidebar(state, actions, { isOwner: isGuildOwner() });
-    }
-  });
-
+function wireConnection(conn) {
   conn.addEventListener("disconnected", () => {
     if (conn !== state.conn) return;
     state.connected = false;
     setBanner("Connection lost. Reconnecting…");
-    renderComposer(state, actions);
+    invalidate("composer", "sidebar", "chat");
   });
 
   conn.addEventListener("reconnecting", (e) => {
@@ -427,189 +322,83 @@ function wireEvents(conn) {
 
   conn.addEventListener("reconnected", async () => {
     if (conn !== state.conn) return;
-    const token = store.getToken(state.url);
     try {
+      state.info = { ...state.info, ...(await req(T.SERVER_INFO)) };
+      if (!state.user) { setBanner(null); return; } // was on the auth screen
+      const token = store.getToken(state.url);
       if (!token) throw new NightcordError(ERR.SESSION_EXPIRED, "Please log in again");
       const ok = await req(T.AUTH_RESUME, { session_token: token });
       state.user = ok.user;
       state.connected = true;
       setBanner(null);
-      await loadGuilds();
-      const guildId = state.guilds.has(state.guildId) ? state.guildId : state.guilds.keys().next().value;
-      if (guildId) await openGuild(guildId);
-      else renderAll();
+      if (state.afk) req(T.PRESENCE_SET, { afk: true }).catch(() => {});
+      await resync();
     } catch (e) {
       setBanner(null);
       if (e.code === ERR.SESSION_EXPIRED) {
         store.setToken(state.url, null);
-        showAuth({ message: "Your session expired. Please log in again." });
+        toLogin("You were logged out. Please log in again.");
       }
     }
   });
 }
 
-function setBanner(text) {
-  const el = $("#status-banner");
-  el.hidden = !text;
-  el.textContent = text || "";
+// --- auto-idle ---
+
+let lastInput = Date.now();
+
+function markActive() {
+  lastInput = Date.now();
+  if (state.afk && state.connected) {
+    state.afk = false;
+    req(T.PRESENCE_SET, { afk: false }).catch(() => {});
+    invalidate("sidebar");
+  }
 }
 
-// ---------------------------------------------------------------------------
-// Actions exposed to views
-
-const actions = {
-  openGuild,
-  openChannel,
-  loadOlder,
-  sendMessage,
-  isGuildOwner,
-
-  switchServer() {
-    const url = state.url;
-    disconnect();
-    showConnect({ prefill: "" });
-    if (url) store.setLastServer(null);
-  },
-
-  async logout() {
-    try { await req(T.AUTH_LOGOUT); } catch { /* token dies with the session anyway */ }
-    store.setToken(state.url, null);
-    state.user = null;
-    state.guilds = new Map();
-    state.guildId = null;
-    showAuth();
-  },
-
-  toggleNav(open) {
-    const app = $("#app");
-    const next = open ?? !app.classList.contains("nav-open");
-    app.classList.toggle("nav-open", next);
-    app.classList.remove("members-open");
-    $("#drawer-scrim").hidden = !next;
-  },
-
-  toggleMembers() {
-    const app = $("#app");
-    const next = !app.classList.contains("members-open");
-    app.classList.toggle("members-open", next);
-    app.classList.remove("nav-open");
-    $("#drawer-scrim").hidden = !next;
-  },
-
-  // --- dialogs ---
-  addGuild: () => dialogs.addGuildDialog(state, {
-    create: async (name) => {
-      const res = await req(T.GUILD_CREATE, { name });
-      state.guilds.set(res.guild.guild_id, res.guild);
-      await openGuild(res.guild.guild_id);
-    },
-    joinByCode: async (code) => {
-      const res = await req(T.GUILD_JOIN_BY_CODE, { invite_code: code });
-      state.guilds.set(res.guild.guild_id, res.guild);
-      await openGuild(res.guild.guild_id);
-    },
-    loadPublic: async () => (await req(T.GUILD_PUBLIC_LIST)).guilds,
-    joinById: async (guildId) => {
-      const res = await req(T.GUILD_JOIN_BY_ID, { guild_id: guildId });
-      state.guilds.set(res.guild.guild_id, res.guild);
-      await openGuild(res.guild.guild_id);
-    },
-  }),
-
-  guildSettings: () => dialogs.guildSettingsDialog(currentGuild(), state.info, {
-    save: async (patch) => {
-      const res = await req(T.GUILD_CONFIG_UPDATE, { guild_id: state.guildId, ...patch });
-      state.guilds.set(res.guild.guild_id, { ...currentGuild(), ...res.guild });
-      renderAll();
-    },
-    createInvite: async () => (await req(T.GUILD_INVITE_CREATE, { guild_id: state.guildId })).invite_code,
-  }),
-
-  leaveGuild: () => dialogs.leaveGuildDialog(currentGuild(), async () => {
-    const guildId = state.guildId;
-    await req(T.GUILD_LEAVE, { guild_id: guildId });
-    state.guilds.delete(guildId);
-    state.guildId = null;
-    state.channelId = null;
-    resetMessages();
-    const next = state.guilds.keys().next().value;
-    if (next) await openGuild(next);
-    else renderAll();
-  }),
-
-  createChannel: () => dialogs.channelNameDialog({
-    title: "Create channel",
-    submitLabel: "Create",
-    onSubmit: async (name) => {
-      const res = await req(T.CHANNEL_CREATE, { guild_id: state.guildId, name });
-      if (!state.channels.some((c) => c.channel_id === res.channel.channel_id)) {
-        state.channels = sortChannels([...state.channels, res.channel]);
-      }
-      await openChannel(res.channel.channel_id);
-    },
-  }),
-
-  renameChannel: (channel) => dialogs.channelNameDialog({
-    title: "Rename channel",
-    submitLabel: "Save",
-    initial: channel.name,
-    onSubmit: async (name) => {
-      const res = await req(T.CHANNEL_UPDATE, { channel_id: channel.channel_id, name });
-      state.channels = sortChannels(state.channels.map((c) => (c.channel_id === res.channel.channel_id ? res.channel : c)));
-      renderAll();
-    },
-  }),
-
-  moveChannel: async (channel, delta) => {
-    // Swap positions with the neighbour; renumber so positions are unique.
-    const list = [...state.channels];
-    const i = list.findIndex((c) => c.channel_id === channel.channel_id);
-    const j = i + delta;
-    if (j < 0 || j >= list.length) return;
-    [list[i], list[j]] = [list[j], list[i]];
-    try {
-      for (const [pos, c] of list.entries()) {
-        if (c.position !== pos) await req(T.CHANNEL_UPDATE, { channel_id: c.channel_id, position: pos });
-      }
-    } catch (e) {
-      toast(e.message, { error: true });
-    }
-  },
-
-  deleteChannel: (channel) => dialogs.deleteChannelDialog(channel, async () => {
-    await req(T.CHANNEL_DELETE, { channel_id: channel.channel_id });
-  }),
-
-  serverSettings: () => dialogs.serverSettingsDialog(state.info, {
-    save: async (patch) => {
-      const res = await req(T.SERVER_CONFIG_UPDATE, patch);
-      state.info = { ...state.info, ...res.config };
-    },
-    overrideJoin: async (guildId) => {
-      const res = await req(T.GUILD_OWNER_OVERRIDE_JOIN, { guild_id: guildId });
-      state.guilds.set(res.guild.guild_id, res.guild);
-      await openGuild(res.guild.guild_id);
-    },
-  }),
-};
+function checkIdle() {
+  if (!state.afk && state.connected && Date.now() - lastInput > IDLE_AFTER_MS) {
+    state.afk = true;
+    req(T.PRESENCE_SET, { afk: true }).catch(() => {});
+    invalidate("sidebar");
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Boot
 
 function boot() {
+  applyPrefs();
+  matchMedia("(prefers-color-scheme: light)").addEventListener?.("change", applyPrefs);
   $("#connect-form").addEventListener("submit", (e) => {
     e.preventDefault();
     connectTo(e.currentTarget.address.value);
   });
   $("#auth-form").addEventListener("submit", submitAuth);
-  $("#auth-back").addEventListener("click", () => {
-    disconnect();
-    store.setLastServer(null);
-    showConnect();
-  });
+  $("#setup-form").addEventListener("submit", submitSetup);
+  $("#setup-back").addEventListener("click", () => { setupStep = Math.max(0, setupStep - 1); showSetup(); });
+  for (const id of ["#auth-back", "#setup-cancel"]) {
+    $(id).addEventListener("click", () => {
+      disconnect();
+      store.setLastServer(null);
+      showConnect();
+    });
+  }
   $("#drawer-scrim").addEventListener("click", () => {
     $("#app").classList.remove("nav-open", "members-open");
     $("#drawer-scrim").hidden = true;
+  });
+  for (const ev of ["mousemove", "keydown", "mousedown", "touchstart", "wheel"]) {
+    window.addEventListener(ev, markActive, { passive: true });
+  }
+  setInterval(checkIdle, 30 * 1000);
+  window.addEventListener("focus", () => { markActive(); ackCurrent(); });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) ackCurrent(); });
+  // Escape closes the reply bar / inline edit even when focus is elsewhere.
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || !state.user || e.defaultPrevented) return;
+    if (state.editingId) actions.cancelEdit();
+    else if (state.replyTo) actions.cancelReply();
   });
 
   // ?server=host:port lets a server operator share a direct link.

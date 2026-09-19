@@ -1,0 +1,138 @@
+"""user.* handlers: profiles, avatars, password, sessions, search."""
+
+from __future__ import annotations
+
+import base64
+import binascii
+import logging
+import re
+
+from .. import protocol as P
+from ..ids import new_id
+from ..protocol import ProtocolError
+from . import handles
+from .auth import check_password, hash_password
+
+log = logging.getLogger("nightcord.users")
+
+AVATAR_ID_RE = re.compile(r"^\d{1,20}\.(png|jpg|webp)$")
+AVATAR_TYPES = {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp"}
+
+
+def avatar_dir(ctx):
+    return ctx.config.data_dir / "avatars"
+
+
+def _sniff_image(data: bytes) -> str | None:
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpg"
+    if len(data) > 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    return None
+
+
+async def broadcast_user(ctx, user: dict) -> None:
+    """user.updated: the full self view to the user, the public view to their audience."""
+    ctx.hub.update_user(user)
+    await ctx.hub.send_to_user(user["user_id"], P.frame(P.USER_UPDATED, user))
+    public = ctx.db.public_user(user["user_id"])
+    await ctx.hub.send_to_users(ctx.db.audience_of(user["user_id"]), P.frame(P.USER_UPDATED, public))
+
+
+@handles(P.USER_PROFILE)
+async def profile(ctx, conn, payload):
+    profile = ctx.db.profile(P.req_id(payload, "user_id"))
+    if profile is None:
+        raise ProtocolError(P.NOT_FOUND, "User not found")
+    return {"user": profile, "status": ctx.hub.status_of(profile["user_id"])}
+
+
+@handles(P.USER_UPDATE)
+async def update(ctx, conn, payload):
+    fields = {}
+    for key, limit in (("display_name", P.DISPLAY_NAME_MAX), ("bio", P.BIO_MAX), ("custom_status", P.CUSTOM_STATUS_MAX)):
+        if key in payload:
+            val = payload[key]
+            if val is not None:
+                val = P.opt_text(payload, key, limit)
+            fields[key] = val or None
+    if "avatar_color" in payload:
+        fields["avatar_color"] = P.validate_color(payload["avatar_color"])
+    if not fields:
+        raise ProtocolError(P.BAD_REQUEST, "Nothing to update")
+    user = ctx.db.update_profile(conn.user_id, fields)
+    await broadcast_user(ctx, user)
+    return {"user": user}
+
+
+@handles(P.USER_AVATAR_SET)
+async def avatar_set(ctx, conn, payload):
+    data_b64 = payload.get("data_b64")
+    old = conn.user.get("avatar_id")
+    avatar_id = None
+    if data_b64 is not None:
+        if not isinstance(data_b64, str):
+            raise ProtocolError(P.AVATAR_INVALID, "'data_b64' must be a base64 string or null")
+        try:
+            data = base64.b64decode(data_b64, validate=True)
+        except (binascii.Error, ValueError):
+            raise ProtocolError(P.AVATAR_INVALID, "Avatar isn't valid base64") from None
+        if len(data) > P.AVATAR_MAX_BYTES:
+            raise ProtocolError(P.AVATAR_INVALID, "Avatar must be at most 40 KB")
+        ext = _sniff_image(data)
+        if ext is None:
+            raise ProtocolError(P.AVATAR_INVALID, "Avatar must be a PNG, JPEG or WebP image")
+        avatar_id = f"{new_id()}.{ext}"
+        folder = avatar_dir(ctx)
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / avatar_id).write_bytes(data)
+    user = ctx.db.update_profile(conn.user_id, {"avatar_id": avatar_id})
+    if old and AVATAR_ID_RE.match(old):
+        try:
+            (avatar_dir(ctx) / old).unlink(missing_ok=True)
+        except OSError as e:
+            log.warning("couldn't delete old avatar %s: %s", old, e)
+    await broadcast_user(ctx, user)
+    return {"user": user}
+
+
+@handles(P.USER_PASSWORD_CHANGE)
+async def password_change(ctx, conn, payload):
+    current = payload.get("current_password")
+    if not isinstance(current, str):
+        raise ProtocolError(P.BAD_REQUEST, "'current_password' is required")
+    new = P.validate_password(payload.get("new_password"))
+    ctx.login_throttle.check(conn.remote, record=False)
+    row = ctx.db.get_user_row(conn.user_id)
+    if not await check_password(current, row["password_hash"]):
+        ctx.login_throttle.record(conn.remote)
+        raise ProtocolError(P.INVALID_CURRENT_PASSWORD, "Your current password is wrong")
+    ctx.db.set_password_hash(conn.user_id, await hash_password(new), keep_token=conn.session_token)
+    await ctx.hub.close_user(conn.user_id, keep=conn, only_revoked=True)
+    return {}
+
+
+@handles(P.USER_SESSIONS_LIST)
+async def sessions_list(ctx, conn, payload):
+    return {"sessions": ctx.db.list_sessions(conn.user_id, conn.session_token)}
+
+
+@handles(P.USER_SESSIONS_REVOKE)
+async def sessions_revoke(ctx, conn, payload):
+    session_id = P.req_str(payload, "session_id", max_len=32)
+    if session_id == "others":
+        ctx.db.delete_other_sessions(conn.user_id, conn.session_token)
+    elif not ctx.db.delete_session_by_id(conn.user_id, session_id):
+        raise ProtocolError(P.NOT_FOUND, "Session not found")
+    await ctx.hub.close_user(conn.user_id, keep=conn, only_revoked=True)
+    return {}
+
+
+@handles(P.USER_SEARCH)
+async def search(ctx, conn, payload):
+    query = P.req_str(payload, "query", max_len=32).strip()
+    if not query:
+        return {"users": []}
+    return {"users": ctx.db.search_users(query, exclude=conn.user_id)}

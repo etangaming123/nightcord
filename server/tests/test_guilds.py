@@ -41,9 +41,11 @@ async def test_join_by_invite_code(connect):
     assert await b.err("guild.join_by_code", {"invite_code": code}) == "already_member"
     events = await a.drain()
     assert _types(events) == ["guild.member_joined", "presence.update"]
-    assert events[0]["payload"]["member"] == {"user_id": b.user["user_id"], "username": "bob", "role": "member"}
-    # Non-owner member can't mint invites in v1.
-    assert await b.err("guild.invite.create", {"guild_id": gid}) == "forbidden"
+    member = events[0]["payload"]["member"]
+    assert member["user"]["username"] == "bob" and member["role_ids"] == [] and member["is_owner"] is False
+    assert events[1]["payload"] == {"user_id": b.user["user_id"], "status": "online"}
+    # Members may invite by default (@everyone has CREATE_INVITE).
+    await b.ok("guild.invite.create", {"guild_id": gid})
 
 
 async def test_public_list_and_join_by_id(connect, owner):
@@ -88,7 +90,7 @@ async def test_members_and_leave(connect):
     code = (await a.ok("guild.invite.create", {"guild_id": gid}))["invite_code"]
     await b.ok("guild.join_by_code", {"invite_code": code})
     members = (await b.ok("guild.members", {"guild_id": gid}))["members"]
-    assert [(m["username"], m["role"]) for m in members] == [("alice", "owner"), ("bob", "member")]
+    assert [(m["user"]["username"], m["is_owner"]) for m in members] == [("alice", True), ("bob", False)]
 
     assert await a.err("guild.leave", {"guild_id": gid}) == "forbidden"
     await a.drain()
@@ -104,14 +106,14 @@ async def test_presence(connect, server):
     gid = (await a.ok("guild.create", {"name": "G"}))["guild"]["guild_id"]
     code = (await a.ok("guild.invite.create", {"guild_id": gid}))["invite_code"]
     await b.ok("guild.join_by_code", {"invite_code": code})
-    online = set((await a.ok("presence.list", {"guild_id": gid}))["online_user_ids"])
-    assert online == {a.user["user_id"], b.user["user_id"]}
+    online = (await a.ok("presence.list", {"guild_id": gid}))["presences"]
+    assert online == {a.user["user_id"]: "online", b.user["user_id"]: "online"}
 
     await a.drain()
     await b.ws.close()
     events = await a.drain(0.3)
-    assert {"type": "presence.update", "payload": {"guild_id": gid, "user_id": b.user["user_id"], "status": "offline"}} in events
-    assert (await a.ok("presence.list", {"guild_id": gid}))["online_user_ids"] == [a.user["user_id"]]
+    assert {"type": "presence.update", "payload": {"user_id": b.user["user_id"], "status": "offline"}} in events
+    assert (await a.ok("presence.list", {"guild_id": gid}))["presences"] == {a.user["user_id"]: "online"}
 
     # A second connection for the same user doesn't re-announce; the first one does.
     b2 = await connect()

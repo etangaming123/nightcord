@@ -75,8 +75,8 @@ def db():
 
 
 @pytest.fixture
-async def server(aiohttp_client, db):
-    app = create_app(Config(tls=False, server_name="Test"), db)
+async def server(aiohttp_client, db, tmp_path):
+    app = create_app(Config(tls=False, server_name="Test", data_dir=tmp_path), db)
     return await aiohttp_client(app)
 
 
@@ -98,3 +98,41 @@ async def owner(connect):
     c = await connect()
     await c.login("owner", OWNER_PASSWORD)
     return c
+
+
+@pytest.fixture
+def user(connect):
+    """await user("alice") -> a logged-in WsClient with .user set."""
+
+    async def _user(name: str) -> WsClient:
+        c = await connect()
+        c.user = (await c.register(name))["user"]
+        c.uid = c.user["user_id"]
+        return c
+
+    return _user
+
+
+@pytest.fixture
+def guild(user):
+    """await guild("alice", "bob", ...) -> (gid, general_channel_id, [clients]).
+
+    The first name owns the guild; the rest join by invite. Event buffers are
+    drained before returning."""
+
+    async def _guild(*names: str):
+        clients = [await user(n) for n in names]
+        res = await clients[0].ok("guild.create", {"name": "G"})
+        gid = res["guild"]["guild_id"]
+        code = (await clients[0].ok("guild.invite.create", {"guild_id": gid}))["invite_code"]
+        for c in clients[1:]:
+            await c.ok("guild.join_by_code", {"invite_code": code})
+        for c in clients:
+            await c.drain()
+        return gid, res["channels"][0]["channel_id"], clients
+
+    return _guild
+
+
+def types(events):
+    return [e["type"] for e in events]

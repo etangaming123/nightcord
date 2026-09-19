@@ -1,0 +1,128 @@
+"""dm.* handlers: 1:1 and group direct messages (PROTOCOL.md §5 Direct messages)."""
+
+from __future__ import annotations
+
+from .. import permissions as perm
+from .. import protocol as P
+from ..protocol import ProtocolError
+from . import handles
+from ._access import get_channel
+
+
+def _dm(channel: dict) -> dict:
+    return {**channel, "my_permissions": perm.DM_PERMS}
+
+
+def _require_dm(ctx, conn, payload, *, group: bool = False) -> dict:
+    channel, _ = get_channel(ctx, conn, P.req_id(payload, "channel_id"))
+    if channel["guild_id"] is not None:
+        raise ProtocolError(P.NOT_FOUND, "Direct message not found")
+    if group and channel["kind"] != "group_dm":
+        raise ProtocolError(P.BAD_REQUEST, "Only group DMs can do that")
+    return channel
+
+
+def _active_user(ctx, user_id: str) -> dict:
+    row = ctx.db.get_user_row(user_id)
+    if row is None or row["status"] != "active":
+        raise ProtocolError(P.NOT_FOUND, "User not found")
+    return row
+
+
+async def _announce(ctx, channel: dict, *, created_for: list[str] = (), exclude: str | None = None) -> None:
+    """dm.created to `created_for`; dm.updated to every other recipient."""
+    await ctx.hub.send_to_users(created_for, P.frame(P.DM_CREATED, _dm(channel)))
+    others = [u["user_id"] for u in channel["recipients"] if u["user_id"] not in created_for and u["user_id"] != exclude]
+    await ctx.hub.send_to_users(others, P.frame(P.DM_UPDATED, _dm(channel)))
+
+
+async def _presence_for(ctx, user_ids: list[str]) -> None:
+    """New DM partners start hearing each other's presence."""
+    for uid in user_ids:
+        status = ctx.hub.status_of(uid)
+        if status != "offline":
+            await ctx.hub.send_to_users(
+                [u for u in user_ids if u != uid], P.frame(P.PRESENCE_UPDATE, {"user_id": uid, "status": status})
+            )
+
+
+@handles(P.DM_LIST)
+async def list_dms(ctx, conn, payload):
+    return {"channels": [_dm(c) for c in ctx.db.list_dms(conn.user_id)]}
+
+
+@handles(P.DM_OPEN)
+async def open_dm(ctx, conn, payload):
+    user_id = P.req_id(payload, "user_id")
+    if user_id == conn.user_id:
+        raise ProtocolError(P.BAD_REQUEST, "You can't DM yourself")
+    _active_user(ctx, user_id)
+    channel_id = ctx.db.find_dm(conn.user_id, user_id)
+    if channel_id is None:
+        channel = ctx.db.create_dm(conn.user_id, user_id)
+        await _presence_for(ctx, [conn.user_id, user_id])
+    else:
+        ctx.db.set_dm_hidden(channel_id, conn.user_id, False)
+        channel = ctx.db.get_channel(channel_id)
+    # The other side hears about it with the first message (dm.created).
+    await ctx.hub.send_to_user(conn.user_id, P.frame(P.DM_CREATED, _dm(channel)), exclude=conn)
+    return {"channel": _dm(channel)}
+
+
+@handles(P.DM_CREATE_GROUP)
+async def create_group(ctx, conn, payload):
+    others = [u for u in P.id_list(payload, "user_ids", max_len=P.GROUP_DM_MAX) if u != conn.user_id]
+    if not others:
+        raise ProtocolError(P.BAD_REQUEST, "Pick at least one person")
+    if len(others) + 1 > P.GROUP_DM_MAX:
+        raise ProtocolError(P.DM_LIMIT, f"Group DMs can have at most {P.GROUP_DM_MAX} people")
+    for uid in others:
+        _active_user(ctx, uid)
+    channel = ctx.db.create_group_dm(conn.user_id, others)
+    await _presence_for(ctx, [conn.user_id, *others])
+    await _announce(ctx, channel, created_for=[conn.user_id, *others])
+    return {"channel": _dm(channel)}
+
+
+@handles(P.DM_UPDATE)
+async def update(ctx, conn, payload):
+    channel = _require_dm(ctx, conn, payload, group=True)
+    name = P.opt_text(payload, "name", P.GROUP_DM_NAME_MAX)
+    ctx.db.set_dm_name(channel["channel_id"], name or None)
+    channel = ctx.db.get_channel(channel["channel_id"])
+    await _announce(ctx, channel)
+    return {"channel": _dm(channel)}
+
+
+@handles(P.DM_ADD_RECIPIENT)
+async def add_recipient(ctx, conn, payload):
+    channel = _require_dm(ctx, conn, payload, group=True)
+    user_id = P.req_id(payload, "user_id")
+    _active_user(ctx, user_id)
+    ids = [u["user_id"] for u in channel["recipients"]]
+    if user_id in ids:
+        raise ProtocolError(P.ALREADY_MEMBER, "They're already in this group")
+    if len(ids) >= P.GROUP_DM_MAX:
+        raise ProtocolError(P.DM_LIMIT, f"Group DMs can have at most {P.GROUP_DM_MAX} people")
+    ctx.db.add_dm_recipient(channel["channel_id"], user_id)
+    channel = ctx.db.get_channel(channel["channel_id"])
+    await _presence_for(ctx, [*ids, user_id])
+    await _announce(ctx, channel, created_for=[user_id])
+    return {"channel": _dm(channel)}
+
+
+@handles(P.DM_LEAVE)
+async def leave(ctx, conn, payload):
+    channel = _require_dm(ctx, conn, payload)
+    if channel["kind"] == "dm":
+        # 1:1 DMs are only hidden; a new message brings them back.
+        ctx.db.set_dm_hidden(channel["channel_id"], conn.user_id, True)
+    else:
+        ctx.db.remove_dm_recipient(channel["channel_id"], conn.user_id)
+        fresh = ctx.db.get_channel(channel["channel_id"])
+        if fresh is not None:
+            await _announce(ctx, fresh)
+    for c in ctx.hub.conns_by_user.get(conn.user_id, ()):
+        if c.channel_id == channel["channel_id"]:
+            c.channel_id = None
+    return {}

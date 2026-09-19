@@ -3,15 +3,16 @@
 
     python nightcord_server.py [run] [--config nightcord.toml] [--port N] [--no-tls]
     python nightcord_server.py pending list
-    python nightcord_server.py pending approve <username>
-    python nightcord_server.py pending reject <username>
+    python nightcord_server.py pending approve|reject <username>
+    python nightcord_server.py users list [--status active|pending|rejected|disabled]
+    python nightcord_server.py users disable|enable <username>
     python nightcord_server.py owner reset-password
     python nightcord_server.py config show
     python nightcord_server.py config set <key> <value>
     python nightcord_server.py guilds
 
 Admin commands operate on the same SQLite database and are safe to run
-while the server is up.
+while the server is up. Most of them are also in the client's Admin panel.
 """
 
 from __future__ import annotations
@@ -26,40 +27,37 @@ from nightcord.config import Config, load_config
 from nightcord.db import Database
 from nightcord.handlers.auth import hash_password_sync
 
-OWNER_USERNAME = "owner"
-
 
 def _new_password() -> str:
     return secrets.token_urlsafe(18)
 
 
-def _print_owner_credentials(password: str) -> None:
-    bar = "=" * 60
+def _banner(*lines: str) -> None:
+    bar = "=" * 64
     print(bar)
-    print("  Server-owner account")
-    print(f"    username: {OWNER_USERNAME}")
-    print(f"    password: {password}")
-    print("  This is shown ONCE. Reset with: nightcord_server.py owner reset-password")
+    for line in lines:
+        print(f"  {line}")
     print(bar, flush=True)
-
-
-def ensure_owner(db: Database) -> None:
-    if db.get_server_owner_row() is not None:
-        return
-    password = _new_password()
-    db.create_user(OWNER_USERNAME, hash_password_sync(password), is_server_owner=True)
-    _print_owner_credentials(password)
 
 
 def cmd_run(cfg: Config) -> None:
     from aiohttp import web
 
-    from nightcord.app import create_app
+    from nightcord.app import create_app, new_setup_code
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     db = Database(cfg.db_path)
-    ensure_owner(db)
     db.purge_expired_sessions()
+    setup_code = None
+    if db.get_server_owner_row() is None:
+        setup_code = new_setup_code()
+        _banner(
+            "This server has no owner yet.",
+            f"Setup code: {setup_code}",
+            "Connect with the Nightcord client and enter this code to create",
+            "the server-owner account. A new code is printed on every start",
+            "until setup is done.",
+        )
     ssl_ctx = None
     if cfg.tls:
         from nightcord.tls import ensure_ssl_context
@@ -67,46 +65,90 @@ def cmd_run(cfg: Config) -> None:
         hostnames = [cfg.host, *cfg.public_hostnames]
         ssl_ctx = ensure_ssl_context(cfg.cert_path, cfg.key_path, hostnames)
     scheme = "wss" if ssl_ctx else "ws"
-    print(f"[nightcord] '{cfg.server_name}' listening on {scheme}://{cfg.host}:{cfg.port}/ws", flush=True)
+    name = db.get_server_config()["server_name"] or cfg.server_name
+    print(f"[nightcord] '{name}' listening on {scheme}://{cfg.host}:{cfg.port}/ws", flush=True)
     print(f"[nightcord] allowed origins: {', '.join(cfg.allowed_origins)}", flush=True)
-    web.run_app(create_app(cfg, db), host=cfg.host, port=cfg.port, ssl_context=ssl_ctx, print=None)
+    web.run_app(
+        create_app(cfg, db, setup_code=setup_code), host=cfg.host, port=cfg.port, ssl_context=ssl_ctx, print=None
+    )
+
+
+def _user_row(db: Database, username: str | None):
+    if not username:
+        print("username required", file=sys.stderr)
+        return None
+    row = db.get_user_row_by_name(username)
+    if row is None:
+        print(f"No user named '{username}'.", file=sys.stderr)
+    return row
 
 
 def cmd_pending(db: Database, action: str, username: str | None) -> int:
     if action == "list":
-        rows = db.list_users_by_status("pending")
+        rows = db.list_users(status="pending")
         if not rows:
             print("No pending account requests.")
         for r in rows:
             note = f"  — {r['note']}" if r["note"] else ""
             print(f"{r['username']}  (requested {r['created_at']}){note}")
         return 0
-    if not username:
-        print("username required", file=sys.stderr)
-        return 2
-    row = db.get_user_row_by_name(username)
-    if row is None or row["status"] != "pending":
+    row = _user_row(db, username)
+    if row is None:
+        return 2 if not username else 1
+    if row["status"] != "pending":
         print(f"No pending request for '{username}'.", file=sys.stderr)
         return 1
-    db.set_user_status(username, "active" if action == "approve" else "rejected")
+    db.set_user_status(row["user_id"], "active" if action == "approve" else "rejected")
     print(f"{action.capitalize()}d '{row['username']}'.")
+    return 0
+
+
+def cmd_users(db: Database, action: str, username: str | None, status: str | None) -> int:
+    if action == "list":
+        rows = db.list_users(status=status, limit=10_000)
+        if not rows:
+            print("No users.")
+        for r in rows:
+            owner = " [server owner]" if r["is_server_owner"] else ""
+            print(f"{r['user_id']}  {r['username']}  ({r['status']}, since {r['created_at']}){owner}")
+        return 0
+    row = _user_row(db, username)
+    if row is None:
+        return 2 if not username else 1
+    if row["is_server_owner"]:
+        print("The server owner can't be disabled.", file=sys.stderr)
+        return 1
+    want, need = ("disabled", "active") if action == "disable" else ("active", "disabled")
+    if row["status"] != need:
+        print(f"'{row['username']}' is {row['status']}, not {need}.", file=sys.stderr)
+        return 1
+    db.set_user_status(row["user_id"], want)
+    note = " Open connections stay up until they reconnect; the client's Admin panel disconnects them at once." if want == "disabled" else ""
+    print(f"{row['username']} is now {want}.{note}")
     return 0
 
 
 def cmd_owner_reset(db: Database) -> int:
     row = db.get_server_owner_row()
-    password = _new_password()
     if row is None:
-        db.create_user(OWNER_USERNAME, hash_password_sync(password), is_server_owner=True)
-    else:
-        db.set_password_hash(row["user_id"], hash_password_sync(password))
-    _print_owner_credentials(password)
+        print("This server has no owner yet. Start it and use the setup code it prints.", file=sys.stderr)
+        return 1
+    password = _new_password()
+    db.set_password_hash(row["user_id"], hash_password_sync(password))
+    _banner(
+        "Server-owner account",
+        f"  username: {row['username']}",
+        f"  password: {password}",
+        "Shown once. Change it in the client under User Settings → My Account.",
+    )
     return 0
 
 
-def cmd_config(db: Database, action: str, key: str | None, value: str | None) -> int:
+def cmd_config(db: Database, cfg: Config, action: str, key: str | None, value: str | None) -> int:
     if action == "show":
         for k, v in db.get_server_config().items():
+            if k == "server_name" and v is None:
+                v = f"{cfg.server_name} (from config file)"
             print(f"{k} = {v}")
         return 0
     allowed = {
@@ -114,8 +156,12 @@ def cmd_config(db: Database, action: str, key: str | None, value: str | None) ->
         "account_creation": {"off", "request", "on"},
         "guild_list_visible": {"true", "false"},
     }
+    if key == "server_name" and value and value.strip():
+        db.set_server_config({"server_name": value.strip()[:64]})
+        print(f"server_name = {value.strip()[:64]}")
+        return 0
     if key not in allowed or value not in allowed[key]:
-        print(f"Usage: config set <key> <value>; keys: {allowed}", file=sys.stderr)
+        print(f"Usage: config set <key> <value>; keys: server_name, {allowed}", file=sys.stderr)
         return 2
     parsed = (value == "true") if key == "guild_list_visible" else value
     db.set_server_config({key: parsed})
@@ -129,7 +175,8 @@ def cmd_guilds(db: Database) -> int:
         print("No guilds yet.")
     for r in rows:
         flags = " [listed]" if r["listed"] else ""
-        print(f"{r['guild_id']}  {r['name']}  (owner: {r['owner']}, {r['members']} members){flags}")
+        owner = r["owner"]["username"] if r["owner"] else "?"
+        print(f"{r['guild_id']}  {r['name']}  (owner: {owner}, {r['member_count']} members){flags}")
     return 0
 
 
@@ -139,7 +186,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--host")
     p.add_argument("--port", type=int)
     p.add_argument("--data-dir", type=Path)
-    p.add_argument("--name", help="server name shown to clients")
+    p.add_argument("--name", help="server name shown to clients until the owner sets one")
     p.add_argument("--no-tls", action="store_true", help="serve plain ws:// (local dev / behind a TLS proxy)")
     p.add_argument(
         "--allow-origin", action="append", default=None,
@@ -150,6 +197,10 @@ def build_parser() -> argparse.ArgumentParser:
     pend = sub.add_parser("pending", help="review account requests")
     pend.add_argument("action", choices=["list", "approve", "reject"])
     pend.add_argument("username", nargs="?")
+    users = sub.add_parser("users", help="list, disable or re-enable accounts")
+    users.add_argument("action", choices=["list", "disable", "enable"])
+    users.add_argument("username", nargs="?")
+    users.add_argument("--status", choices=["active", "pending", "rejected", "disabled"])
     own = sub.add_parser("owner", help="server-owner account")
     own.add_argument("action", choices=["reset-password"])
     conf = sub.add_parser("config", help="server-wide settings")
@@ -183,10 +234,12 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "pending":
             return cmd_pending(db, args.action, args.username)
+        if args.command == "users":
+            return cmd_users(db, args.action, args.username, args.status)
         if args.command == "owner":
             return cmd_owner_reset(db)
         if args.command == "config":
-            return cmd_config(db, args.action, args.key, args.value)
+            return cmd_config(db, cfg, args.action, args.key, args.value)
         if args.command == "guilds":
             return cmd_guilds(db)
     finally:

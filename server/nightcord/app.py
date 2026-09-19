@@ -1,18 +1,23 @@
-"""aiohttp application: GET /ws (the protocol) and GET / (cert-trust page)."""
+"""aiohttp application: GET /ws (the protocol), GET / (cert-trust page) and
+GET /avatars/{avatar_id} (profile pictures)."""
 
 from __future__ import annotations
 
 import logging
+import secrets
 
-from aiohttp import WSCloseCode, WSMsgType, web
+from aiohttp import WSMsgType, web
 
 from . import protocol as P
 from .config import Config
 from .db import Database
 from .dispatch import dispatch
 from .handlers import Ctx
-from .handlers.auth import LoginThrottle
+from .handlers.auth import LoginThrottle, hash_setup_code, setup_required
+from .handlers.server import public_config
+from .handlers.users import AVATAR_ID_RE, AVATAR_TYPES, avatar_dir
 from .hub import Connection, Hub
+from .permissions import PermissionService
 
 log = logging.getLogger("nightcord.app")
 
@@ -45,10 +50,30 @@ def _escape(s: str) -> str:
 
 async def landing(request: web.Request) -> web.Response:
     ctx = request.app[CTX_KEY]
-    html = LANDING_HTML.replace("{name}", _escape(ctx.config.server_name)).replace(
+    html = LANDING_HTML.replace("{name}", _escape(public_config(ctx)["server_name"])).replace(
         "{version}", P.PROTOCOL_VERSION
     )
     return web.Response(text=html, content_type="text/html")
+
+
+async def avatar(request: web.Request) -> web.StreamResponse:
+    ctx = request.app[CTX_KEY]
+    avatar_id = request.match_info["avatar_id"]
+    if not AVATAR_ID_RE.match(avatar_id):
+        raise web.HTTPNotFound()
+    path = avatar_dir(ctx) / avatar_id
+    if not path.is_file():
+        raise web.HTTPNotFound()
+    return web.Response(
+        body=path.read_bytes(),
+        content_type=AVATAR_TYPES[avatar_id.rsplit(".", 1)[1]],
+        headers={
+            # Each upload gets a new id, so the bytes behind an id never change.
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "Cross-Origin-Resource-Policy": "cross-origin",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 async def websocket(request: web.Request) -> web.StreamResponse:
@@ -60,7 +85,7 @@ async def websocket(request: web.Request) -> web.StreamResponse:
 
     ws = web.WebSocketResponse(heartbeat=30.0, max_msg_size=P.MAX_FRAME_BYTES)
     await ws.prepare(request)
-    conn = Connection(ws, request.remote)
+    conn = Connection(ws, request.remote, request.headers.get("User-Agent"))
     ctx.hub.add(conn)
     try:
         async for msg in ws:
@@ -77,17 +102,32 @@ async def websocket(request: web.Request) -> web.StreamResponse:
     return ws
 
 
-def create_app(config: Config, db: Database | None = None) -> web.Application:
+def new_setup_code() -> str:
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    raw = "".join(secrets.choice(alphabet) for _ in range(12))
+    return f"{raw[:4]}-{raw[4:8]}-{raw[8:]}"
+
+
+def create_app(config: Config, db: Database | None = None, *, setup_code: str | None = None) -> web.Application:
+    """setup_code: the one-time code that claims a server with no owner yet.
+    If the server needs one and none is given, a code is generated and logged."""
     db = db or Database(config.db_path)
+    perms = PermissionService(db)
+    ctx = Ctx(db=db, hub=Hub(db, perms), perms=perms, config=config, login_throttle=LoginThrottle())
+    if setup_required(ctx):
+        if setup_code is None:
+            setup_code = new_setup_code()
+            log.warning("server has no owner yet; setup code: %s", setup_code)
+        ctx.setup_code_hash = hash_setup_code(setup_code)
     app = web.Application()
-    app[CTX_KEY] = Ctx(db=db, hub=Hub(db), config=config, login_throttle=LoginThrottle())
+    app[CTX_KEY] = ctx
     app.router.add_get("/", landing)
     app.router.add_get("/ws", websocket)
+    app.router.add_get("/avatars/{avatar_id}", avatar)
 
     async def on_shutdown(app: web.Application) -> None:
         # Close sockets first so open handlers return and shutdown doesn't stall.
-        for conn in list(app[CTX_KEY].hub.all_conns):
-            await conn.ws.close(code=WSCloseCode.GOING_AWAY, message=b"Server shutting down")
+        await app[CTX_KEY].hub.close_all()
 
     async def on_cleanup(app: web.Application) -> None:
         db.close()

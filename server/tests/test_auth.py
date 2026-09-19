@@ -92,11 +92,11 @@ async def test_account_policy_request(connect, owner, ctx):
     assert await c.ok("auth.request_account", {"username": "hank", "password": "password123", "note": "hi"}) == {"status": "pending"}
     assert await c.err("auth.login", {"username": "hank", "password": "password123"}) == "registration_pending_approval"
 
-    ctx.db.set_user_status("hank", "active")
+    ctx.db.set_user_status(ctx.db.get_user_row_by_name("hank")["user_id"], "active")
     await c.login("hank", "password123")
 
     await c.ok("auth.request_account", {"username": "ivy", "password": "password123"})
-    ctx.db.set_user_status("ivy", "rejected")
+    ctx.db.set_user_status(ctx.db.get_user_row_by_name("ivy")["user_id"], "rejected")
     assert await c.err("auth.login", {"username": "ivy", "password": "password123"}) == "invalid_credentials"
 
 
@@ -105,7 +105,11 @@ async def test_server_config_owner_only(connect, owner):
     await c.register("jack")
     assert await c.err("server.config.update", {"guild_creation": "off"}) == "forbidden"
     assert await owner.err("server.config.update", {"guild_creation": "maybe"}) == "bad_request"
-    assert await owner.err("server.config.update", {"server_name": "x"}) == "bad_request"
+    assert await owner.err("server.config.update", {"server_name": "  "}) == "bad_request"
+    assert await owner.err("server.config.update", {"nope": 1}) == "bad_request"
+    res = await owner.ok("server.config.update", {"server_name": "Renamed"})
+    assert res["config"]["server_name"] == "Renamed"
+    assert (await c.ok("server.info"))["server_name"] == "Renamed"
     res = await owner.ok("server.config.update", {"guild_list_visible": False})
     assert res["config"]["guild_list_visible"] is False
 

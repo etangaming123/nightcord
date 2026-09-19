@@ -21,10 +21,10 @@ async def test_override_join_is_invisible(connect, owner):
     owner_id = (await owner.ok("guild.list"))["guilds"][0]
     assert owner_id["ghost"] is True
     members = (await a.ok("guild.members", {"guild_id": gid}))["members"]
-    assert [m["username"] for m in members] == ["alice"]
+    assert [m["user"]["username"] for m in members] == ["alice"]
     assert (await owner.ok("guild.members", {"guild_id": gid}))["members"] == members
-    online = (await a.ok("presence.list", {"guild_id": gid}))["online_user_ids"]
-    assert online == [a.user["user_id"]]
+    online = (await a.ok("presence.list", {"guild_id": gid}))["presences"]
+    assert online == {a.user["user_id"]: "online"}
 
 
 async def test_ghost_presence_never_broadcast(connect, owner):
@@ -43,7 +43,7 @@ async def test_ghost_is_read_only(connect, owner, ctx):
     # Can read and subscribe.
     hist = (await owner.ok("channel.history", {"channel_id": cid}))["messages"]
     assert [m["content"] for m in hist] == ["secret"]
-    await owner.ok("channel.join", {"channel_id": cid})
+    await owner.drain()
     await a.ok("message.send", {"channel_id": cid, "content": "live"})
     assert [e["payload"]["content"] for e in await owner.drain() if e["type"] == "message.new"] == ["live"]
 

@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from ..config import Config
     from ..db import Database
     from ..hub import Connection, Hub
+    from ..permissions import PermissionService
     from .auth import LoginThrottle
 
 
@@ -21,8 +22,11 @@ if TYPE_CHECKING:
 class Ctx:
     db: "Database"
     hub: "Hub"
+    perms: "PermissionService"
     config: "Config"
     login_throttle: "LoginThrottle"
+    # sha256 of the one-time setup code while the server has no owner.
+    setup_code_hash: str | None = None
 
 
 Handler = Callable[["Ctx", "Connection", dict], Awaitable[dict]]
@@ -40,6 +44,8 @@ def handles(type_: str):
 
 def load_all() -> dict[str, Handler]:
     # Importing registers handlers via @handles.
-    from . import auth, channels, guilds, messages, presence, server  # noqa: F401
+    from . import (  # noqa: F401
+        admin, auth, channels, dms, guilds, members, messages, notify, presence, roles, server, users,
+    )
 
     return REGISTRY

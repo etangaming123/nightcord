@@ -1,7 +1,7 @@
-// Feature dialogs: add guild, guild settings, channels, server settings.
+// Feature dialogs: add guild, leave guild, channels, DMs, moderation.
 
-import { LIMITS } from "../protocol.js";
-import { clear, h, initials } from "./dom.js";
+import { LIMITS, PERMS } from "../protocol.js";
+import { add, avatar, clear, displayName, h, initials } from "./dom.js";
 import { closeModal, confirmModal, formModal, openModal, toast } from "./modals.js";
 
 // Lowercase, spaces to dashes, drop anything the protocol doesn't allow.
@@ -17,21 +17,21 @@ export function addGuildDialog(state, api) {
   const render = () => {
     clear(tabs);
     for (const [key, label] of [["create", "Create"], ["join", "Join with code"], ["browse", "Browse"]]) {
-      tabs.append(h("button", {
+      add(tabs, h("button", {
         class: "tab", type: "button", role: "tab", "aria-selected": String(key === tab),
         on: { click: () => { tab = key; render(); } },
       }, label));
     }
     clear(body);
-    if (tab === "create") body.append(createForm());
-    if (tab === "join") body.append(joinForm());
-    if (tab === "browse") body.append(browseList());
+    if (tab === "create") add(body, createForm());
+    if (tab === "join") add(body, joinForm());
+    if (tab === "browse") add(body, browseList());
     body.querySelector("input")?.focus();
   };
 
   const withError = (form, fn) => {
     const error = h("div", { class: "error-box", hidden: true });
-    form.append(error);
+    add(form, error);
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       error.hidden = true;
@@ -70,20 +70,21 @@ export function addGuildDialog(state, api) {
     api.loadPublic().then((guilds) => {
       clear(list);
       if (!guilds.length) {
-        list.append(h("p", { class: "muted" }, "No public guilds on this server."));
+        add(list, h("p", { class: "muted" }, "No public guilds on this server."));
         return;
       }
       for (const g of guilds) {
         const joined = state.guilds.has(g.guild_id) && !state.guilds.get(g.guild_id).ghost;
-        list.append(h("div", { class: "public-guild" },
-          h("div", { class: "guild-icon", style: "width:36px;height:36px;font-size:13px;cursor:default", "aria-hidden": "true" }, initials(g.name)),
-          h("span", { class: "name" }, g.name),
+        add(list, h("div", { class: "public-guild" },
+          h("div", { class: "guild-icon static", "aria-hidden": "true" }, initials(g.name)),
+          h("span", { class: "meta" }, h("span", { class: "name" }, g.name), h("span", { class: "sub" }, `${g.member_count} member${g.member_count === 1 ? "" : "s"}`)),
           h("button", {
             class: "btn primary", type: "button", disabled: joined,
             on: {
               click: async (e) => {
-                e.currentTarget.disabled = true;
-                try { await api.joinById(g.guild_id); closeModal(); } catch (err) { toast(err.message, { error: true }); e.currentTarget.disabled = false; }
+                const btn = e.currentTarget;
+                btn.disabled = true;
+                try { await api.joinById(g.guild_id); closeModal(); } catch (err) { toast(err.message, { error: true }); btn.disabled = false; }
               },
             },
           }, joined ? "Joined" : "Join")));
@@ -94,55 +95,6 @@ export function addGuildDialog(state, api) {
 
   openModal({ title: "Add a guild", content: [tabs, body] });
   render();
-}
-
-export function guildSettingsDialog(guild, info, api) {
-  const listedNote = info.guild_list_visible
-    ? "Anyone on this server can find and join it from Browse."
-    : "The server owner has hidden the public list, so this has no effect right now.";
-  const inviteArea = h("div", { class: "stack" },
-    h("button", {
-      class: "btn", type: "button",
-      on: {
-        click: async () => {
-          try {
-            const code = await api.createInvite();
-            clear(inviteArea,
-              h("div", { class: "row" },
-                h("div", { class: "code-display" }, code),
-                h("button", {
-                  class: "btn", type: "button",
-                  on: { click: () => navigator.clipboard?.writeText(code).then(() => toast("Invite code copied"), () => {}) },
-                }, "Copy")),
-              h("p", { class: "muted small", style: "margin:0" }, "Share this code. It doesn't expire."));
-          } catch (e) {
-            toast(e.message, { error: true });
-          }
-        },
-      },
-    }, "Create invite code"));
-
-  formModal({
-    title: "Guild settings",
-    subtitle: guild.name,
-    submitLabel: "Save",
-    fields: [
-      h("label", {}, "Name", h("input", { name: "name", required: true, maxLength: LIMITS.GUILD_NAME_MAX, value: guild.name })),
-      h("label", { class: "check" }, h("input", { type: "checkbox", name: "listed", checked: guild.listed }), "List in the public guild directory"),
-      h("p", { class: "muted small", style: "margin:-6px 0 0" }, listedNote),
-      h("hr"),
-      h("div", { class: "section-label", style: "padding:0" }, "Invite people"),
-      inviteArea,
-    ],
-    onSubmit: async (fd) => {
-      const patch = {};
-      const name = String(fd.get("name")).trim();
-      const listed = fd.get("listed") === "on";
-      if (name !== guild.name) patch.name = name;
-      if (listed !== guild.listed) patch.listed = listed;
-      if (Object.keys(patch).length) await api.save(patch);
-    },
-  });
 }
 
 export function leaveGuildDialog(guild, onLeave) {
@@ -156,20 +108,40 @@ export function leaveGuildDialog(guild, onLeave) {
   });
 }
 
-export function channelNameDialog({ title, submitLabel, initial = "", onSubmit }) {
-  const preview = h("p", { class: "muted small", style: "margin:-6px 0 0" });
-  const input = h("input", { name: "name", required: true, maxLength: 40, value: initial, placeholder: "new-channel", spellcheck: "false", autocapitalize: "off" });
+// roles: guild roles (highest first, @everyone last); canSetPerms: MANAGE_ROLES.
+export function createChannelDialog({ roles, canSetPerms, onSubmit }) {
+  const preview = h("p", { class: "muted small hint" });
+  const input = h("input", { name: "name", required: true, maxLength: 40, placeholder: "new-channel", spellcheck: "false", autocapitalize: "off" });
   const update = () => { preview.textContent = `Will be created as #${normalizeChannelName(input.value) || "…"}`; };
   input.addEventListener("input", update);
   update();
+  const privateBox = h("input", { type: "checkbox", name: "private" });
+  const roleList = h("div", { class: "check-list", hidden: true },
+    h("p", { class: "muted small" }, roles.length > 1
+      ? "Who can see it (you always can):"
+      : "No roles yet — only you and admins will see it. Create roles in Guild settings → Roles."),
+    roles.filter((r) => !r.is_everyone).map((r) => h("label", { class: "check" },
+      h("input", { type: "checkbox", name: "role", value: r.role_id }),
+      h("span", { class: "role-dot", style: `background:${r.color || "var(--muted)"}` }), r.name)));
+  privateBox.addEventListener("change", () => { roleList.hidden = !privateBox.checked; });
   formModal({
-    title,
-    submitLabel,
-    fields: [h("label", {}, "Channel name", input), preview],
-    onSubmit: async () => {
+    title: "Create channel",
+    submitLabel: "Create channel",
+    fields: [
+      h("label", {}, "Channel name", input), preview,
+      canSetPerms ? h("label", { class: "check" }, privateBox, h("span", {}, "🔒 Private channel", h("span", { class: "muted small block" }, "Only selected roles can see it."))) : null,
+      canSetPerms ? roleList : null,
+    ],
+    onSubmit: async (fd) => {
       const name = normalizeChannelName(input.value);
       if (!LIMITS.CHANNEL_NAME_RE.test(name)) throw new Error("Use letters, numbers, - or _ (up to 32).");
-      await onSubmit(name);
+      let overwrites;
+      if (privateBox.checked) {
+        const everyone = roles.find((r) => r.is_everyone);
+        overwrites = [{ role_id: everyone.role_id, allow: 0, deny: PERMS.VIEW_CHANNEL },
+          ...fd.getAll("role").map((role_id) => ({ role_id, allow: PERMS.VIEW_CHANNEL, deny: 0 }))];
+      }
+      await onSubmit(name, overwrites);
     },
   });
 }
@@ -183,61 +155,137 @@ export function deleteChannelDialog(channel, onDelete) {
   });
 }
 
-export function serverSettingsDialog(info, api) {
-  const select = (name, value, options) =>
-    h("select", { name }, options.map(([v, label]) => h("option", { value: v, selected: v === value }, label)));
-  const overrideInput = h("input", { name: "override", placeholder: "Guild ID", spellcheck: "false", class: "mono" });
-  const overrideBtn = h("button", {
-    class: "btn", type: "button",
-    on: {
-      click: async () => {
-        const id = overrideInput.value.trim();
-        if (!id) return;
-        overrideBtn.disabled = true;
-        try {
-          await api.overrideJoin(id);
-          closeModal();
-          toast("Joined as a ghost. Members can't see you, and you can't post.");
-        } catch (e) {
-          toast(e.message, { error: true });
-        } finally {
-          overrideBtn.disabled = false;
-        }
-      },
-    },
-  }, "Ghost join");
+// A search-as-you-type user picker. multi: allow several (group DMs).
+function userPicker({ search, exclude = [], multi = true, max = LIMITS.GROUP_DM_MAX - 1 }) {
+  const picked = new Map();
+  const input = h("input", { type: "search", placeholder: "Search by username", "aria-label": "Search users", spellcheck: "false", autocapitalize: "off" });
+  const chips = h("div", { class: "pick-chips" });
+  const results = h("div", { class: "pick-results" });
+  let seq = 0;
+  const drawChips = () => {
+    clear(chips, [...picked.values()].map((u) => h("span", { class: "role-chip" }, displayName(u),
+      h("button", { class: "role-x", type: "button", "aria-label": `Remove ${u.username}`, on: { click: () => { picked.delete(u.user_id); drawChips(); run(); } } }, "×"))));
+  };
+  const run = async () => {
+    const q = input.value.trim();
+    const mine = ++seq;
+    if (!q) { clear(results, h("p", { class: "muted small" }, "Type a username to search.")); return; }
+    try {
+      const users = (await search(q)).filter((u) => !exclude.includes(u.user_id));
+      if (mine !== seq) return;
+      clear(results);
+      if (!users.length) add(results, h("p", { class: "muted small" }, "Nobody found."));
+      for (const u of users) {
+        const on = picked.has(u.user_id);
+        add(results, h("button", {
+          class: `pick-row ${on ? "on" : ""}`, type: "button", "aria-pressed": String(on),
+          on: {
+            click: () => {
+              if (on) picked.delete(u.user_id);
+              else {
+                if (!multi) picked.clear();
+                if (picked.size >= max) { toast(`At most ${max} people`, { error: true }); return; }
+                picked.set(u.user_id, u);
+              }
+              drawChips();
+              run();
+            },
+          },
+        }, avatar(u, { size: "sm" }), h("span", { class: "meta" }, h("span", { class: "name" }, displayName(u)), h("span", { class: "sub" }, u.username)),
+        h("span", { class: "tick", "aria-hidden": "true" }, on ? "✓" : "")));
+      }
+    } catch (e) {
+      clear(results, h("p", { class: "muted small" }, e.message));
+    }
+  };
+  let timer;
+  input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(run, 150); });
+  run();
+  return { el: h("div", { class: "user-picker" }, input, chips, results), picked };
+}
 
+export function newDmDialog({ search, onCreate }) {
+  const picker = userPicker({ search });
   formModal({
-    title: "Server settings",
-    subtitle: `${info.server_name} · server-owner controls`,
-    fields: [
-      h("label", {}, "Account creation", select("account_creation", info.account_creation, [
-        ["on", "Open: anyone can register"],
-        ["request", "By request: you approve new accounts"],
-        ["off", "Closed"],
-      ])),
-      h("label", {}, "Guild creation", select("guild_creation", info.guild_creation, [
-        ["on", "Anyone can create guilds"],
-        ["off", "Only the server owner"],
-      ])),
-      h("label", { class: "check" }, h("input", { type: "checkbox", name: "guild_list_visible", checked: info.guild_list_visible }), "Allow a public guild directory"),
-      h("p", { class: "muted small", style: "margin:-6px 0 0" }, "Approve account requests with: nightcord_server.py pending approve <username>"),
-      h("hr"),
-      h("div", { class: "section-label", style: "padding:0" }, "Ghost join any guild"),
-      h("p", { class: "muted small", style: "margin:0" }, "Read-only and invisible to members. List guild IDs with: nightcord_server.py guilds"),
-      h("div", { class: "row" }, overrideInput, overrideBtn),
-    ],
-    onSubmit: async (fd) => {
-      await api.save({
-        account_creation: fd.get("account_creation"),
-        guild_creation: fd.get("guild_creation"),
-        guild_list_visible: fd.get("guild_list_visible") === "on",
-      });
-      toast("Server settings saved");
+    title: "New message",
+    subtitle: "Pick one person for a direct message, or several for a group.",
+    submitLabel: "Start conversation",
+    fields: [picker.el],
+    onSubmit: async () => {
+      if (!picker.picked.size) throw new Error("Pick at least one person.");
+      await onCreate([...picker.picked.keys()]);
     },
   });
-  // Enter in the ghost-join field shouldn't submit the settings form.
-  overrideInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { e.preventDefault(); overrideBtn.click(); }
+}
+
+export function addToGroupDialog({ channel, search, onAdd }) {
+  const picker = userPicker({ search, exclude: channel.recipients.map((u) => u.user_id), multi: false, max: 1 });
+  formModal({
+    title: "Add to group",
+    submitLabel: "Add",
+    fields: [picker.el],
+    onSubmit: async () => {
+      const [id] = picker.picked.keys();
+      if (!id) throw new Error("Pick someone to add.");
+      await onAdd(id);
+    },
+  });
+}
+
+export function renameGroupDialog({ channel, onRename }) {
+  formModal({
+    title: "Rename group",
+    submitLabel: "Save",
+    fields: [h("label", {}, "Group name", h("input", { name: "name", maxLength: LIMITS.GROUP_DM_NAME_MAX, value: channel.name || "", placeholder: "Leave empty to use member names" }))],
+    onSubmit: (fd) => onRename(String(fd.get("name")).trim()),
+  });
+}
+
+export function kickDialog(user, onKick) {
+  confirmModal({
+    title: `Kick ${displayName(user)}?`,
+    message: "They can rejoin with a new invite.",
+    confirmLabel: "Kick",
+    fields: [h("label", {}, "Reason (optional, shown in the audit log)", h("input", { name: "reason", maxLength: LIMITS.BAN_REASON_MAX }))],
+    onConfirm: (fd) => onKick(String(fd.get("reason") || "").trim() || undefined),
+  });
+}
+
+export function banDialog(user, onBan) {
+  confirmModal({
+    title: `Ban ${displayName(user)}?`,
+    message: "They'll be removed and can't rejoin until unbanned.",
+    confirmLabel: "Ban",
+    fields: [
+      h("label", {}, "Delete their recent messages", h("select", { name: "delete" },
+        [["0", "Don't delete any"], ["3600", "Previous hour"], ["86400", "Previous 24 hours"], ["604800", "Previous 7 days"]]
+          .map(([v, l]) => h("option", { value: v }, l)))),
+      h("label", {}, "Reason (optional)", h("input", { name: "reason", maxLength: LIMITS.BAN_REASON_MAX })),
+    ],
+    onConfirm: (fd) => onBan(String(fd.get("reason") || "").trim() || undefined, Number(fd.get("delete"))),
+  });
+}
+
+const TIMEOUTS = [["60", "60 seconds"], ["300", "5 minutes"], ["600", "10 minutes"], ["3600", "1 hour"], ["86400", "1 day"], ["604800", "1 week"]];
+
+export function timeoutDialog(user, onTimeout) {
+  confirmModal({
+    title: `Time out ${displayName(user)}`,
+    message: "They can still read, but can't send messages, react or change anything.",
+    confirmLabel: "Time out",
+    fields: [
+      h("label", {}, "Duration", h("select", { name: "seconds" }, TIMEOUTS.map(([v, l]) => h("option", { value: v, selected: v === "600" }, l)))),
+      h("label", {}, "Reason (optional)", h("input", { name: "reason", maxLength: LIMITS.BAN_REASON_MAX })),
+    ],
+    onConfirm: (fd) => onTimeout(Number(fd.get("seconds")), String(fd.get("reason") || "").trim() || undefined),
+  });
+}
+
+export function customStatusDialog(current, onSave) {
+  formModal({
+    title: "Set a custom status",
+    submitLabel: "Save",
+    fields: [h("label", {}, "What's happening?", h("input", { name: "status", maxLength: LIMITS.CUSTOM_STATUS_MAX, value: current || "", placeholder: "Support has arrived!" }))],
+    onSubmit: (fd) => onSave(String(fd.get("status")).trim()),
   });
 }
