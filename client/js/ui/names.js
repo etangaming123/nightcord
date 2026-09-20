@@ -46,8 +46,10 @@ export function profileBanner(user, { live = true } = {}) {
     return h("div", { class: "profile-banner has-image" },
       imageEl(fresh.banner_id, { animate: userCan("animated_media", fresh), alt: "", lazy: false }));
   }
-  const colors = themeColors(fresh, { live });
-  return h("div", { class: "profile-banner", style: `background:${colors ? colors[0] : fresh.avatar_color || "var(--accent)"}` });
+  // With profile colours on, the card already paints one gradient top to
+  // bottom; a coloured strip here would show a seam where the two meet.
+  if (themeColors(fresh, { live })) return h("div", { class: "profile-banner" });
+  return h("div", { class: "profile-banner", style: `background:${fresh.avatar_color || "var(--accent)"}` });
 }
 
 export function themeColors(user, { live = true } = {}) {

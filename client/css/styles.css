@@ -574,7 +574,9 @@ textarea { resize: vertical; }
 .emoji-empty { grid-column: 1 / -1; }
 
 .profile-pop { width: 300px; overflow: hidden; }
-.profile, .profile-preview { position: relative; background: var(--bg-1); }
+/* overflow keeps the card's bottom margin inside, so a themed gradient (below)
+   reaches the bottom edge instead of stopping short. */
+.profile, .profile-preview { position: relative; background: var(--bg-1); overflow: hidden; }
 .profile-preview { border-radius: 10px; overflow: hidden; border: 1px solid var(--line); max-width: 300px; }
 .profile-banner { height: 60px; }
 .profile-avatar { position: absolute; top: 18px; left: 14px; padding: 5px; background: var(--bg-1); border-radius: 50%; }
@@ -1090,9 +1092,10 @@ canvas.still { display: block; }
 .profile-banner.has-image img, .profile-banner.has-image canvas { width: 100%; height: 100%; object-fit: cover; display: block; }
 .profile-banner.has-image ~ .profile-avatar { top: 62px; }
 .profile-banner.has-image ~ .profile-card { margin-top: 50px; }
-.profile.themed { background: linear-gradient(180deg, var(--p1), var(--p2)); }
-.profile.themed .profile-avatar { background: color-mix(in srgb, var(--p1) 70%, var(--p2)); }
-.profile.themed .profile-card { background: color-mix(in srgb, var(--bg-2) 72%, transparent); backdrop-filter: blur(6px); }
+.profile.themed, .profile-preview.themed { background: linear-gradient(180deg, var(--p1), var(--p2)); }
+.themed .profile-banner:not(.has-image) { background: none; }
+.themed .profile-avatar { background: color-mix(in srgb, var(--p1) 70%, var(--p2)); }
+.themed .profile-card { background: color-mix(in srgb, var(--bg-2) 72%, transparent); backdrop-filter: blur(6px); }
 
 /* Custom gradient theme (themes.js): the gradient shows through translucent panels. */
 :root.grad-theme #app, :root.grad-theme .screen { background: var(--grad) fixed; }
@@ -1116,6 +1119,13 @@ canvas.still { display: block; }
 .theme-stops { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .theme-stop { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border-radius: 8px; background: var(--bg-2); }
 .theme-stop input[type="color"] { width: 38px; height: 30px; border: 0; padding: 0; background: none; cursor: pointer; }
+
+/* Crop before upload (cropper.js). */
+.cropper { display: grid; gap: 12px; justify-items: center; }
+.cropper-stage { background: var(--bg-0); border-radius: 8px; padding: 10px; }
+.cropper-canvas { display: block; max-width: 100%; border-radius: 6px; touch-action: none; cursor: grab; background: var(--bg-0); }
+.cropper-canvas:active { cursor: grabbing; }
+.cropper-zoom { width: 100%; accent-color: var(--accent); }
 .locked-note { padding: 10px 12px; border-radius: 8px; background: var(--bg-1); color: var(--text-2); font-size: 13px; }
 .tag.perks { background: rgba(187, 154, 247, .18); color: #bb9af7; }
 

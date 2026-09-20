@@ -31,7 +31,8 @@ direct messages between anyone on the server.
   yet. The server owner turns them on.
 - **Direct messages:** 1:1 and group DMs (up to 10 people) with anyone on the server.
 - **Profiles:** display name, avatar image (animated allowed), banner, profile colours, bio, custom status, and online / idle / do not disturb /
-  invisible status (idle kicks in after 10 minutes away).
+  invisible status (idle kicks in after 10 minutes away). Avatars, banners and guild images go through a built-in cropper —
+  drag to move, scroll or drag the slider to zoom.
 - **User settings:** account and password, profile editor with live preview, logged-in devices, dark/light theme, font
   size, compact mode, desktop notifications and sound. Per-guild and per-channel mute and notification levels live in
   the guild and channel menus.

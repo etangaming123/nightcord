@@ -8,7 +8,7 @@ import { LIMITS } from "../protocol.js";
 import { uploadMedia } from "../uploads.js";
 
 // kind -> how to fit: "cover" crops to the box's aspect ratio, "contain" fits inside it.
-const SHAPES = {
+export const SHAPES = {
   avatar: { w: 256, h: 256, fit: "cover" },
   guild_icon: { w: 256, h: 256, fit: "cover" },
   banner: { w: 960, h: 384, fit: "cover" },
@@ -20,7 +20,8 @@ const SHAPES = {
 
 const KEEPS_ANIMATION = new Set(["image/gif", "image/webp", "image/png"]);
 
-async function encode(canvas, maxBytes) {
+// Encodes a canvas as the smallest of WebP / PNG / JPEG that fits `maxBytes`.
+export async function encode(canvas, maxBytes) {
   const toBlob = (type, q) => new Promise((resolve) => canvas.toBlob(resolve, type, q));
   for (const type of ["image/webp", "image/png", "image/jpeg"]) {
     for (const q of [0.92, 0.8, 0.65, 0.5]) {

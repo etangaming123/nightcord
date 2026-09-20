@@ -8,6 +8,7 @@ import { lockedReason, userCan } from "../perks.js";
 import { MAX_THEME_COLORS, PRESETS, gradientCss, normalizeCustom } from "../themes.js";
 import { adminSections } from "./admin.js";
 import { add, avatar, clear, displayName, fmtDate, fmtDateTime, h } from "./dom.js";
+import { cropImage } from "./cropper.js";
 import { pickImage, uploadImage } from "./images.js";
 import { profileBanner, profileThemeAttrs } from "./names.js";
 import { closeFullscreen, confirmModal, openFullscreen, refreshFullscreen, toast } from "./modals.js";
@@ -178,17 +179,25 @@ function profile(el, actions) {
   const still = () => !userCan("animated_media");
   const changeAvatar = (e) => {
     const btn = e.currentTarget;
-    pickImage((file) => busy(btn, async () => {
-      const media = await uploadImage(file, "avatar", { still: still() });
-      actions.setSelf((await actions.req(T.USER_AVATAR_SET, { media_id: media.media_id })).user);
-    }, "Avatar updated"));
+    pickImage(async (file) => {
+      const cropped = await cropImage(file, "avatar", { allowAnimated: !still() });
+      if (!cropped) return;
+      busy(btn, async () => {
+        const media = await uploadImage(cropped, "avatar", { still: still() });
+        actions.setSelf((await actions.req(T.USER_AVATAR_SET, { media_id: media.media_id })).user);
+      }, "Avatar updated");
+    });
   };
   const changeBanner = (e) => {
     const btn = e.currentTarget;
-    pickImage((file) => busy(btn, async () => {
-      const media = await uploadImage(file, "banner", { still: still() });
-      actions.setSelf((await actions.req(T.USER_UPDATE, { banner_media_id: media.media_id })).user);
-    }, "Banner updated"));
+    pickImage(async (file) => {
+      const cropped = await cropImage(file, "banner", { allowAnimated: !still() });
+      if (!cropped) return;
+      busy(btn, async () => {
+        const media = await uploadImage(cropped, "banner", { still: still() });
+        actions.setSelf((await actions.req(T.USER_UPDATE, { banner_media_id: media.media_id })).user);
+      }, "Banner updated");
+    });
   };
   add(form,
     h("div", { class: "avatar-edit" },

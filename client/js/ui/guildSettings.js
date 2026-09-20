@@ -11,6 +11,7 @@ import { closeFullscreen, confirmModal, openFullscreen, openMenu, refreshFullscr
 import { copyText } from "./profile.js";
 import { guildCan } from "../perks.js";
 import { openEmojiPicker } from "./emoji.js";
+import { cropImage } from "./cropper.js";
 import { pickImage, uploadImage } from "./images.js";
 import { roleIconOf, roleSwatch } from "./names.js";
 
@@ -105,9 +106,11 @@ function overview(el, actions) {
   const upload = (kind, apply, ok) => (e) => {
     const btn = e.currentTarget;
     pickImage(async (file) => {
+      const cropped = await cropImage(file, kind, { allowAnimated: animated });
+      if (!cropped) return;
       btn.disabled = true;
       try {
-        const media = await uploadImage(file, kind, { still: !animated });
+        const media = await uploadImage(cropped, kind, { still: !animated });
         await apply(media.media_id);
         toast(ok);
         refreshFullscreen();
