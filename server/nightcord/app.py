@@ -38,12 +38,21 @@ LANDING_HTML = """<!doctype html>
 <style>
   :root { color-scheme: dark; }
   body { margin: 0; min-height: 100vh; display: grid; place-items: center;
-         background: #1a1b26; color: #c0caf5; font: 16px/1.5 system-ui, sans-serif; }
+         background: linear-gradient(160deg, #241530, #120d19 60%); color: #f4ecf6;
+         font: 16px/1.5 system-ui, sans-serif; }
   main { max-width: 32rem; padding: 2rem; }
-  h1 { font-size: 1.25rem; margin: 0 0 .5rem; }
-  code { background: #24283b; padding: .1rem .35rem; border-radius: 4px; }
+  svg { display: block; margin-bottom: 1rem; }
+  h1 { font-size: 1.35rem; margin: 0 0 .5rem; }
+  p { color: #c9bcd2; }
+  small { color: #9a8ca6; }
 </style></head>
 <body><main>
+  <svg width="56" height="56" viewBox="0 0 32 32" aria-hidden="true">
+    <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#884499"/><stop offset="1" stop-color="#bb6688"/></linearGradient></defs>
+    <rect width="32" height="32" rx="7" fill="url(#g)"/>
+    <path d="M19.5 7.5a9.3 9.3 0 1 0 6.3 14.6A10.6 10.6 0 0 1 19.5 7.5z" fill="#ddaacc"/>
+  </svg>
   <h1>{name}</h1>
   <p>This Nightcord server is reachable, and your browser now trusts its certificate.</p>
   <p>You can close this tab and go back to Nightcord to connect.</p>

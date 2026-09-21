@@ -24,7 +24,7 @@ export function renderRail(state, actions) {
       class: `guild-icon home ${homeActive ? "active" : ""}`, type: "button",
       title: t("rail_dm_label"), "aria-label": t("rail_dm_label"), "aria-current": homeActive ? "page" : null,
       on: { click: actions.openHome },
-    }, h("span", { class: "brand-mark", "aria-hidden": "true" }), badge(home)),
+    }, h("img", { class: "brand-mark", src: "assets/logo.png", alt: "" }), badge(home)),
     h("div", { class: "rail-sep", role: "separator" }),
   );
   for (const g of state.guilds.values()) {

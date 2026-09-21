@@ -139,7 +139,7 @@ function profile(el, actions) {
   const me = state.user;
   const preview = h("div", { class: "profile-preview" });
   const form = h("form", { class: "stack narrow" });
-  const colorInput = h("input", { type: "color", name: "avatar_color", value: me.avatar_color || "#7aa2f7" });
+  const colorInput = h("input", { type: "color", name: "avatar_color", value: me.avatar_color || "#884499" });
   let useColor = !!me.avatar_color;
   const themeLocked = lockedReason("profile_colors");
   const bannerLocked = lockedReason("profile_banner");

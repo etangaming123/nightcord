@@ -43,7 +43,7 @@ export function clear(el, ...children) {
 }
 
 // Stable pleasant color per username.
-const AVATAR_COLORS = ["#7aa2f7", "#bb9af7", "#9ece6a", "#e0af68", "#f7768e", "#7dcfff", "#ff9e64", "#73daca"];
+const AVATAR_COLORS = ["#884499", "#bb6688", "#8888cc", "#ccaa88", "#ddaacc", "#6a8fbf", "#9ece6a", "#73daca"];
 export function colorFor(name) {
   let hash = 0;
   for (const ch of String(name)) hash = (hash * 31 + ch.codePointAt(0)) >>> 0;

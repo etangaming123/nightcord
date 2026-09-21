@@ -12,7 +12,7 @@ export const MAX_THEME_COLORS = 5;
 // Each preset sets the palette tokens from styles.css :root. `name` is a
 // lazy getter (not a literal) so it isn't resolved until strings are loaded.
 const PRESET_DATA = [
-  { id: "default", nameKey: "preset_default", swatch: ["#1a1b26", "#7aa2f7"] },
+  { id: "default", nameKey: "preset_default", swatch: ["#1a1b26", "#884499"] },
   {
     id: "midnight", nameKey: "preset_midnight", base: "dark", swatch: ["#000000", "#8a8fff"],
     vars: { "--bg-0": "#000000", "--bg-1": "#060608", "--bg-2": "#0b0b10", "--bg-3": "#17171f", "--bg-4": "#22222d", "--panel": "#030305", "--line": "#1b1b24", "--accent": "#8a8fff", "--code-bg": "#050507" },
@@ -48,7 +48,7 @@ export const PRESETS = PRESET_DATA.map(({ nameKey, ...rest }) =>
 export const DEFAULT_CUSTOM = { colors: ["#6d28d9", "#db2777", "#f59e0b"], angle: 135, strength: 55, base: "dark", accent: null };
 
 // Every property applyTheme may set, so switching themes clears the last one.
-const KEYS = new Set(["--grad", "--glass", "--accent-2", "--pill-bg", "--pill-text", "--accent-ink"]);
+const KEYS = new Set(["--grad", "--glass", "--accent-2", "--accent-text", "--pill-bg", "--pill-text", "--accent-ink"]);
 for (const p of PRESETS) for (const k of Object.keys(p.vars || {})) KEYS.add(k);
 
 export const themesAllowed = () => userCan("client_themes");
@@ -82,6 +82,7 @@ function setAccent(style, accent, base) {
   style.setProperty("--accent", accent);
   style.setProperty("--accent-ink", inkFor(accent));
   style.setProperty("--accent-2", `color-mix(in srgb, ${accent} 82%, ${toward})`);
+  style.setProperty("--accent-text", base === "light" ? `color-mix(in srgb, ${accent} 85%, black)` : `color-mix(in srgb, ${accent} 80%, white)`);
   style.setProperty("--pill-bg", `color-mix(in srgb, ${accent} 20%, transparent)`);
   style.setProperty("--pill-text", `color-mix(in srgb, ${accent} ${base === "light" ? 75 : 55}%, ${toward})`);
 }

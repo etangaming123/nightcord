@@ -10,25 +10,31 @@ import { scopedT } from "./strings.js";
 
 const t = scopedT("notify");
 
-let audio = null;
+// Sound files live in assets/sounds/ so they can be swapped without touching
+// code (README → Customising). A missing or blocked file just stays silent.
+const SOUNDS = {
+  message: "assets/sounds/message.wav",
+  mention: "assets/sounds/mention.wav",
+  voiceJoin: "assets/sounds/voice-join.wav",
+  voiceLeave: "assets/sounds/voice-leave.wav",
+};
+const players = new Map();
 
-function blip() {
+export function playSound(name) {
+  if (!getPrefs().sound || state.user?.presence === "dnd") return;
+  const src = SOUNDS[name];
+  if (!src) return;
+  let audio = players.get(name);
+  if (!audio) {
+    audio = new Audio(src);
+    audio.volume = 0.6;
+    players.set(name, audio);
+  }
   try {
-    audio = audio || new AudioContext();
-    const t = audio.currentTime;
-    const osc = audio.createOscillator();
-    const gain = audio.createGain();
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(880, t);
-    osc.frequency.exponentialRampToValueAtTime(1320, t + 0.08);
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(0.12, t + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
-    osc.connect(gain).connect(audio.destination);
-    osc.start(t);
-    osc.stop(t + 0.3);
+    audio.currentTime = 0;
+    audio.play()?.catch(() => {}); // autoplay rules before the first click
   } catch {
-    /* audio unavailable (autoplay policy etc.) */
+    /* audio unavailable */
   }
 }
 
@@ -48,7 +54,7 @@ export function shouldNotify(message, channel) {
 export function notifyMessage(message, channel, onClick) {
   if (!shouldNotify(message, channel)) return;
   const prefs = getPrefs();
-  if (prefs.sound) blip();
+  playSound(mentionsMe(message) ? "mention" : "message");
   if (!prefs.desktopNotifications || !("Notification" in window) || Notification.permission !== "granted") return;
   if (!document.hidden && document.hasFocus()) return; // the in-app badge is enough
   const author = userById(message.author?.user_id) || message.author;

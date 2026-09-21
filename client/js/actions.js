@@ -2,6 +2,7 @@
 // settings and moderation. Views get this object as `actions`.
 
 import { req } from "./api.js";
+import { playSound } from "./notify.js";
 import { ERR, LIMITS, PERMS, T } from "./protocol.js";
 import { invalidate } from "./render.js";
 import {
@@ -878,6 +879,7 @@ export async function joinVoice(channel) {
     const { voice_state } = await req(T.VOICE_JOIN, { channel_id: channel.channel_id });
     state.myVoice = voice_state;
     state.voice.set(voice_state.user_id, voice_state);
+    playSound("voiceJoin");
     invalidate("sidebar");
   } catch (e) {
     fail(e);
@@ -886,7 +888,7 @@ export async function joinVoice(channel) {
 
 export async function leaveVoice() {
   try { await req(T.VOICE_LEAVE); } catch (e) { fail(e); }
-  if (state.myVoice) state.voice.delete(state.user.user_id);
+  if (state.myVoice) { state.voice.delete(state.user.user_id); playSound("voiceLeave"); }
   state.myVoice = null;
   invalidate("sidebar");
 }

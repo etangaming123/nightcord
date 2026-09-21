@@ -5,7 +5,7 @@ import {
   loadAll, openGuild, openHome, reloadRoles, removeMessage, setServerInfo, updateMessage, upsertMember,
 } from "./actions.js";
 import { req } from "./api.js";
-import { notifyMessage } from "./notify.js";
+import { notifyMessage, playSound } from "./notify.js";
 import { applyPrefs } from "./prefs.js";
 import { T } from "./protocol.js";
 import { invalidate } from "./render.js";
@@ -164,6 +164,13 @@ export function wireEvents(conn) {
   });
 
   on(T.VOICE_STATE_UPDATED, (v) => {
+    // Someone else joining or leaving the voice channel you're in (your own
+    // joins and leaves play from joinVoice / leaveVoice).
+    const mine = state.myVoice?.channel_id;
+    const before = state.voice.get(v.user_id)?.channel_id;
+    if (v.user_id !== state.user.user_id && mine && v.channel_id !== before && (v.channel_id === mine || before === mine)) {
+      playSound(v.channel_id === mine ? "voiceJoin" : "voiceLeave");
+    }
     if (v.user_id === state.user.user_id) state.myVoice = v.channel_id ? v : null;
     if (v.guild_id === state.guildId) {
       if (v.channel_id) state.voice.set(v.user_id, v);

@@ -9,9 +9,11 @@
   --text: #d5daf0;
   --text-2: #a1a8c9;
   --muted: #6e7596;
-  --accent: #7aa2f7;
-  --accent-2: #8fb2f9;
-  --accent-ink: #11131c;
+  /* Brand: #884499 plus #BB6688 #8888CC #CCAA88 #DDAACC (README → Customising). */
+  --accent: #884499;
+  --accent-2: #9b55ad;
+  --accent-ink: #ffffff;
+  --accent-text: #ddaacc;  /* the accent where it's text or a thin line on dark panels */
   --danger: #f7768e;
   --danger-bg: rgba(247, 118, 142, .12);
   --danger-text: #ffb3c1;
@@ -21,8 +23,8 @@
   --dnd: #f7768e;
   --mention-bg: rgba(224, 175, 104, .09);
   --mention-bar: #e0af68;
-  --pill-bg: rgba(122, 162, 247, .18);
-  --pill-text: #c3d4ff;
+  --pill-bg: rgba(136, 68, 153, .3);
+  --pill-text: #eecce4;
   --code-bg: #15161f;
   --shadow: 0 12px 40px rgba(0, 0, 0, .45);
   --scrim: rgba(8, 9, 14, .7);
@@ -47,9 +49,10 @@
   --text: #1f2233;
   --text-2: #4a5070;
   --muted: #7a8099;
-  --accent: #3d6fe0;
-  --accent-2: #2f5ec9;
+  --accent: #884499;
+  --accent-2: #733a82;
   --accent-ink: #ffffff;
+  --accent-text: #884499;
   --danger: #d63d5a;
   --danger-bg: rgba(214, 61, 90, .1);
   --danger-text: #a82540;
@@ -59,8 +62,8 @@
   --dnd: #d63d5a;
   --mention-bg: rgba(214, 158, 46, .12);
   --mention-bar: #d69e2e;
-  --pill-bg: rgba(61, 111, 224, .14);
-  --pill-text: #2f5ec9;
+  --pill-bg: rgba(136, 68, 153, .13);
+  --pill-text: #6d3480;
   --code-bg: #f1f2f6;
   --shadow: 0 12px 40px rgba(20, 24, 40, .18);
   --scrim: rgba(20, 22, 32, .45);
@@ -78,7 +81,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 button, input, textarea, select { font: inherit; color: inherit; }
-a { color: var(--accent); }
+a { color: var(--accent-text); }
 .muted { color: var(--muted); }
 .small { font-size: .87em; }
 .block { display: block; }
@@ -101,7 +104,7 @@ a { color: var(--accent); }
 .btn.primary { background: var(--accent); color: var(--accent-ink); }
 .btn.primary:hover:not(:disabled) { background: var(--accent-2); }
 .btn.danger { background: var(--danger); color: #fff; }
-.btn.link { background: none; padding: 0; color: var(--accent); font-weight: 500; font-size: inherit; }
+.btn.link { background: none; padding: 0; color: var(--accent-text); font-weight: 500; font-size: inherit; }
 .btn.link:hover { text-decoration: underline; }
 .btn.block { width: 100%; }
 .icon-btn {
@@ -121,7 +124,7 @@ input, textarea, select {
 }
 input[type="color"] { width: 48px; height: 36px; padding: 2px; cursor: pointer; }
 input[type="range"] { padding: 0; accent-color: var(--accent); }
-input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
+input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent-text); }
 textarea { resize: vertical; }
 .check { display: flex; align-items: center; gap: 10px; font-weight: 500; color: var(--text); font-size: 14px; }
 .check input { width: auto; accent-color: var(--accent); }
@@ -164,11 +167,8 @@ textarea { resize: vertical; }
 }
 .card.wide { max-width: 480px; }
 .brand { display: flex; align-items: center; gap: 10px; margin: 0 0 4px; font-size: 24px; letter-spacing: -.01em; }
-.brand-mark {
-  display: inline-block; width: 28px; height: 28px; border-radius: 8px; background: var(--accent);
-  -webkit-mask: radial-gradient(circle at 70% 35%, transparent 38%, #000 39%);
-          mask: radial-gradient(circle at 70% 35%, transparent 38%, #000 39%);
-}
+/* The logo is client/assets/logo.png — swap the file to rebrand. */
+.brand-mark { display: inline-block; width: 32px; height: 32px; border-radius: 8px; object-fit: cover; }
 .server-title { margin: 12px 0 2px; font-size: 22px; }
 .card p { margin: 0 0 18px; }
 .card .stack p { margin: 0; }
@@ -222,8 +222,9 @@ textarea { resize: vertical; }
 }
 .guild-icon.static { width: 40px; height: 40px; font-size: 13px; cursor: default; border-radius: 12px; background: var(--bg-3); }
 .guild-icon:not(.static):hover, .guild-icon.active { border-radius: 16px; background: var(--accent); color: var(--accent-ink); }
-.guild-icon.home .brand-mark { width: 26px; height: 26px; background: var(--text-2); }
-.guild-icon.home:hover .brand-mark, .guild-icon.home.active .brand-mark { background: var(--accent-ink); }
+.guild-icon.home, .guild-icon.home:not(.static):hover, .guild-icon.home.active { background: none; }
+.guild-icon.home .brand-mark { width: 48px; height: 48px; border-radius: inherit; transition: border-radius .15s, filter .15s; filter: saturate(.75); }
+.guild-icon.home:hover .brand-mark, .guild-icon.home.active .brand-mark { filter: none; }
 .guild-icon.server { background: var(--bg-3); font-size: 18px; color: var(--text-2); }
 .guild-icon.add { color: var(--ok); font-size: 24px; font-weight: 400; }
 .guild-icon.add:hover { background: var(--ok); color: var(--accent-ink); }
@@ -443,7 +444,7 @@ textarea { resize: vertical; }
 }
 .reply-bar > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .reply-bar .ping { font-weight: 700; color: var(--muted); }
-.reply-bar .ping.on { color: var(--accent); }
+.reply-bar .ping.on { color: var(--accent-text); }
 .reply-bar .icon-btn { width: 22px; height: 22px; font-size: 12px; }
 .autocomplete {
   position: absolute; left: 16px; right: 16px; bottom: calc(100% + 6px); background: var(--bg-1);
@@ -534,7 +535,7 @@ textarea { resize: vertical; }
 .pick-row.on { background: var(--pill-bg); }
 .pick-row .meta { flex: 1; display: grid; }
 .pick-row .sub { font-size: 12px; color: var(--muted); }
-.pick-row .tick { color: var(--accent); font-weight: 700; }
+.pick-row .tick { color: var(--accent-text); font-weight: 700; }
 
 #toast-root { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); display: grid; gap: 8px; z-index: 90; }
 .toast {
@@ -751,7 +752,7 @@ textarea { resize: vertical; }
 }
 .file-icon { font-size: 26px; flex: none; }
 .file-meta { flex: 1; min-width: 0; display: grid; }
-.file-name { color: var(--accent); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.file-name { color: var(--accent-text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .file-size { font-size: 12px; color: var(--muted); }
 .file-card a.icon-btn { text-decoration: none; }
 .lightbox-modal { max-width: min(96vw, 1200px) !important; width: auto; background: transparent; box-shadow: none; padding: 0; border: 0; }
@@ -838,7 +839,7 @@ textarea { resize: vertical; }
 .vp-buttons .btn { flex: 1; }
 .small-btn { padding: 4px 8px; font-size: 12px; }
 .btn.on { background: var(--danger-bg); color: var(--danger-text); }
-.icon-btn.on { color: var(--accent); }
+.icon-btn.on { color: var(--accent-text); }
 
 /* chat header additions */
 #chat-header .topic {
