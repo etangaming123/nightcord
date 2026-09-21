@@ -2,7 +2,7 @@
 
 A web-based messaging app, built for selfhosting. A parody of Discord.
 
-[Website](https://etangaming123.github.io/nightcord/) · [Open the client](https://etangaming123.github.io/nightcord/app/) · [Protocol spec](docs/PROTOCOL.md)
+[Website](https://nightcord.etangaming.xyz/) · [Open the client](https://nightcord.etangaming.xyz/app/) · [Protocol spec](docs/PROTOCOL.md)
 
 > [!WARNING]
 > **This is vibecoded by Claude, have fun :)**
@@ -49,7 +49,7 @@ A web-based messaging app, built for selfhosting. A parody of Discord.
 
 ## Quickstart
 
-To **join** a server, open [the client](https://etangaming123.github.io/nightcord/app/), type in the server's
+To **join** a server, open [the client](https://nightcord.etangaming.xyz/app/), type in the server's
 address (`host:port`) and make an account. That's it.
 
 To **host** one, keep reading.
@@ -73,7 +73,7 @@ To **host** one, keep reading.
 2. The first start prints a **setup code** and makes a self-signed TLS certificate in `data/`.
 3. Open the client, connect to your server and enter the setup code. You'll pick the owner account, the server name
    and who may create accounts and guilds.
-4. Send your friends the link. `https://etangaming123.github.io/nightcord/app/?server=your-host:8765` opens the
+4. Send your friends the link. `https://nightcord.etangaming.xyz/app/?server=your-host:8765` opens the
    client already pointed at your server.
 
 ### Updating
