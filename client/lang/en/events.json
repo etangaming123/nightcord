@@ -11,5 +11,7 @@
 
   "message_request_toast": "Message request from {name}",
   "friend_request_toast": "{name} sent you a friend request",
-  "friend_accepted_toast": "{name} accepted your friend request"
+  "friend_accepted_toast": "{name} accepted your friend request",
+  "announcement_toast": "New announcement in your Inbox",
+  "rules_changed_toast": "The server's rules changed — see your Inbox"
 }

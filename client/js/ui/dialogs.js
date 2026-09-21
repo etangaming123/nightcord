@@ -334,3 +334,14 @@ export function customStatusDialog(current, onSave) {
     onSubmit: (fd) => onSave(String(fd.get("status")).trim()),
   });
 }
+
+export function announcementDialog({ item, onSave }) {
+  formModal({
+    title: t("edit_announcement_title"),
+    submitLabel: tc("save"),
+    wide: true,
+    fields: [h("label", {}, t("announcement_label"),
+      h("textarea", { name: "content", rows: 8, required: true, maxLength: LIMITS.ANNOUNCEMENT_MAX_CHARS }, item.content))],
+    onSubmit: (fd) => onSave(String(fd.get("content")).trim()),
+  });
+}

@@ -318,6 +318,34 @@ export function wireEvents(conn) {
   });
   on(T.RELATIONSHIP_REMOVED, ({ user_id }) => dropRelationship(user_id));
 
+  // --- announcements ---
+  const inboxOpen = () => state.view === "home" && !state.channelId && state.homeTab === "inbox" && !document.hidden;
+  on(T.ANNOUNCEMENT_CREATED, (item) => {
+    const a = state.announcements;
+    a.items = [item, ...a.items.filter((x) => x.announcement_id !== item.announcement_id)];
+    if (item.author_id !== state.user.user_id) {
+      a.unread += 1;
+      playSound("message");
+      if (!inboxOpen()) toast(item.kind === "legal" ? t("rules_changed_toast") : t("announcement_toast"));
+    }
+    invalidate("rail", "sidebar", "chat", "title"); // an open Inbox acks it as it redraws
+  });
+  on(T.ANNOUNCEMENT_UPDATED, (item) => {
+    state.announcements.items = state.announcements.items.map((x) => (x.announcement_id === item.announcement_id ? item : x));
+    invalidate("chat");
+  });
+  on(T.ANNOUNCEMENT_DELETED, ({ announcement_id: id }) => {
+    const a = state.announcements;
+    const had = a.items.find((x) => x.announcement_id === id);
+    a.items = a.items.filter((x) => x.announcement_id !== id);
+    if (had && BigInt(id) > BigInt(a.lastReadId || "0") && a.unread) a.unread -= 1;
+    invalidate("rail", "sidebar", "chat", "title");
+  });
+  on(T.ANNOUNCEMENT_ACKED, ({ last_read_id: id, unread }) => {
+    Object.assign(state.announcements, { lastReadId: id, unread });
+    invalidate("rail", "sidebar", "title", "chat");
+  });
+
   // --- admin ---
   on(T.ADMIN_ACCOUNT_REQUESTED, ({ user }) => {
     state.pendingAccounts += 1;

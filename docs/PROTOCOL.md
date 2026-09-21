@@ -1,6 +1,6 @@
 # Nightcord Protocol
 
-Version: `0.6`
+Version: `0.7`
 
 This document is the single source of truth for the wire format between the
 Nightcord client (GitHub Pages, vanilla JS) and a Nightcord server (Python).
@@ -19,6 +19,7 @@ Each protocol version arrived with one commit on `main`, named in the middle col
 | 0.4 | Server staff, attachments, invites, categories and search | Server admins and moderators with global mutes, account deletion and IP/device bans; Terms of Service and Privacy Policy documents; file attachments over HTTP; invites with use limits, expiry and vanity links; join/leave messages; categories, topics and slowmode; pins and search; guild icons; nicknames; hoisted roles; a voice-channel placeholder. |
 | 0.5 | Custom emoji and stickers, image uploads and customisation | Custom emoji and stickers (per guild, usable everywhere); image uploads over HTTP (`/media`) with animated images; profile banners and colours, guild banners, gradient role colours and role icons; server-wide customisation settings with an allow-list (§8d). |
 | 0.6 | Friends, blocking and message requests | Friends and friend requests, one-sided blocking, per-user DM privacy with message requests, group DMs limited to friends, and user search as a server setting (off by default). |
+| 0.7 | Announcements inbox | A server-wide announcements inbox with per-account read state, and automatic entries when the Terms or Privacy Policy change. |
 
 ---
 
@@ -228,7 +229,8 @@ Password is never sent to the client; the server stores only a bcrypt hash.
     "guild_banner": true, "gradient_roles": true, "role_icons": true,
     "client_themes": true
   },
-  "user_search": "off | staff | on"
+  "user_search": "off | staff | on",
+  "announcements_admins": false
 }
 ```
 Defaults: `guild_creation: "on"`, `account_creation: "on"`,
@@ -241,7 +243,8 @@ to be true for it to appear.
 
 `user_search` (default `"off"`) decides who may call `user.search`:
 nobody, server staff only, or everyone; people add friends by exact
-username either way.
+username either way. `announcements_admins` (default false) lets server
+admins post announcements as well as the owner.
 
 ### Guild
 ```json
@@ -858,6 +861,29 @@ A 1:1 DM appears for the other person with its first message.
    (`request_pending`) until you accept (`dm.request.accept`, or just
    reply). If you decline, they get `dm_not_allowed` from then on and
    aren't told why.
+
+### Announcements
+| type | direction | payload |
+|---|---|---|
+| `announcement.list` | C→S | `{ before? }` — newest first, 50 at a time |
+| `announcement.list.result` | S→C | `{ announcements: [Announcement], last_read_id, unread }` |
+| `announcement.create` | C→S | `{ content }` — Markdown, up to 4000 characters. The server owner, or admins when `announcements_admins` is on |
+| `announcement.create.result` | S→C | `{ announcement: Announcement }` |
+| `announcement.update` | C→S | `{ announcement_id, content }` — same people; automatic entries can't be edited |
+| `announcement.update.result` | S→C | `{ announcement: Announcement }` |
+| `announcement.delete` | C→S | `{ announcement_id }` |
+| `announcement.delete.result` | S→C | `{}` |
+| `announcement.ack` | C→S | `{ announcement_id }` — everything up to it is read |
+| `announcement.ack.result` | S→C | `{ last_read_id, unread }` |
+| `announcement.created` | S→C | `Announcement` — to everyone logged in |
+| `announcement.updated` | S→C | `Announcement` |
+| `announcement.deleted` | S→C | `{ announcement_id }` |
+| `announcement.acked` | S→C | `{ last_read_id, unread }` — to your other connections |
+
+`Announcement` is `{ announcement_id, author_id, kind: "post" | "legal",
+content, created_at, edited_at }`. `author_id` is null for automatic
+entries: the server posts a `legal` one whenever `admin.legal.set` changes
+the Terms or Privacy Policy. Read state is one `last_read_id` per account.
 
 ### Messaging
 | type | direction | payload |

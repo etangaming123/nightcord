@@ -26,7 +26,7 @@ def apply_config_updates(ctx, payload: dict) -> dict:
         if key in _CONFIG_ENUMS:
             if val not in _CONFIG_ENUMS[key]:
                 raise ProtocolError(P.BAD_REQUEST, f"'{key}' must be one of {_CONFIG_ENUMS[key]}")
-        elif key in ("guild_list_visible", "voice_enabled"):
+        elif key in ("guild_list_visible", "voice_enabled", "announcements_admins"):
             if not isinstance(val, bool):
                 raise ProtocolError(P.BAD_REQUEST, f"'{key}' must be a boolean")
         elif key == "max_upload_bytes":

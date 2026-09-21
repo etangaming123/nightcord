@@ -106,6 +106,8 @@ function serverSection(el, actions) {
       ["staff", t("user_search_staff")],
       ["on", t("user_search_on")],
     ]), h("span", { class: "muted small block" }, t("user_search_hint"))),
+    h("label", { class: "check" }, h("input", { type: "checkbox", name: "announcements_admins", checked: !!info.announcements_admins }),
+      h("span", {}, t("announcements_admins_label"), h("span", { class: "muted small block" }, t("announcements_admins_hint")))),
     h("div", {}, h("button", { class: "btn primary", type: "submit" }, t("save")))),
   async (fd) => {
     const res = await actions.req(T.SERVER_CONFIG_UPDATE, {
@@ -116,6 +118,7 @@ function serverSection(el, actions) {
       max_upload_bytes: Math.max(1, Math.min(1024, Number(fd.get("max_upload_mb")) || 25)) * 1048576,
       voice_enabled: fd.get("voice_enabled") === "on",
       user_search: fd.get("user_search"),
+      announcements_admins: fd.get("announcements_admins") === "on",
     });
     actions.setServerInfo(res.config);
   }, { okText: t("server_settings_saved") }));

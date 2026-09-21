@@ -1151,7 +1151,7 @@ canvas.still { display: block; }
 .role-icon-preview .role-icon { width: 24px; height: 24px; margin: 0; }
 .guild-icon canvas.still { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 
-/* --- Friends page and message requests (ui/friends.js) --- */
+/* --- Friends page, message requests, inbox (ui/friends.js) --- */
 .home-link { gap: 10px; }
 .home-link .home-glyph { width: 32px; text-align: center; font-size: 18px; }
 #chat-header .friends-title { flex: none; }
@@ -1197,6 +1197,19 @@ canvas.still { display: block; }
   background: var(--bg-1); border: 1px solid var(--line);
 }
 .msg-blocked { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; padding-top: 4px; padding-bottom: 4px; }
+.announce-compose { display: grid; gap: 8px; padding: 12px; margin-bottom: 12px; border-radius: 10px; background: var(--bg-1); }
+.announce-compose .section-label { padding: 0; }
+.announcement {
+  display: flex; gap: 12px; padding: 14px; border-radius: 10px; background: var(--bg-1); margin-bottom: 10px;
+  border-left: 3px solid transparent;
+}
+.announcement.new { border-left-color: var(--accent); }
+.announcement-body { flex: 1; min-width: 0; display: grid; gap: 6px; }
+.announcement-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.announcement-head .tag.new { background: var(--accent); color: var(--accent-ink); }
+.announcement-content { overflow-wrap: anywhere; }
+.announcement .btn { justify-self: start; }
+.avatar.system { display: grid; place-items: center; background: var(--pill-bg); font-size: 20px; }
 @media (max-width: 1100px) { #chat-header .friends-title { display: none; } }
 @media (max-width: 700px) {
   .friends-page { padding: 12px; }

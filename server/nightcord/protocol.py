@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-PROTOCOL_VERSION = "0.6"
+PROTOCOL_VERSION = "0.7"
 
 # --- Message types -----------------------------------------------------------
 
@@ -307,6 +307,22 @@ USER_UNBLOCK_RESULT = "user.unblock.result"
 RELATIONSHIP_UPDATED = "relationship.updated"
 RELATIONSHIP_REMOVED = "relationship.removed"
 
+# Announcements
+ANNOUNCEMENT_LIST = "announcement.list"
+ANNOUNCEMENT_LIST_RESULT = "announcement.list.result"
+ANNOUNCEMENT_CREATE = "announcement.create"
+ANNOUNCEMENT_CREATE_RESULT = "announcement.create.result"
+ANNOUNCEMENT_UPDATE = "announcement.update"
+ANNOUNCEMENT_UPDATE_RESULT = "announcement.update.result"
+ANNOUNCEMENT_DELETE = "announcement.delete"
+ANNOUNCEMENT_DELETE_RESULT = "announcement.delete.result"
+ANNOUNCEMENT_ACK = "announcement.ack"
+ANNOUNCEMENT_ACK_RESULT = "announcement.ack.result"
+ANNOUNCEMENT_CREATED = "announcement.created"
+ANNOUNCEMENT_UPDATED = "announcement.updated"
+ANNOUNCEMENT_DELETED = "announcement.deleted"
+ANNOUNCEMENT_ACKED = "announcement.acked"
+
 # Generic error for frames that can't be attributed to a request type
 ERROR = "error"
 
@@ -490,6 +506,7 @@ PRESENCE_PREFS = ("online", "idle", "dnd", "invisible")
 NOTIFY_LEVELS = ("all", "mentions", "none")
 DM_PRIVACY = ("everyone", "requests", "friends")
 USER_SEARCH_MODES = ("off", "staff", "on")
+ANNOUNCEMENT_MAX_CHARS = 4000
 
 
 class ProtocolError(Exception):

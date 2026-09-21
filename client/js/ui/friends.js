@@ -1,13 +1,19 @@
 // The Friends page — Home with no conversation open (PROTOCOL.md §5 Friends
-// and blocking, Message requests). Tabs: online, all friends, pending friend
-// requests, blocked people, message requests and the Add Friend box.
+// and blocking, Message requests, Announcements). Tabs: online, all friends,
+// pending friend requests, blocked people, message requests, the server's
+// announcements inbox, and the Add Friend box.
 
 import { LIMITS, T } from "../protocol.js";
 import { messageRequests, nameOf, relationsOf, state, statusOf, userById } from "../state.js";
-import { add, avatar, clear, h, iconBtn, statusLabel } from "./dom.js";
+import { add, avatar, clear, fmtDateTime, h, iconBtn, idGt, statusLabel } from "./dom.js";
+import { showLegalModal } from "./legal.js";
+import { render as renderMarkdown } from "./markdown.js";
+import { toast } from "./modals.js";
 import { scopedT } from "../strings.js";
 
 const t = scopedT("ui/friends");
+
+const fail = (e) => toast(e.message, { error: true });
 
 function count(n) {
   return n ? h("span", { class: "badge" }, n > 99 ? "99+" : String(n)) : null;
@@ -30,6 +36,7 @@ export function renderFriendsHeader(header, state, actions) {
       tab("pending", t("tab_pending"), relationsOf("incoming").length),
       tab("blocked", t("tab_blocked")),
       tab("requests", t("tab_requests"), messageRequests().length),
+      tab("inbox", t("tab_inbox"), state.announcements.unread),
       h("button", {
         class: `friends-tab add ${state.homeTab === "add" ? "active" : ""}`, type: "button", role: "tab",
         "aria-selected": String(state.homeTab === "add"),
@@ -49,10 +56,12 @@ export function renderFriendsHeader(header, state, actions) {
 export function renderFriendsPage(state, actions) {
   const page = h("div", { class: "friends-page" });
   const tab = state.homeTab;
+  if (tab !== "inbox") inboxSeen = null;
   if (tab === "add") addFriendTab(page, actions);
   else if (tab === "pending") pendingTab(page, actions);
   else if (tab === "blocked") blockedTab(page, actions);
   else if (tab === "requests") requestsTab(page, actions);
+  else if (tab === "inbox") inboxTab(page, state, actions);
   else friendsTab(page, actions, tab === "online");
   return page;
 }
@@ -228,4 +237,90 @@ function addFriendTab(page, actions) {
     form, suggest, note,
     h("div", { class: "add-friend-tip muted small" }, t("add_tip", { username: state.user.username })));
   setTimeout(() => input.focus());
+}
+
+// --- Inbox (announcements) ------------------------------------------------------------
+
+function inboxTab(page, state, actions) {
+  const a = state.announcements;
+  // Opening the Inbox reads it; NEW markers stay until you leave the tab.
+  if (a.unread && !document.hidden) {
+    if (inboxSeen === null) inboxSeen = a.lastReadId;
+    queueMicrotask(actions.ackAnnouncements);
+  }
+  if (actions.canPostAnnouncements()) add(page, composer(actions));
+  if (!a.items.length) {
+    add(page, emptyNote("📬", t("inbox_empty")));
+    return;
+  }
+  // Items newer than what was read when the page opened get a NEW marker.
+  const seen = inboxSeen ?? a.lastReadId;
+  for (const item of a.items) {
+    const isNew = item.author_id !== state.user.user_id && idGt(item.announcement_id, seen);
+    add(page, announcementCard(item, actions, isNew));
+  }
+  if (a.hasMore) {
+    add(page, h("button", { class: "btn", type: "button", on: { click: actions.loadOlderAnnouncements } }, t("inbox_older")));
+  }
+}
+
+// Read position when the Inbox tab was opened, for the NEW markers.
+let inboxSeen = null;
+
+let postDraft = ""; // kept across redraws while the Inbox is open
+
+function composer(actions) {
+  const input = h("textarea", {
+    class: "input", rows: 3, maxLength: LIMITS.ANNOUNCEMENT_MAX_CHARS, placeholder: t("post_placeholder"),
+    "aria-label": t("post_placeholder"),
+  }, postDraft);
+  input.addEventListener("input", () => { postDraft = input.value; });
+  const btn = h("button", { class: "btn primary", type: "submit" }, t("post"));
+  const form = h("form", { class: "announce-compose" },
+    h("div", { class: "section-label" }, t("post_heading")), input,
+    h("div", { class: "row gap" }, h("span", { class: "muted small grow" }, t("post_hint")), btn));
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const content = input.value.trim();
+    if (!content) return;
+    btn.disabled = true;
+    try {
+      postDraft = "";
+      await actions.postAnnouncement(content);
+      input.value = "";
+      toast(t("posted"));
+    } catch (err) {
+      postDraft = content;
+      fail(err);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+  return form;
+}
+
+function announcementCard(item, actions, isNew) {
+  const author = item.author_id ? userById(item.author_id) : null;
+  const legal = item.kind === "legal";
+  const who = legal
+    ? h("div", { class: "avatar system", "aria-hidden": "true" }, "📜")
+    : author ? avatar(author) : h("div", { class: "avatar system", "aria-hidden": "true" }, "📣");
+  const canEdit = actions.canPostAnnouncements();
+  return h("article", { class: `announcement ${isNew ? "new" : ""}` },
+    who,
+    h("div", { class: "announcement-body" },
+      h("div", { class: "announcement-head" },
+        h("strong", {}, legal ? t("system_author") : author ? nameOf(author, null) : t("former_staff")),
+        h("span", { class: "tag" }, legal ? t("tag_rules") : t("tag_announcement")),
+        isNew ? h("span", { class: "tag new" }, t("tag_new")) : null,
+        h("time", { class: "muted small", datetime: item.created_at, title: fmtDateTime(item.created_at) }, fmtDateTime(item.created_at)),
+        item.edited_at ? h("span", { class: "muted small" }, t("edited")) : null,
+        h("span", { class: "grow" }),
+        canEdit && !legal ? iconBtn("✎", t("edit"), () => actions.editAnnouncement(item)) : null,
+        canEdit ? iconBtn("🗑", t("delete"), () => actions.deleteAnnouncement(item), { cls: "danger" }) : null),
+      h("div", { class: "announcement-content" }, renderMarkdown(item.content, { user: userById, meId: state.user?.user_id })),
+      legal ? h("button", {
+        class: "btn small", type: "button",
+        on: { click: () => actions.req(T.LEGAL_GET).then((docs) => showLegalModal(docs), fail) },
+      }, t("read_rules")) : null));
 }

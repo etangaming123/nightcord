@@ -38,11 +38,13 @@ const fail = (e) => toast(e.message, { error: true });
 // --- loading ---------------------------------------------------------------
 
 export async function loadAll() {
-  const [g, d, r, n, f] = await Promise.all([
+  const [g, d, r, n, f, a] = await Promise.all([
     req(T.GUILD_LIST), req(T.DM_LIST), req(T.READ_STATE_LIST), req(T.NOTIFY_PREFS_GET), req(T.FRIEND_LIST),
+    req(T.ANNOUNCEMENT_LIST),
   ]);
   state.relationships = new Map(f.relationships.map((rel) => [rel.user.user_id, rel]));
   f.relationships.forEach((rel) => rememberUser(rel.user));
+  setAnnouncements(a);
   state.guilds = new Map(g.guilds.map((x) => [x.guild_id, x]));
   state.dms = new Map(d.channels.map((c) => [c.channel_id, c]));
   for (const c of d.channels) c.recipients.forEach(rememberUser);
@@ -1113,6 +1115,57 @@ export function friendItems(userId) {
   ].filter(Boolean);
 }
 
+// --- announcements (PROTOCOL.md §5 Announcements) ----------------------------------
+
+export function setAnnouncements({ announcements, last_read_id: lastRead, unread }, { append = false } = {}) {
+  const a = state.announcements;
+  a.items = append ? [...a.items, ...announcements] : announcements;
+  a.hasMore = announcements.length >= 50;
+  a.lastReadId = lastRead;
+  a.unread = unread;
+}
+
+export async function loadOlderAnnouncements() {
+  const last = state.announcements.items.at(-1);
+  if (!last) return;
+  try {
+    setAnnouncements(await req(T.ANNOUNCEMENT_LIST, { before: last.announcement_id }), { append: true });
+    invalidate("chat");
+  } catch (e) {
+    fail(e);
+  }
+}
+
+export function canPostAnnouncements() {
+  return staffLevel() >= 3 || (staffLevel() >= 2 && !!state.info?.announcements_admins);
+}
+
+export function ackAnnouncements() {
+  const newest = state.announcements.items[0];
+  if (!newest || !state.announcements.unread) return;
+  state.announcements.unread = 0;
+  state.announcements.lastReadId = newest.announcement_id;
+  invalidate("rail", "sidebar", "title");
+  req(T.ANNOUNCEMENT_ACK, { announcement_id: newest.announcement_id }).then(({ last_read_id: id, unread }) => {
+    Object.assign(state.announcements, { lastReadId: id, unread });
+    invalidate("rail", "sidebar", "title");
+  }).catch(() => {});
+}
+
+export const postAnnouncement = (content) => req(T.ANNOUNCEMENT_CREATE, { content });
+
+export const editAnnouncement = (item) => dialogs.announcementDialog({
+  item,
+  onSave: (content) => req(T.ANNOUNCEMENT_UPDATE, { announcement_id: item.announcement_id, content }),
+});
+
+export const deleteAnnouncement = (item) => confirmModal({
+  title: t("delete_announcement_title"),
+  message: t("delete_announcement_body"),
+  confirmLabel: t("delete_announcement"),
+  onConfirm: () => req(T.ANNOUNCEMENT_DELETE, { announcement_id: item.announcement_id }),
+});
+
 // --- roles & moderation ----------------------------------------------------------
 
 export function myRank() {
@@ -1231,6 +1284,7 @@ export const actions = {
   newDm, renameGroup, addToGroup, leaveDm, dmMenu,
   openFriends, acceptRequest, declineRequest, addFriend, sendFriendRequest, acceptFriend, removeFriend, blockUser,
   unblockUser, friendItems, userSearchAllowed,
+  loadOlderAnnouncements, canPostAnnouncements, ackAnnouncements, postAnnouncement, editAnnouncement, deleteAnnouncement,
   myRank, outranks, assignableRoles, setMemberRoles, moderationItems, memberMenu, reloadRoles,
   switchServer, logout, accountDeleted,
   isGuildOwner: () => isGuildOwner(),

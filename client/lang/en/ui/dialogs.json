@@ -109,5 +109,7 @@
   "search_friends_placeholder": "Search your friends",
   "new_message_subtitle_friends": "Pick a friend, or several for a group. To message someone else, add them as a friend first — or open their profile.",
   "new_message_subtitle_search": "Pick friends or search for anyone on the server. Groups only take your friends.",
-  "no_friends_yet": "No friends to show. Add some from the Friends page."
+  "no_friends_yet": "No friends to show. Add some from the Friends page.",
+  "edit_announcement_title": "Edit announcement",
+  "announcement_label": "Announcement (Markdown)"
 }

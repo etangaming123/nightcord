@@ -43,6 +43,8 @@ DEFAULT_SERVER_CONFIG = {
     },
     # off | staff | on: who may look people up by partial name (user.search).
     "user_search": "off",
+    # Server admins may post announcements too (the owner always can).
+    "announcements_admins": False,
 }
 
 STAFF_LEVELS = {"none": 0, "moderator": 1, "admin": 2, "owner": 3}
@@ -262,6 +264,18 @@ MIGRATIONS: list[str] = [
     -- 1:1 DMs between people who aren't friends: who asked, and pending | accepted | declined.
     ALTER TABLE channels ADD COLUMN request_from TEXT;
     ALTER TABLE channels ADD COLUMN request_state TEXT
+    """,
+    # 5 — the announcements inbox.
+    """
+    ALTER TABLE users ADD COLUMN announcements_read_id INTEGER NOT NULL DEFAULT 0;
+    CREATE TABLE announcements (
+        announcement_id  INTEGER PRIMARY KEY AUTOINCREMENT,
+        author_id        TEXT,
+        kind             TEXT NOT NULL,  -- post | legal
+        content          TEXT NOT NULL,
+        created_at       TEXT NOT NULL,
+        edited_at        TEXT
+    )
     """,
 ]
 
@@ -1450,6 +1464,62 @@ class Database:
             self._set_rel(a, b, a_kind)
             if self.relationship(b, a) != "blocked":
                 self._set_rel(b, a, b_kind)
+
+    # --- announcements -----------------------------------------------------------
+
+    def _announcement(self, row: sqlite3.Row) -> dict:
+        return {
+            "announcement_id": str(row["announcement_id"]),
+            "author_id": row["author_id"],
+            "kind": row["kind"],
+            "content": row["content"],
+            "created_at": row["created_at"],
+            "edited_at": row["edited_at"],
+        }
+
+    def list_announcements(self, *, before: int | None = None, limit: int = 50) -> list[dict]:
+        rows = self._all(
+            "SELECT * FROM announcements WHERE announcement_id < ? ORDER BY announcement_id DESC LIMIT ?",
+            before or 2**62, limit,
+        )
+        return [self._announcement(r) for r in rows]
+
+    def get_announcement(self, announcement_id: int) -> dict | None:
+        row = self._one("SELECT * FROM announcements WHERE announcement_id = ?", announcement_id)
+        return self._announcement(row) if row else None
+
+    def create_announcement(self, author_id: str | None, kind: str, content: str) -> dict:
+        cur = self._exec(
+            "INSERT INTO announcements(author_id, kind, content, created_at) VALUES (?,?,?,?)",
+            author_id, kind, content, now_iso(),
+        )
+        return self.get_announcement(cur.lastrowid)
+
+    def update_announcement(self, announcement_id: int, content: str) -> dict | None:
+        self._exec(
+            "UPDATE announcements SET content = ?, edited_at = ? WHERE announcement_id = ?",
+            content, now_iso(), announcement_id,
+        )
+        return self.get_announcement(announcement_id)
+
+    def delete_announcement(self, announcement_id: int) -> bool:
+        return self._exec("DELETE FROM announcements WHERE announcement_id = ?", announcement_id).rowcount > 0
+
+    def announcement_read_id(self, user_id: str) -> int:
+        row = self._one("SELECT announcements_read_id FROM users WHERE user_id = ?", user_id)
+        return row["announcements_read_id"] if row else 0
+
+    def set_announcement_read_id(self, user_id: str, announcement_id: int) -> int:
+        self._exec(
+            "UPDATE users SET announcements_read_id = MAX(announcements_read_id, ?) WHERE user_id = ?",
+            announcement_id, user_id,
+        )
+        return self.announcement_read_id(user_id)
+
+    def unread_announcements(self, user_id: str) -> int:
+        return self._one(
+            "SELECT COUNT(*) AS n FROM announcements WHERE announcement_id > ?", self.announcement_read_id(user_id)
+        )["n"]
 
     # --- messages ------------------------------------------------------------
 

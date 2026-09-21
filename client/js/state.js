@@ -22,9 +22,10 @@ export const state = {
   readStates: new Map(), // channel_id -> ReadState
   notifyPrefs: new Map(), // target_id -> NotifyPref
   relationships: new Map(), // user_id -> { user, kind: friend|outgoing|incoming|blocked, since }
+  announcements: { items: [], lastReadId: "0", unread: 0, hasMore: false },
 
   view: "guild", // guild | home
-  homeTab: "online", // Friends page tab: online | all | pending | blocked | requests | add
+  homeTab: "online", // Friends page tab: online | all | pending | blocked | requests | inbox | add
   guildId: null,
   channels: [], // current guild's visible channels, sorted
   roles: [], // current guild's roles, highest first
@@ -55,6 +56,7 @@ export function resetServerState() {
     conn: null, url: null, info: null, user: null, connected: false,
     users: new Map(), presences: new Map(), guilds: new Map(), dms: new Map(),
     readStates: new Map(), notifyPrefs: new Map(), relationships: new Map(),
+    announcements: { items: [], lastReadId: "0", unread: 0, hasMore: false },
     view: "guild", guildId: null, channels: [], roles: [], members: [], channelId: null,
     pendingAccounts: 0, voice: new Map(), myVoice: null, pending: [], slowmodeUntil: new Map(),
   });
@@ -103,8 +105,9 @@ export const isIncomingRequest = (ch) =>
   ch?.request?.state === "pending" && ch.request.from_user_id !== state.user?.user_id;
 export const messageRequests = () => [...state.dms.values()].filter(isIncomingRequest);
 
-// Things waiting on the Friends page: friend requests and message requests.
-export const friendsBadge = () => relationsOf("incoming").length + messageRequests().length;
+// Things waiting on the Friends page: friend requests, message requests, announcements.
+export const friendsBadge = () =>
+  relationsOf("incoming").length + messageRequests().length + (state.announcements.unread || 0);
 
 // --- server staff (PROTOCOL.md §8c) -------------------------------------------
 

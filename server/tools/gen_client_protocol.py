@@ -96,6 +96,7 @@ def main() -> None:
         "  CUSTOMIZATION_FEATURES: Object.freeze([" + ", ".join(f'"{f}"' for f in P.CUSTOMIZATION_FEATURES) + "]),",
         "  DM_PRIVACY: Object.freeze([" + ", ".join(f'"{f}"' for f in P.DM_PRIVACY) + "]),",
         "  USER_SEARCH_MODES: Object.freeze([" + ", ".join(f'"{f}"' for f in P.USER_SEARCH_MODES) + "]),",
+        f"  ANNOUNCEMENT_MAX_CHARS: {P.ANNOUNCEMENT_MAX_CHARS},",
         "});",
         "",
     ]

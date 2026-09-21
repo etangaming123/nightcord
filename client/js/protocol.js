@@ -2,7 +2,7 @@
 // server/nightcord/protocol.py — edit that file, then regenerate. Both follow
 // docs/PROTOCOL.md; server/tests/test_protocol_sync.py checks all three agree.
 
-export const PROTOCOL_VERSION = "0.6";
+export const PROTOCOL_VERSION = "0.7";
 
 export const T = Object.freeze({
   SETUP_CLAIM: "setup.claim",
@@ -258,6 +258,20 @@ export const T = Object.freeze({
   USER_UNBLOCK_RESULT: "user.unblock.result",
   RELATIONSHIP_UPDATED: "relationship.updated",
   RELATIONSHIP_REMOVED: "relationship.removed",
+  ANNOUNCEMENT_LIST: "announcement.list",
+  ANNOUNCEMENT_LIST_RESULT: "announcement.list.result",
+  ANNOUNCEMENT_CREATE: "announcement.create",
+  ANNOUNCEMENT_CREATE_RESULT: "announcement.create.result",
+  ANNOUNCEMENT_UPDATE: "announcement.update",
+  ANNOUNCEMENT_UPDATE_RESULT: "announcement.update.result",
+  ANNOUNCEMENT_DELETE: "announcement.delete",
+  ANNOUNCEMENT_DELETE_RESULT: "announcement.delete.result",
+  ANNOUNCEMENT_ACK: "announcement.ack",
+  ANNOUNCEMENT_ACK_RESULT: "announcement.ack.result",
+  ANNOUNCEMENT_CREATED: "announcement.created",
+  ANNOUNCEMENT_UPDATED: "announcement.updated",
+  ANNOUNCEMENT_DELETED: "announcement.deleted",
+  ANNOUNCEMENT_ACKED: "announcement.acked",
   ERROR: "error",
 });
 
@@ -380,4 +394,5 @@ export const LIMITS = Object.freeze({
   CUSTOMIZATION_FEATURES: Object.freeze(["profile_banner", "profile_colors", "animated_media", "guild_banner", "gradient_roles", "role_icons", "client_themes"]),
   DM_PRIVACY: Object.freeze(["everyone", "requests", "friends"]),
   USER_SEARCH_MODES: Object.freeze(["off", "staff", "on"]),
+  ANNOUNCEMENT_MAX_CHARS: 4000,
 });

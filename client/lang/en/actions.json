@@ -78,5 +78,8 @@
   "block_body": "They won't be able to DM you or send friend requests, and their messages get folded away. They aren't told.",
   "block": "Block",
   "unblock": "Unblock",
-  "unblocked": "Unblocked"
+  "unblocked": "Unblocked",
+  "delete_announcement_title": "Delete this announcement?",
+  "delete_announcement_body": "It disappears from everyone's Inbox.",
+  "delete_announcement": "Delete"
 }

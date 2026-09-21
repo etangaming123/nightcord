@@ -233,5 +233,7 @@
   "user_search_off": "Off — add friends by exact username",
   "user_search_staff": "Staff only",
   "user_search_on": "Everyone",
-  "user_search_hint": "Whether people can look others up by partial name (and get suggestions when adding friends)."
+  "user_search_hint": "Whether people can look others up by partial name (and get suggestions when adding friends).",
+  "announcements_admins_label": "Admins can post announcements",
+  "announcements_admins_hint": "You can always post in everyone's Inbox; this lets server admins do it too."
 }

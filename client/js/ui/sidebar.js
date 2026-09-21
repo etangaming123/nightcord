@@ -240,8 +240,8 @@ function dragController(state, actions, enabled) {
 function renderHome(state, actions) {
   clear($("#guild-header"), h("span", { class: "title" }, t("rail_dm_label")));
   const list = clear($("#channel-list"));
-  // The Friends link covers every Friends-page tab except Message requests, which has its own link.
-  const own = ["requests"];
+  // The Friends link covers every Friends-page tab except the two with their own links.
+  const own = ["requests", "inbox"];
   const friendsTab = own.includes(state.homeTab) ? "online" : state.homeTab;
   const homeLink = (label, glyph, tab, n) => {
     const active = !state.channelId && (tab ? state.homeTab === tab : !own.includes(state.homeTab));
@@ -252,8 +252,9 @@ function renderHome(state, actions) {
     }, h("span", { class: "home-glyph", "aria-hidden": "true" }, glyph), h("span", { class: "name" }, label), badge(n));
   };
   add(list,
-    homeLink(t("friends"), "👋", null, friendsBadge() - messageRequests().length),
-    messageRequests().length ? homeLink(t("message_requests"), "📨", "requests", messageRequests().length) : null);
+    homeLink(t("friends"), "👋", null, friendsBadge() - messageRequests().length - (state.announcements.unread || 0)),
+    messageRequests().length ? homeLink(t("message_requests"), "📨", "requests", messageRequests().length) : null,
+    homeLink(t("inbox"), "📬", "inbox", state.announcements.unread));
   add(list, h("div", { class: "section-label" },
     h("span", {}, t("dm_section_label")),
     iconBtn("+", t("new_message"), actions.newDm)));

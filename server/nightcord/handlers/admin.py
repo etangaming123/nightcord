@@ -281,6 +281,7 @@ async def legal_set(ctx, conn, payload):
     from .legal import legal_info, write_doc
 
     require_staff(conn, OWNER)
+    info_before = legal_info(ctx)
     changed = []
     for name in ("terms", "privacy"):
         if name in payload:
@@ -293,9 +294,17 @@ async def legal_set(ctx, conn, payload):
             changed.append(name)
     if not changed:
         raise ProtocolError(P.BAD_REQUEST, "Send 'terms' and/or 'privacy'")
+    before = info_before["legal_version"]
     info = legal_info(ctx)
     _audit(ctx, conn, "legal.update", None, {"documents": changed})
     from .server import public_config
 
     await ctx.hub.send_to_everyone(P.frame(P.SERVER_CONFIG_UPDATED, {**public_config(ctx), **info}))
+    if info["legal_version"] != before:
+        from .announcements import post
+
+        names = {"terms": "Terms of Service", "privacy": "Privacy Policy"}
+        docs = " and ".join(f"**{names[n]}**" for n in changed)
+        text = f"The {docs} changed." if info["legal_version"] else "The Terms of Service and Privacy Policy were removed."
+        await post(ctx, None, "legal", text)
     return info
