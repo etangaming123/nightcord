@@ -4,7 +4,9 @@
 
 import { emojiByName, emojiToken, searchEmojis, usableStickerGroups } from "../perks.js";
 import { LIMITS } from "../protocol.js";
-import { can, currentChannel, currentGuild, isDm, memberById, mutedUntil, nameOf, state as appState, userById } from "../state.js";
+import {
+  can, currentChannel, currentGuild, isBlocked, isDm, isFriend, memberById, mutedUntil, nameOf, state as appState, userById,
+} from "../state.js";
 import { addFiles, removePending, uploading } from "../uploads.js";
 import { $, add, avatar, clear, fmtBytes, h } from "./dom.js";
 import { UNICODE_EMOJI, customOf, emojiGlyph, openEmojiPicker } from "./emoji.js";
@@ -100,6 +102,36 @@ function uploadTray(state) {
   h("button", { class: "icon-btn up-x", type: "button", title: t("remove_upload"), "aria-label": t("remove_upload_aria", { name: p.name }), on: { click: () => removePending(p.id) } }, "✕"))));
 }
 
+// 1:1 DMs that can't take a message right now (PROTOCOL.md §5 Message
+// requests): a request waiting on you, your request waiting on them, or a
+// block. Renders the notice and returns true.
+function dmBlocked(form, channel, state, actions) {
+  const me = state.user.user_id;
+  const otherRef = channel.recipients.find((u) => u.user_id !== me);
+  const other = otherRef && (userById(otherRef.user_id) || otherRef);
+  const name = other ? nameOf(other, null) : "";
+  const req = channel.request;
+  if (other && isBlocked(other.user_id)) {
+    add(form, h("div", { class: "readonly request-bar" },
+      h("span", { class: "grow" }, t("blocked_notice", { name })),
+      h("button", { class: "btn small", type: "button", on: { click: () => actions.unblockUser(other.user_id) } }, t("unblock"))));
+    return true;
+  }
+  if (req?.state === "pending" && req.from_user_id !== me) {
+    add(form, h("div", { class: "request-bar" },
+      h("div", { class: "grow" }, h("strong", {}, t("request_title", { name })), h("span", { class: "muted small block" }, t("request_body"))),
+      h("button", { class: "btn small primary", type: "button", on: { click: () => actions.acceptRequest(channel) } }, t("request_accept")),
+      h("button", { class: "btn small", type: "button", on: { click: () => actions.declineRequest(channel) } }, t("request_decline")),
+      h("button", { class: "btn small danger", type: "button", on: { click: () => actions.blockUser(other.user_id) } }, t("request_block"))));
+    return true;
+  }
+  if (req && req.from_user_id === me && req.state !== "accepted" && !isFriend(other?.user_id)) {
+    add(form, h("div", { class: "readonly" }, t("request_sent", { name })));
+    return true;
+  }
+  return false;
+}
+
 export function renderComposer(state, actions) {
   const form = clear($("#composer"));
   form.onsubmit = null;
@@ -119,6 +151,7 @@ export function renderComposer(state, actions) {
     add(form, h("div", { class: "readonly" }, t("no_send_permission")));
     return;
   }
+  if (channel.kind === "dm" && dmBlocked(form, channel, state, actions)) return;
   const muted = mutedUntil();
   if (muted) {
     add(form, h("div", { class: "readonly" }, muted === "permanent"

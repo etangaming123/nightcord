@@ -24,6 +24,7 @@ export function userSettings(actions, initial) {
       { heading: t("title_user_settings") },
       { id: "account", label: t("section_my_account"), render: (el) => account(el, actions) },
       { id: "profile", label: t("section_profile"), render: (el) => profile(el, actions) },
+      { id: "privacy", label: t("section_privacy"), render: (el) => privacy(el, actions) },
       { id: "devices", label: t("section_devices"), render: (el) => devices(el, actions) },
       { heading: t("heading_app_settings") },
       { id: "appearance", label: t("section_appearance"), render: appearance },
@@ -54,6 +55,39 @@ function formRow(form, onSubmit, { okText = t("saved") } = {}) {
     }
   });
   return form;
+}
+
+// --- Privacy (PROTOCOL.md §5 Message requests) ---------------------------------
+
+function privacy(el, actions) {
+  const current = state.user.dm_privacy || "requests";
+  const options = [
+    ["everyone", t("dm_privacy_everyone"), t("dm_privacy_everyone_hint")],
+    ["requests", t("dm_privacy_requests"), t("dm_privacy_requests_hint")],
+    ["friends", t("dm_privacy_friends"), t("dm_privacy_friends_hint")],
+  ];
+  const save = async (value) => {
+    try {
+      actions.setSelf((await actions.req(T.USER_UPDATE, { dm_privacy: value })).user);
+      toast(t("saved"));
+    } catch (e) {
+      toast(e.message, { error: true });
+    }
+  };
+  const blocked = [...state.relationships.values()].filter((r) => r.kind === "blocked");
+  add(el,
+    h("fieldset", { class: "radio-cards narrow" }, h("legend", {}, t("dm_privacy_legend")),
+      options.map(([v, label, hint]) => h("label", { class: "radio-card" },
+        h("input", { type: "radio", name: "dm_privacy", value: v, checked: current === v, on: { change: () => save(v) } }),
+        h("span", {}, h("strong", {}, label), h("span", { class: "muted small block" }, hint))))),
+    h("p", { class: "muted small" }, t("dm_privacy_note")),
+    h("div", { class: "section-label" }, t("blocked_heading", { count: blocked.length })),
+    blocked.length
+      ? h("div", { class: "list" }, blocked.map((r) => h("div", { class: "list-row" },
+        avatar(r.user, { size: "sm" }),
+        h("span", { class: "grow" }, displayName(r.user), " ", h("span", { class: "muted small" }, r.user.username)),
+        h("button", { class: "btn small", type: "button", on: { click: async () => { await actions.unblockUser(r.user.user_id); refreshFullscreen(); } } }, t("unblock")))))
+      : h("p", { class: "muted small" }, t("blocked_none")));
 }
 
 // --- My Account --------------------------------------------------------------

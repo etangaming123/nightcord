@@ -227,5 +227,11 @@
   "nothing_happened_yet": "Nothing has happened yet.",
   "audit_reason": "reason: {reason}",
   "audit_until": "until {date}",
-  "audit_indefinitely": "indefinitely"
+  "audit_indefinitely": "indefinitely",
+
+  "user_search_label": "User search",
+  "user_search_off": "Off — add friends by exact username",
+  "user_search_staff": "Staff only",
+  "user_search_on": "Everyone",
+  "user_search_hint": "Whether people can look others up by partial name (and get suggestions when adding friends)."
 }

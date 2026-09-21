@@ -18,5 +18,8 @@
   "moderate_button": "Moderate ▾",
   "server_staff_heading": "Server staff",
   "copied": "Copied",
-  "copy_failed": "Couldn't copy"
+  "copy_failed": "Couldn't copy",
+
+  "add_friend_label": "Add friend",
+  "friend_menu_button": "Friend ▾"
 }

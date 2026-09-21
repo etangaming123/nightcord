@@ -53,6 +53,7 @@ export function openProfile(userId, anchor, actions, { placement = "right" } = {
             ? h("button", { class: "btn", type: "button", on: { click: () => { closePopover(); actions.userSettings("profile"); } } }, t("edit_profile"))
             : h("button", { class: "btn primary", type: "button", on: { click: () => { closePopover(); actions.messageUser(user.user_id); } } }, t("message_button")),
           me && member && can("CHANGE_NICKNAME") ? h("button", { class: "btn", type: "button", on: { click: () => { closePopover(); actions.changeNickname(user.user_id); } } }, t("nickname_button")) : null,
+          !me ? friendButton(user, actions) : null,
           !me ? modButton(user, actions, member) : null)));
     repositionPopover();
   };
@@ -98,6 +99,19 @@ function rolesSection(member, actions) {
     : null;
   if (!chips.length && !add) return null;
   return section(roles.length ? t("roles_heading") : t("no_roles_heading"), h("div", { class: "role-chips" }, chips, add));
+}
+
+// Add friend when there's no relationship yet; otherwise a menu of the options.
+function friendButton(user, actions) {
+  const items = actions.friendItems(user.user_id);
+  if (!items.length) return null;
+  if (items[0].key === "add") {
+    return h("button", { class: "btn", type: "button", on: { click: () => { closePopover(); items[0].onClick(); } } }, t("add_friend_label"));
+  }
+  return h("button", {
+    class: "btn", type: "button", "aria-haspopup": "menu",
+    on: { click: (e) => openMenu(e.currentTarget, items, { placement: "top" }) },
+  }, t("friend_menu_button"));
 }
 
 function modButton(user, actions, member) {

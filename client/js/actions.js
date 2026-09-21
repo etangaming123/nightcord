@@ -7,7 +7,7 @@ import { ERR, LIMITS, PERMS, T } from "./protocol.js";
 import { invalidate } from "./render.js";
 import {
   can, channelTree, currentChannel, currentGuild, ensureReadState, isDm, isGuildOwner, isStaff, isUnread, markRead,
-  memberById, nameOf, pref, rememberUser, resetMessages, sortChannels, staffLevel, state, userById,
+  memberById, nameOf, pref, relationKind, rememberUser, resetMessages, sortChannels, staffLevel, state, userById,
 } from "./state.js";
 import * as store from "./storage.js";
 import { clearPending, readyAttachments } from "./uploads.js";
@@ -38,9 +38,11 @@ const fail = (e) => toast(e.message, { error: true });
 // --- loading ---------------------------------------------------------------
 
 export async function loadAll() {
-  const [g, d, r, n] = await Promise.all([
-    req(T.GUILD_LIST), req(T.DM_LIST), req(T.READ_STATE_LIST), req(T.NOTIFY_PREFS_GET),
+  const [g, d, r, n, f] = await Promise.all([
+    req(T.GUILD_LIST), req(T.DM_LIST), req(T.READ_STATE_LIST), req(T.NOTIFY_PREFS_GET), req(T.FRIEND_LIST),
   ]);
+  state.relationships = new Map(f.relationships.map((rel) => [rel.user.user_id, rel]));
+  f.relationships.forEach((rel) => rememberUser(rel.user));
   state.guilds = new Map(g.guilds.map((x) => [x.guild_id, x]));
   state.dms = new Map(d.channels.map((c) => [c.channel_id, c]));
   for (const c of d.channels) c.recipients.forEach(rememberUser);
@@ -52,7 +54,10 @@ export async function loadAll() {
       invalidate("sidebar");
     }).catch(() => {});
   }
-  const partners = [...new Set(d.channels.flatMap((c) => c.recipients.map((u) => u.user_id)))].filter((id) => id !== state.user.user_id);
+  const partners = [...new Set([
+    ...d.channels.flatMap((c) => c.recipients.map((u) => u.user_id)),
+    ...f.relationships.filter((rel) => rel.kind === "friend").map((rel) => rel.user.user_id),
+  ])].filter((id) => id !== state.user.user_id);
   if (partners.length) {
     req(T.PRESENCE_LIST, { user_ids: partners.slice(0, 200) }).then(({ presences }) => {
       for (const [id, s] of Object.entries(presences)) state.presences.set(id, s);
@@ -150,6 +155,23 @@ export async function openHome(dmId = null) {
     closeNavDrawer();
     invalidate();
   }
+}
+
+// The Friends page (Home with no conversation open) on a given tab.
+export function openFriends(tab = state.homeTab) {
+  state.homeTab = tab;
+  if (state.view !== "home") {
+    state.view = "home";
+    state.guildId = null;
+    state.channels = [];
+    state.members = [];
+    state.roles = [];
+  }
+  state.channelId = null;
+  store.setLast(state.url, { view: "home", dmId: null });
+  resetMessages();
+  closeNavDrawer();
+  invalidate();
 }
 
 export const openDm = (channelId) => (state.view === "home" ? openChannel(channelId) : openHome(channelId));
@@ -906,10 +928,30 @@ export async function setVoiceFlags(flags) {
 
 // --- DMs ---------------------------------------------------------------------------
 
-const searchUsers = async (query) => {
+// user.search is a server setting (PROTOCOL.md §4 Server config).
+export function userSearchAllowed() {
+  const mode = state.info?.user_search || "off";
+  return mode === "on" || (mode === "staff" && isStaff(1));
+}
+
+const matches = (u, q) => [u.username, u.display_name].some((x) => x && x.toLowerCase().startsWith(q));
+
+// Friends whose name starts with `query`, then (when allowed) anyone else.
+const searchPeople = async (query) => {
+  const q = query.toLowerCase();
+  const friends = [...state.relationships.values()]
+    .filter((r) => r.kind === "friend").map((r) => userById(r.user.user_id) || r.user).filter((u) => matches(u, q));
+  if (!userSearchAllowed() || !query.trim()) return friends;
   const { users } = await req(T.USER_SEARCH, { query });
   users.forEach(rememberUser);
-  return users;
+  const seen = new Set(friends.map((u) => u.user_id));
+  return [...friends, ...users.filter((u) => !seen.has(u.user_id) && relationKind(u.user_id) !== "blocked")];
+};
+
+const searchFriends = async (query) => {
+  const q = query.toLowerCase();
+  return [...state.relationships.values()]
+    .filter((r) => r.kind === "friend").map((r) => userById(r.user.user_id) || r.user).filter((u) => matches(u, q));
 };
 
 function addDm(channel) {
@@ -919,7 +961,8 @@ function addDm(channel) {
 }
 
 export const newDm = () => dialogs.newDmDialog({
-  search: searchUsers,
+  search: searchPeople,
+  searchAllowed: userSearchAllowed(),
   onCreate: async (ids) => {
     const res = ids.length === 1
       ? await req(T.DM_OPEN, { user_id: ids[0] })
@@ -939,7 +982,7 @@ export const renameGroup = (channel) => dialogs.renameGroupDialog({
 
 export const addToGroup = (channel) => dialogs.addToGroupDialog({
   channel,
-  search: searchUsers,
+  search: searchFriends,
   onAdd: async (userId) => { addDm((await req(T.DM_ADD_RECIPIENT, { channel_id: channel.channel_id, user_id: userId })).channel); invalidate(); },
 });
 
@@ -968,6 +1011,106 @@ export function dmMenu(ch, anchor) {
     "-",
     { label: ch.kind === "dm" ? t("close_conversation") : t("leave_group"), icon: "✕", danger: ch.kind !== "dm", onClick: () => leaveDm(ch) },
   ], { placement: "right" });
+}
+
+// --- message requests (PROTOCOL.md §5 Message requests) ------------------------------
+
+export async function acceptRequest(ch) {
+  try {
+    addDm((await req(T.DM_REQUEST_ACCEPT, { channel_id: ch.channel_id })).channel);
+    invalidate();
+  } catch (e) {
+    fail(e);
+  }
+}
+
+export async function declineRequest(ch) {
+  try {
+    await req(T.DM_REQUEST_DECLINE, { channel_id: ch.channel_id });
+    state.dms.delete(ch.channel_id);
+    state.readStates.delete(ch.channel_id);
+    if (state.channelId === ch.channel_id) openFriends("requests");
+    else invalidate();
+  } catch (e) {
+    fail(e);
+  }
+}
+
+// --- friends and blocking (PROTOCOL.md §5 Friends and blocking) ---------------------
+
+export function applyRelationship(rel) {
+  rememberUser(rel.user);
+  const before = relationKind(rel.user.user_id);
+  state.relationships.set(rel.user.user_id, rel);
+  invalidate("rail", "sidebar", "chat", "header", "title");
+  return before;
+}
+
+export function dropRelationship(userId) {
+  state.relationships.delete(userId);
+  invalidate("rail", "sidebar", "chat", "header", "title");
+}
+
+// By exact username (the Add Friend box) or user id (menus, profiles).
+export async function addFriend({ username, userId }) {
+  const { relationship } = await req(T.FRIEND_REQUEST, userId ? { user_id: userId } : { username });
+  applyRelationship(relationship);
+  return relationship;
+}
+
+const withToast = (p, ok) => p.then(() => ok && toast(ok), fail);
+
+export async function sendFriendRequest(userId) {
+  try {
+    const rel = await addFriend({ userId });
+    toast(rel.kind === "friend" ? t("now_friends") : t("friend_request_sent"));
+  } catch (e) {
+    fail(e);
+  }
+}
+
+export const acceptFriend = (userId) =>
+  withToast(req(T.FRIEND_ACCEPT, { user_id: userId }).then(({ relationship }) => applyRelationship(relationship)), null);
+
+export function removeFriend(userId) {
+  const kind = relationKind(userId);
+  const run = () => req(T.FRIEND_REMOVE, { user_id: userId }).then(() => dropRelationship(userId));
+  if (kind !== "friend") { withToast(run(), null); return; }
+  const u = userById(userId);
+  confirmModal({
+    title: t("remove_friend_title", { name: nameOf(u, null) }),
+    message: t("remove_friend_body", { name: nameOf(u, null) }),
+    confirmLabel: t("remove_friend"),
+    onConfirm: run,
+  });
+}
+
+export function blockUser(userId) {
+  const u = userById(userId);
+  confirmModal({
+    title: t("block_title", { name: nameOf(u, null) }),
+    message: t("block_body"),
+    confirmLabel: t("block"),
+    onConfirm: async () => applyRelationship((await req(T.USER_BLOCK, { user_id: userId })).relationship),
+  });
+}
+
+export const unblockUser = (userId) =>
+  withToast(req(T.USER_UNBLOCK, { user_id: userId }).then(() => dropRelationship(userId)), t("unblocked"));
+
+// Friend / block entries for a user's menus and profile.
+export function friendItems(userId) {
+  if (userId === state.user.user_id || userById(userId)?.deleted) return [];
+  const kind = relationKind(userId);
+  return [
+    !kind ? { key: "add", label: t("add_friend"), icon: "🤝", onClick: () => sendFriendRequest(userId) } : null,
+    kind === "incoming" ? { label: t("accept_friend"), icon: "✓", onClick: () => acceptFriend(userId) } : null,
+    kind === "outgoing" ? { label: t("cancel_request"), icon: "✕", onClick: () => removeFriend(userId) } : null,
+    kind === "friend" ? { label: t("remove_friend"), icon: "💔", danger: true, onClick: () => removeFriend(userId) } : null,
+    kind === "blocked"
+      ? { label: t("unblock"), icon: "🔓", onClick: () => unblockUser(userId) }
+      : { label: t("block"), icon: "🚫", danger: true, onClick: () => blockUser(userId) },
+  ].filter(Boolean);
 }
 
 // --- roles & moderation ----------------------------------------------------------
@@ -1054,6 +1197,7 @@ export function memberMenu(userId, anchor) {
   openMenu(anchor, [
     { label: t("profile"), icon: "👤", onClick: () => openProfileAction(userId, anchor instanceof Element ? anchor : { ...anchor }) },
     me ? null : { label: t("message_user"), icon: "💬", onClick: () => messageUser(userId) },
+    ...friendItems(userId),
     ...(moderationItems(userId).length ? ["-", ...moderationItems(userId)] : []),
     ...(staffItems(userId).length ? ["-", { heading: t("server_staff_heading") }, ...staffItems(userId)] : []),
     "-",
@@ -1078,13 +1222,15 @@ export const actions = {
   reorderChannels, sidebarOrder, toggleCategory, isCollapsed, joinVoice, leaveVoice, setVoiceFlags,
   changeNickname, staffItems, nameOf,
   sendSticker, emojiInfo, createEmoji, renameEmoji, deleteEmoji, createSticker, updateSticker, deleteSticker,
-  toggleNav, toggleMembers, refreshChrome,
+  toggleNav, toggleMembers, refreshChrome, refreshChat: () => invalidate("chat"),
   req, rememberUser, setSelf, setServerInfo, messageUser, statusMenu,
   openProfile: openProfileAction,
   userSettings: openUserSettings,
   addGuild, ghostJoin, updateGuild, leaveGuild, guildMenu, guildSettings: openGuildSettings,
   createChannel, channelSettings: openChannelSettings, channelMenu, moveChannel,
   newDm, renameGroup, addToGroup, leaveDm, dmMenu,
+  openFriends, acceptRequest, declineRequest, addFriend, sendFriendRequest, acceptFriend, removeFriend, blockUser,
+  unblockUser, friendItems, userSearchAllowed,
   myRank, outranks, assignableRoles, setMemberRoles, moderationItems, memberMenu, reloadRoles,
   switchServer, logout, accountDeleted,
   isGuildOwner: () => isGuildOwner(),

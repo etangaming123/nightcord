@@ -7,5 +7,9 @@
   "channel_gone": "This channel is gone or hidden from you now.",
   "user_muted": "You've been muted on this server by its staff.",
   "user_unmuted": "You're no longer muted.",
-  "account_request_pending": "{username} is asking for an account — see User settings → Accounts."
+  "account_request_pending": "{username} is asking for an account — see User settings → Accounts.",
+
+  "message_request_toast": "Message request from {name}",
+  "friend_request_toast": "{name} sent you a friend request",
+  "friend_accepted_toast": "{name} accepted your friend request"
 }

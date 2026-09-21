@@ -64,5 +64,19 @@
   "ban_user": "Ban {name}",
   "profile": "Profile",
   "message_user": "Message",
-  "server_staff_heading": "Server staff"
+  "server_staff_heading": "Server staff",
+
+  "now_friends": "You're friends now",
+  "friend_request_sent": "Friend request sent",
+  "remove_friend_title": "Remove {name}?",
+  "remove_friend_body": "You won't be friends anymore. Your messages stay; new DMs follow {name}'s privacy setting.",
+  "remove_friend": "Remove friend",
+  "add_friend": "Add friend",
+  "accept_friend": "Accept friend request",
+  "cancel_request": "Cancel friend request",
+  "block_title": "Block {name}?",
+  "block_body": "They won't be able to DM you or send friend requests, and their messages get folded away. They aren't told.",
+  "block": "Block",
+  "unblock": "Unblock",
+  "unblocked": "Unblocked"
 }

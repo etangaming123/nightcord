@@ -2,8 +2,8 @@
 // the DM list on Home, plus the user panel.
 
 import {
-  can, channelTree, dmTitle, guildBadge, homeBadge, isMuted, isPrivate, isStaff, isUnread, memberById, mentionCount,
-  nameOf, sortDms, statusOf, userById, voiceEnabled, voiceIn,
+  can, channelTree, dmTitle, friendsBadge, guildBadge, homeBadge, isIncomingRequest, isMuted, isPrivate, isStaff,
+  isUnread, memberById, mentionCount, messageRequests, nameOf, sortDms, statusOf, userById, voiceEnabled, voiceIn,
 } from "../state.js";
 import { guildCan } from "../perks.js";
 import { $, add, avatar, clear, displayName, h, iconBtn, imageEl, initials, mayAnimate } from "./dom.js";
@@ -240,10 +240,24 @@ function dragController(state, actions, enabled) {
 function renderHome(state, actions) {
   clear($("#guild-header"), h("span", { class: "title" }, t("rail_dm_label")));
   const list = clear($("#channel-list"));
+  // The Friends link covers every Friends-page tab except Message requests, which has its own link.
+  const own = ["requests"];
+  const friendsTab = own.includes(state.homeTab) ? "online" : state.homeTab;
+  const homeLink = (label, glyph, tab, n) => {
+    const active = !state.channelId && (tab ? state.homeTab === tab : !own.includes(state.homeTab));
+    const go = () => actions.openFriends(tab || friendsTab);
+    return h("div", {
+      class: `channel home-link ${active ? "active" : ""}`, role: "link", tabindex: "0", "aria-current": active ? "page" : null,
+      on: { click: go, keydown: (e) => { if (e.key === "Enter") go(); } },
+    }, h("span", { class: "home-glyph", "aria-hidden": "true" }, glyph), h("span", { class: "name" }, label), badge(n));
+  };
+  add(list,
+    homeLink(t("friends"), "👋", null, friendsBadge() - messageRequests().length),
+    messageRequests().length ? homeLink(t("message_requests"), "📨", "requests", messageRequests().length) : null);
   add(list, h("div", { class: "section-label" },
     h("span", {}, t("dm_section_label")),
     iconBtn("+", t("new_message"), actions.newDm)));
-  const dms = sortDms([...state.dms.values()]);
+  const dms = sortDms([...state.dms.values()].filter((ch) => !isIncomingRequest(ch)));
   if (!dms.length) {
     add(list, h("p", { class: "muted small pad" }, t("no_conversations")));
   }

@@ -21,8 +21,10 @@ export const state = {
   dms: new Map(), // channel_id -> DM channel
   readStates: new Map(), // channel_id -> ReadState
   notifyPrefs: new Map(), // target_id -> NotifyPref
+  relationships: new Map(), // user_id -> { user, kind: friend|outgoing|incoming|blocked, since }
 
   view: "guild", // guild | home
+  homeTab: "online", // Friends page tab: online | all | pending | blocked | requests | add
   guildId: null,
   channels: [], // current guild's visible channels, sorted
   roles: [], // current guild's roles, highest first
@@ -52,7 +54,7 @@ export function resetServerState() {
   Object.assign(state, {
     conn: null, url: null, info: null, user: null, connected: false,
     users: new Map(), presences: new Map(), guilds: new Map(), dms: new Map(),
-    readStates: new Map(), notifyPrefs: new Map(),
+    readStates: new Map(), notifyPrefs: new Map(), relationships: new Map(),
     view: "guild", guildId: null, channels: [], roles: [], members: [], channelId: null,
     pendingAccounts: 0, voice: new Map(), myVoice: null, pending: [], slowmodeUntil: new Map(),
   });
@@ -88,6 +90,21 @@ export function nameOf(user, guildId = state.view === "guild" ? state.guildId : 
   }
   return user.display_name || user.username || t("unknown_user");
 }
+
+// --- friends, blocks and message requests (PROTOCOL.md §5 Friends and blocking) ----
+
+export const relationKind = (userId) => state.relationships.get(userId)?.kind || null;
+export const isFriend = (userId) => relationKind(userId) === "friend";
+export const isBlocked = (userId) => relationKind(userId) === "blocked";
+export const relationsOf = (kind) => [...state.relationships.values()].filter((r) => r.kind === kind);
+
+// A 1:1 DM someone who isn't a friend sent us, waiting for a yes or no.
+export const isIncomingRequest = (ch) =>
+  ch?.request?.state === "pending" && ch.request.from_user_id !== state.user?.user_id;
+export const messageRequests = () => [...state.dms.values()].filter(isIncomingRequest);
+
+// Things waiting on the Friends page: friend requests and message requests.
+export const friendsBadge = () => relationsOf("incoming").length + messageRequests().length;
 
 // --- server staff (PROTOCOL.md §8c) -------------------------------------------
 
@@ -247,11 +264,12 @@ export function guildBadge(guildId) {
   return { unread, mentions };
 }
 
-// DMs: every unread message counts like a mention (as in Discord).
+// DMs: every unread message counts like a mention (as in Discord). Message
+// requests count once each (in friendsBadge), not per message.
 export function homeBadge() {
-  let count = 0;
+  let count = friendsBadge();
   for (const ch of state.dms.values()) {
-    if (pref(ch.channel_id).muted) continue;
+    if (pref(ch.channel_id).muted || isIncomingRequest(ch)) continue;
     if (isUnread(ch.channel_id)) count += Math.max(1, mentionCount(ch.channel_id));
   }
   return count;

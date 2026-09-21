@@ -69,5 +69,8 @@
   "typing_two": "{name1} and {name2} are typing…",
   "typing_three": "{name1}, {name2} and {name3} are typing…",
   "typing_many": "Several people are typing…",
-  "someone": "Someone"
+  "someone": "Someone",
+
+  "blocked_message": "Message from someone you blocked.",
+  "blocked_show": "Show"
 }

@@ -59,6 +59,12 @@ class WsClient:
         return await self.ok("auth.login", {"username": username, "password": password})
 
 
+async def befriend(a: WsClient, b: WsClient) -> None:
+    """Make two test clients friends (request + accept)."""
+    await a.ok("friend.request", {"user_id": b.uid})
+    await b.ok("friend.accept", {"user_id": a.uid})
+
+
 _gensalt = bcrypt.gensalt
 
 

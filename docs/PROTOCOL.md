@@ -1,6 +1,6 @@
 # Nightcord Protocol
 
-Version: `0.5`
+Version: `0.6`
 
 This document is the single source of truth for the wire format between the
 Nightcord client (GitHub Pages, vanilla JS) and a Nightcord server (Python).
@@ -18,6 +18,7 @@ Each protocol version arrived with one commit on `main`, named in the middle col
 | 0.3 | Roles, moderation, DMs, profiles and first-run setup | First-run setup, an admin API, profiles, avatars and status, direct messages, roles and permissions with channel overwrites, moderation, message edits, deletes, replies, reactions and mentions, typing, synced read state and notification preferences. |
 | 0.4 | Server staff, attachments, invites, categories and search | Server admins and moderators with global mutes, account deletion and IP/device bans; Terms of Service and Privacy Policy documents; file attachments over HTTP; invites with use limits, expiry and vanity links; join/leave messages; categories, topics and slowmode; pins and search; guild icons; nicknames; hoisted roles; a voice-channel placeholder. |
 | 0.5 | Custom emoji and stickers, image uploads and customisation | Custom emoji and stickers (per guild, usable everywhere); image uploads over HTTP (`/media`) with animated images; profile banners and colours, guild banners, gradient role colours and role icons; server-wide customisation settings with an allow-list (§8d). |
+| 0.6 | Friends, blocking and message requests | Friends and friend requests, one-sided blocking, per-user DM privacy with message requests, group DMs limited to friends, and user search as a server setting (off by default). |
 
 ---
 
@@ -189,8 +190,9 @@ gradient profile card.
 The user's own view (`auth.ok`'s `user`, `user.updated` sent to
 themselves) adds `bio`, `created_at`, `presence`
 (`online | idle | dnd | invisible`, their chosen status), `muted_until`
-(ISO8601, `"permanent"` or null; §8c) and `legal_version` (the documents
-they accepted, §8b). `user.profile` returns `PublicUser` plus `bio` and
+(ISO8601, `"permanent"` or null; §8c), `legal_version` (the documents
+they accepted, §8b) and `dm_privacy` (`everyone | requests | friends`,
+default `requests`; §5 Message requests). `user.profile` returns `PublicUser` plus `bio` and
 `created_at`.
 
 A `deleted` user's profile fields are cleared and their `username` is a
@@ -225,7 +227,8 @@ Password is never sent to the client; the server stores only a bcrypt hash.
     "profile_banner": true, "profile_colors": true, "animated_media": true,
     "guild_banner": true, "gradient_roles": true, "role_icons": true,
     "client_themes": true
-  }
+  },
+  "user_search": "off | staff | on"
 }
 ```
 Defaults: `guild_creation: "on"`, `account_creation: "on"`,
@@ -235,6 +238,10 @@ on, `server_name` from the server's config file
 until the owner sets one. `guild_list_visible` gates whether a server-wide
 "open guild list" can exist at all — a guild's own `listed` flag still needs
 to be true for it to appear.
+
+`user_search` (default `"off"`) decides who may call `user.search`:
+nobody, server staff only, or everyone; people add friends by exact
+username either way.
 
 ### Guild
 ```json
@@ -336,11 +343,13 @@ DM channel:
   "name": "string | null",
   "owner_user_id": "string | null",
   "recipients": ["PublicUser"],
+  "request": { "from_user_id": "string", "state": "pending | accepted | declined" },
   "last_message_id": "string | null",
   "my_permissions": 0
 }
 ```
-`recipients` includes the requesting user. `name` is only used by group
+`request` is null except on 1:1 DMs that began as a message request (§5
+Message requests). `recipients` includes the requesting user. `name` is only used by group
 DMs. `my_permissions` is computed for the receiving user (§5a); a channel is
 only ever sent to users who have `VIEW_CHANNEL` in it.
 
@@ -587,7 +596,7 @@ Server audit `action` values: `user.status`, `user.reset_password`,
 |---|---|---|
 | `user.profile` | C→S | `{ user_id }` |
 | `user.profile.result` | S→C | `{ user: PublicUser + { bio, created_at }, status }` |
-| `user.update` | C→S | `{ display_name?, bio?, avatar_color?, custom_status?, banner_media_id?, profile_colors? }` — `null` or `""` clears a field. `banner_media_id` is a `banner` upload (needs `profile_banner`, and `animated_media` if animated); `profile_colors` needs `profile_colors` (§8d) |
+| `user.update` | C→S | `{ display_name?, bio?, avatar_color?, custom_status?, banner_media_id?, profile_colors?, dm_privacy? }` — `null` or `""` clears a field. `banner_media_id` is a `banner` upload (needs `profile_banner`, and `animated_media` if animated); `profile_colors` needs `profile_colors` (§8d) |
 | `user.update.result` | S→C | `{ user }` (self view) |
 | `user.avatar.set` | C→S | `{ data_b64 }` — base64 image, or `null` to remove; or `{ media_id }` — an `avatar` upload (animated needs `animated_media`, §8d) |
 | `user.avatar.set.result` | S→C | `{ user }` (self view) |
@@ -597,16 +606,42 @@ Server audit `action` values: `user.status`, `user.reset_password`,
 | `user.sessions.list.result` | S→C | `{ sessions: [{ session_id, created_at, last_seen, user_agent, current }] }` |
 | `user.sessions.revoke` | C→S | `{ session_id }` — or `"others"` for every session but this one |
 | `user.sessions.revoke.result` | S→C | `{}` |
-| `user.search` | C→S | `{ query }` — active users whose username or display name starts with `query` (max 20) |
+| `user.search` | C→S | `{ query }` — active users whose username or display name starts with `query` (max 20). Fails with `feature_disabled` unless the server's `user_search` allows the caller (§4 Server config) |
 | `user.search.result` | S→C | `{ users: [PublicUser] }` |
 | `user.delete` | C→S | `{ password }` — delete your own account (not the server owner). Guilds you own pass to their highest-ranked member (or are deleted if empty); you leave every guild and group DM; your messages stay, shown as "Deleted User"; your avatar and uploads are deleted; your username is freed |
 | `user.delete.result` | S→C | `{}` — the connection stays open but logged out |
-| `user.updated` | S→C | `PublicUser` — event to everyone who shares a guild or DM with the user; the user's own connections get the self view |
+| `user.updated` | S→C | `PublicUser` — event to everyone who shares a guild or DM with the user, or is their friend; the user's own connections get the self view |
+
+### Friends and blocking
+| type | direction | payload |
+|---|---|---|
+| `friend.list` | C→S | `{}` |
+| `friend.list.result` | S→C | `{ relationships: [Relationship] }` |
+| `friend.request` | C→S | `{ username }` (exact, case-insensitive) or `{ user_id }` — if they already asked you, you become friends |
+| `friend.request.result` | S→C | `{ relationship: Relationship }` |
+| `friend.accept` | C→S | `{ user_id }` — an incoming request |
+| `friend.accept.result` | S→C | `{ relationship: Relationship }` |
+| `friend.remove` | C→S | `{ user_id }` — unfriend, cancel your request, or decline theirs |
+| `friend.remove.result` | S→C | `{}` |
+| `user.block` | C→S | `{ user_id }` or `{ username }` — ends any friendship or request |
+| `user.block.result` | S→C | `{ relationship: Relationship }` |
+| `user.unblock` | C→S | `{ user_id }` |
+| `user.unblock.result` | S→C | `{}` |
+| `relationship.updated` | S→C | `Relationship` — your view of someone changed |
+| `relationship.removed` | S→C | `{ user_id }` — you no longer have any relationship with them |
+
+`Relationship` is `{ user: PublicUser, kind: "friend" | "outgoing" |
+"incoming" | "blocked", since }`, always from the receiving user's side.
+Blocking is one-sided and silent: the blocked person just loses the
+friendship or request (`relationship.removed`), can't send friend requests
+(`blocked`) and can't message you in 1:1 DMs (`blocked`); clients hide a
+blocked person's messages elsewhere. Friends hear each other's presence
+and profile updates like DM partners do.
 
 ### Presence
 | type | direction | payload |
 |---|---|---|
-| `presence.list` | C→S | `{ guild_id }` or `{ user_ids }` (max 200; only users you share a guild or DM with) |
+| `presence.list` | C→S | `{ guild_id }` or `{ user_ids }` (max 200; only users you share a guild or DM with, or friends) |
 | `presence.list.result` | S→C | `{ presences: { user_id: "online"\|"idle"\|"dnd" } }` — offline users are omitted |
 | `presence.set` | C→S | `{ status?: "online"\|"idle"\|"dnd"\|"invisible", afk?: bool }` — `status` is saved on the account; `afk` is per connection (clients set it after inactivity) |
 | `presence.set.result` | S→C | `{ status }` — the status others now see |
@@ -794,21 +829,35 @@ stores these preferences.
 |---|---|---|
 | `dm.list` | C→S | `{}` — your open DMs, most recent activity first |
 | `dm.list.result` | S→C | `{ channels: [Channel] }` |
-| `dm.open` | C→S | `{ user_id }` — open (or reopen) the 1:1 DM with any active user |
+| `dm.open` | C→S | `{ user_id }` — open (or reopen) the 1:1 DM with an active user you may message (below) |
 | `dm.open.result` | S→C | `{ channel: Channel }` |
-| `dm.create_group` | C→S | `{ user_ids }` — 1–9 other users |
+| `dm.create_group` | C→S | `{ user_ids }` — 1–9 of your friends (`not_friends` otherwise) |
 | `dm.create_group.result` | S→C | `{ channel: Channel }` |
 | `dm.update` | C→S | `{ channel_id, name }` — group DMs only; any member may rename |
 | `dm.update.result` | S→C | `{ channel: Channel }` |
-| `dm.add_recipient` | C→S | `{ channel_id, user_id }` — group DMs only |
+| `dm.add_recipient` | C→S | `{ channel_id, user_id }` — group DMs only; one of your friends |
 | `dm.add_recipient.result` | S→C | `{ channel: Channel }` |
 | `dm.leave` | C→S | `{ channel_id }` — closes a 1:1 DM (it reopens on the next message) or leaves a group |
 | `dm.leave.result` | S→C | `{}` |
 | `dm.created` | S→C | `Channel` — a DM appeared for you (new group, added to one, or a closed 1:1 got a message) |
-| `dm.updated` | S→C | `Channel` — name or recipients changed |
+| `dm.request.accept` | C→S | `{ channel_id }` — accept a message request sent to you |
+| `dm.request.accept.result` | S→C | `{ channel: Channel }` |
+| `dm.request.decline` | C→S | `{ channel_id }` — decline it: it's hidden for you and the sender can't send more |
+| `dm.request.decline.result` | S→C | `{ channel: Channel }` |
+| `dm.updated` | S→C | `Channel` — name, recipients or request state changed |
 
-A 1:1 DM appears for the other person with its first message. Friend
-requests and message requests are deferred (§10).
+A 1:1 DM appears for the other person with its first message.
+
+**Message requests.** Whether someone may message you in a 1:1 DM:
+1. Either of you blocked the other: never (`blocked`).
+2. You're friends, or the DM's request was accepted: always.
+3. Otherwise your `dm_privacy` decides. `everyone`: always. `friends`:
+   never (`dm_not_allowed`). `requests` (the default): their first message
+   turns the DM into a request (`request.state: "pending"`), shown to you
+   under Message Requests instead of your DM list. They can't send more
+   (`request_pending`) until you accept (`dm.request.accept`, or just
+   reply). If you decline, they get `dm_not_allowed` from then on and
+   aren't told why.
 
 ### Messaging
 | type | direction | payload |
@@ -1097,7 +1146,11 @@ server-side failure; safe to retry), `setup_required`,
 §8c), `ip_banned`, `device_banned`, `slowmode` (the payload also has `retry_after` seconds),
 `invite_expired`, `legal_required`, `voice_disabled`, `pin_limit`,
 `feature_disabled` (customisation isn't allowed, §8d), `media_invalid`
-(an image upload that isn't a usable image, or an unknown or used media id).
+(an image upload that isn't a usable image, or an unknown or used media id),
+`blocked` (one of you blocked the other), `dm_not_allowed` (their DM
+privacy doesn't let you message them), `request_pending` (your message
+request hasn't been accepted yet), `already_friends`, `not_friends` (group
+DMs only take your friends).
 This list will grow — append here rather than inventing undocumented codes.
 
 ---
@@ -1106,7 +1159,6 @@ This list will grow — append here rather than inventing undocumented codes.
 
 Documented so the schema leaves room, without being built yet:
 
-- Friend requests, blocking, and DM message requests
 - Link embeds / previews
 - Per-member channel overwrites
 - Voice/video audio (voice channels are placeholders, §5 Voice)

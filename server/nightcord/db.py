@@ -41,6 +41,8 @@ DEFAULT_SERVER_CONFIG = {
         "role_icons": True,
         "client_themes": True,
     },
+    # off | staff | on: who may look people up by partial name (user.search).
+    "user_search": "off",
 }
 
 STAFF_LEVELS = {"none": 0, "moderator": 1, "admin": 2, "owner": 3}
@@ -246,6 +248,21 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX stickers_by_guild ON stickers(guild_id)
     """,
+    # 4 — friends, blocking and message requests.
+    """
+    CREATE TABLE relationships (
+        user_id   TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        other_id  TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        kind      TEXT NOT NULL,  -- friend | outgoing | incoming | blocked
+        since     TEXT NOT NULL,
+        PRIMARY KEY (user_id, other_id)
+    );
+    CREATE INDEX relationships_by_other ON relationships(other_id);
+    ALTER TABLE users ADD COLUMN dm_privacy TEXT NOT NULL DEFAULT 'requests';
+    -- 1:1 DMs between people who aren't friends: who asked, and pending | accepted | declined.
+    ALTER TABLE channels ADD COLUMN request_from TEXT;
+    ALTER TABLE channels ADD COLUMN request_state TEXT
+    """,
 ]
 
 MIGRATION_2 = """
@@ -403,6 +420,7 @@ def _self_user(row: sqlite3.Row) -> dict:
         "presence": row["presence_pref"],
         "muted_until": row["muted_until"],
         "legal_version": row["legal_version"],
+        "dm_privacy": row["dm_privacy"],
     }
 
 
@@ -590,6 +608,7 @@ class Database:
         allowed = {
             "display_name", "bio", "avatar_color", "custom_status", "avatar_id", "presence_pref",
             "server_role", "muted_until", "legal_version", "perks", "banner_id", "profile_colors",
+            "dm_privacy",
         }
         with self._tx():
             for key, val in fields.items():
@@ -673,6 +692,7 @@ class Database:
             self._exec("DELETE FROM reactions WHERE user_id = ?", user_id)
             self._exec("DELETE FROM notify_prefs WHERE user_id = ?", user_id)
             self._exec("DELETE FROM read_states WHERE user_id = ?", user_id)
+            self._exec("DELETE FROM relationships WHERE user_id = ? OR other_id = ?", user_id, user_id)
         return {"avatar_id": row["avatar_id"], "banner_id": row["banner_id"], "attachment_ids": attachment_ids}
 
     def search_users(self, query: str, *, exclude: str, limit: int = 20) -> list[dict]:
@@ -1017,6 +1037,7 @@ class Database:
         )
         out = {r["user_id"] for r in rows}
         out |= set(self.dm_partner_ids(user_id))
+        out |= set(self.friend_ids(user_id))
         out.discard(user_id)
         return out
 
@@ -1130,6 +1151,9 @@ class Database:
             base["perms_synced"] = bool(row["perms_synced"])
         else:
             base["owner_user_id"] = row["owner_user_id"]
+            base["request"] = (
+                {"from_user_id": row["request_from"], "state": row["request_state"]} if row["request_state"] else None
+            )
             ids = self.dm_recipient_ids(row["channel_id"])
             users = self.public_users(ids)
             base["recipients"] = [users[i] for i in ids if i in users]
@@ -1365,6 +1389,67 @@ class Database:
                 user_id, user_id,
             )
         ]
+
+    def set_dm_request(self, channel_id: str, from_user: str | None, state: str | None) -> None:
+        self._exec(
+            "UPDATE channels SET request_from = ?, request_state = ? WHERE channel_id = ?",
+            from_user, state, channel_id,
+        )
+
+    # --- relationships (friends, requests, blocks) -----------------------------
+
+    def relationship(self, user_id: str, other_id: str) -> str | None:
+        """user_id's side: friend | outgoing | incoming | blocked, or None."""
+        row = self._one("SELECT kind FROM relationships WHERE user_id = ? AND other_id = ?", user_id, other_id)
+        return row["kind"] if row else None
+
+    def are_friends(self, a: str, b: str) -> bool:
+        return self.relationship(a, b) == "friend"
+
+    def is_blocked_either(self, a: str, b: str) -> bool:
+        return self._one(
+            "SELECT 1 FROM relationships WHERE kind = 'blocked' AND "
+            "((user_id = ? AND other_id = ?) OR (user_id = ? AND other_id = ?))",
+            a, b, b, a,
+        ) is not None
+
+    def friend_ids(self, user_id: str) -> list[str]:
+        return [
+            r["other_id"]
+            for r in self._all("SELECT other_id FROM relationships WHERE user_id = ? AND kind = 'friend'", user_id)
+        ]
+
+    def list_relationships(self, user_id: str) -> list[dict]:
+        rows = self._all("SELECT * FROM relationships WHERE user_id = ? ORDER BY since", user_id)
+        users = self.public_users(r["other_id"] for r in rows)
+        return [
+            {"user": users[r["other_id"]], "kind": r["kind"], "since": r["since"]}
+            for r in rows if r["other_id"] in users
+        ]
+
+    def get_relationship(self, user_id: str, other_id: str) -> dict | None:
+        row = self._one("SELECT * FROM relationships WHERE user_id = ? AND other_id = ?", user_id, other_id)
+        if row is None:
+            return None
+        return {"user": self.public_user(other_id), "kind": row["kind"], "since": row["since"]}
+
+    def _set_rel(self, user_id: str, other_id: str, kind: str | None) -> None:
+        if kind is None:
+            self._exec("DELETE FROM relationships WHERE user_id = ? AND other_id = ?", user_id, other_id)
+        else:
+            self._exec(
+                "INSERT INTO relationships(user_id, other_id, kind, since) VALUES (?,?,?,?) "
+                "ON CONFLICT(user_id, other_id) DO UPDATE SET kind = excluded.kind, since = excluded.since",
+                user_id, other_id, kind, now_iso(),
+            )
+
+    def set_relationships(self, a: str, b: str, a_kind: str | None, b_kind: str | None) -> None:
+        """Both sides at once. A side that has blocked the other is left alone
+        unless it's the one being changed to something else explicitly."""
+        with self._tx():
+            self._set_rel(a, b, a_kind)
+            if self.relationship(b, a) != "blocked":
+                self._set_rel(b, a, b_kind)
 
     # --- messages ------------------------------------------------------------
 

@@ -47,7 +47,7 @@ direct messages between anyone on the server.
 - **Safety prompts:** before connecting to a new server the client warns that its owner can see your IP address, and
   if the server has rules, people read and accept them before creating an account (and again when they change).
 
-Deferred (see PROTOCOL.md §10): friend and message requests, voice audio, link embeds, server-wide emoji packs.
+Deferred (see PROTOCOL.md §10): voice audio, link embeds, server-wide emoji packs.
 
 ## Run a server
 

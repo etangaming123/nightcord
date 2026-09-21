@@ -101,6 +101,11 @@ function serverSection(el, actions) {
       h("span", { class: "muted small block" }, t("max_upload_hint"))),
     h("label", { class: "check" }, h("input", { type: "checkbox", name: "voice_enabled", checked: info.voice_enabled }),
       h("span", {}, t("voice_channels_label"), h("span", { class: "muted small block" }, t("voice_channels_hint")))),
+    h("label", {}, t("user_search_label"), select("user_search", info.user_search || "off", [
+      ["off", t("user_search_off")],
+      ["staff", t("user_search_staff")],
+      ["on", t("user_search_on")],
+    ]), h("span", { class: "muted small block" }, t("user_search_hint"))),
     h("div", {}, h("button", { class: "btn primary", type: "submit" }, t("save")))),
   async (fd) => {
     const res = await actions.req(T.SERVER_CONFIG_UPDATE, {
@@ -110,6 +115,7 @@ function serverSection(el, actions) {
       guild_list_visible: fd.get("guild_list_visible") === "on",
       max_upload_bytes: Math.max(1, Math.min(1024, Number(fd.get("max_upload_mb")) || 25)) * 1048576,
       voice_enabled: fd.get("voice_enabled") === "on",
+      user_search: fd.get("user_search"),
     });
     actions.setServerInfo(res.config);
   }, { okText: t("server_settings_saved") }));

@@ -90,5 +90,18 @@
   "notifications_unsupported": "Not supported in this browser.",
   "notifications_shown_when_unfocused": "Shown when Nightcord isn't focused.",
   "play_sound_notifications": "Play a sound for new notifications",
-  "dnd_note": "Do Not Disturb mutes all notifications."
+  "dnd_note": "Do Not Disturb mutes all notifications.",
+
+  "section_privacy": "Privacy",
+  "dm_privacy_legend": "Who can message you",
+  "dm_privacy_everyone": "Everyone",
+  "dm_privacy_everyone_hint": "Anyone on the server can DM you directly.",
+  "dm_privacy_requests": "Friends, plus message requests",
+  "dm_privacy_requests_hint": "Friends go straight through. Anyone else can send one message that waits under Message requests.",
+  "dm_privacy_friends": "Friends only",
+  "dm_privacy_friends_hint": "Only friends can DM you. Nobody else can start a conversation.",
+  "dm_privacy_note": "Only friends can add you to group DMs, whatever you pick here.",
+  "blocked_heading": "Blocked — {count}",
+  "blocked_none": "Nobody blocked.",
+  "unblock": "Unblock"
 }

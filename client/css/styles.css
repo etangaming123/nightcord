@@ -107,6 +107,7 @@ a { color: var(--accent-text); }
 .btn.link { background: none; padding: 0; color: var(--accent-text); font-weight: 500; font-size: inherit; }
 .btn.link:hover { text-decoration: underline; }
 .btn.block { width: 100%; }
+.btn.small { padding: 5px 12px; font-size: 13px; }
 .icon-btn {
   border: 0; background: none; color: var(--text-2); cursor: pointer; position: relative;
   width: 28px; height: 28px; border-radius: 6px; display: inline-grid; place-items: center;
@@ -208,6 +209,8 @@ textarea { resize: vertical; }
 }
 #app.members-hidden { grid-template-columns: var(--rail-w) var(--side-w) minmax(0, 1fr); }
 #app.members-hidden #member-list { display: none; }
+#app.no-members { grid-template-columns: var(--rail-w) var(--side-w) minmax(0, 1fr); }
+#app.no-members #member-list, #app.no-members .members-btn { display: none !important; }
 #guild-rail {
   background: var(--bg-0); padding: 12px 0; display: flex; flex-direction: column;
   align-items: center; gap: 8px; overflow-y: auto; scrollbar-width: none;
@@ -972,7 +975,7 @@ textarea { resize: vertical; }
   .split { grid-template-columns: 1fr; }
 }
 @media (max-width: 720px) {
-  #app, #app.members-hidden { grid-template-columns: minmax(0, 1fr); }
+  #app, #app.members-hidden, #app.no-members { grid-template-columns: minmax(0, 1fr); }
   #guild-rail, #channel-sidebar {
     position: fixed; top: 0; bottom: 0; z-index: 40; transition: transform .18s;
   }
@@ -1147,3 +1150,55 @@ canvas.still { display: block; }
 .role-icon-preview { min-width: 28px; display: inline-flex; align-items: center; }
 .role-icon-preview .role-icon { width: 24px; height: 24px; margin: 0; }
 .guild-icon canvas.still { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+
+/* --- Friends page and message requests (ui/friends.js) --- */
+.home-link { gap: 10px; }
+.home-link .home-glyph { width: 32px; text-align: center; font-size: 18px; }
+#chat-header .friends-title { flex: none; }
+#chat-header .friends-tabs {
+  display: flex; gap: 4px; flex: 1; min-width: 0; margin-left: 8px; overflow-x: auto; scrollbar-width: none;
+}
+#chat-header .friends-tabs::-webkit-scrollbar { display: none; }
+.friends-tab {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 0; border-radius: 6px;
+  background: none; color: var(--text-2); cursor: pointer; font-size: 14px; font-weight: 500; white-space: nowrap;
+}
+.friends-tab:hover { background: var(--bg-3); color: var(--text); }
+.friends-tab.active { background: var(--bg-4); color: var(--text); }
+.friends-tab.add { background: var(--accent); color: var(--accent-ink); }
+.friends-tab.add.active { background: none; color: var(--accent-text); }
+.friends-tab .badge { position: static; }
+.friends-page { display: flex; flex-direction: column; gap: 2px; padding: 16px 20px 32px; max-width: 900px; width: 100%; }
+.friends-page .section-label { padding: 12px 8px 6px; }
+.friends-h2 { margin: 4px 0; font-size: 18px; }
+.friend-row {
+  display: flex; align-items: center; gap: 12px; padding: 10px 8px; border-radius: 8px;
+  border-top: 1px solid var(--line);
+}
+.friend-row.clickable { cursor: pointer; }
+.friend-row:hover { background: var(--bg-3); border-top-color: transparent; }
+.friend-row:hover + .friend-row { border-top-color: transparent; }
+.friend-meta { flex: 1; min-width: 0; display: grid; }
+.friend-meta .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.friend-meta .handle { margin-left: 6px; font-weight: 400; color: var(--muted); font-size: 13px; }
+.friend-meta .sub { font-size: 13px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.friend-actions { display: flex; gap: 6px; align-items: center; }
+.friend-actions .icon-btn { width: 34px; height: 34px; border-radius: 50%; background: var(--bg-1); }
+.friend-actions .icon-btn.ok:hover { color: var(--ok); }
+.friends-empty { margin: 48px auto; text-align: center; max-width: 360px; }
+.add-friend { display: flex; gap: 8px; padding: 6px; border-radius: 10px; background: var(--bg-0); border: 1px solid var(--line); margin-top: 8px; }
+.add-friend:focus-within { border-color: var(--accent-text); }
+.add-friend .input { flex: 1; border: 0; background: none; }
+.add-friend-tip { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.ok-text { color: var(--ok); }
+.error-text { color: var(--danger); }
+.request-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 14px; border-radius: 10px;
+  background: var(--bg-1); border: 1px solid var(--line);
+}
+.msg-blocked { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; padding-top: 4px; padding-bottom: 4px; }
+@media (max-width: 1100px) { #chat-header .friends-title { display: none; } }
+@media (max-width: 700px) {
+  .friends-page { padding: 12px; }
+}
+

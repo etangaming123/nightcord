@@ -104,5 +104,10 @@
 
   "custom_status_title": "Set a custom status",
   "custom_status_label": "What's happening?",
-  "custom_status_placeholder": "Support has arrived!"
+  "custom_status_placeholder": "Support has arrived!",
+
+  "search_friends_placeholder": "Search your friends",
+  "new_message_subtitle_friends": "Pick a friend, or several for a group. To message someone else, add them as a friend first — or open their profile.",
+  "new_message_subtitle_search": "Pick friends or search for anyone on the server. Groups only take your friends.",
+  "no_friends_yet": "No friends to show. Add some from the Friends page."
 }

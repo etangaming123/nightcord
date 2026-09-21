@@ -46,6 +46,8 @@ function dmProfile(user, actions) {
 export function renderMembers(state, actions) {
   const el = clear($("#member-list"));
   const channel = currentChannel();
+  // The Friends page (Home, nothing open) uses the full width.
+  $("#app").classList.toggle("no-members", state.view === "home" && !channel);
   if (state.view === "home") {
     if (channel?.kind === "dm") {
       const other = channel.recipients.find((u) => u.user_id !== state.user.user_id);

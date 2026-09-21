@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-PROTOCOL_VERSION = "0.5"
+PROTOCOL_VERSION = "0.6"
 
 # --- Message types -----------------------------------------------------------
 
@@ -226,6 +226,10 @@ DM_ADD_RECIPIENT = "dm.add_recipient"
 DM_ADD_RECIPIENT_RESULT = "dm.add_recipient.result"
 DM_LEAVE = "dm.leave"
 DM_LEAVE_RESULT = "dm.leave.result"
+DM_REQUEST_ACCEPT = "dm.request.accept"
+DM_REQUEST_ACCEPT_RESULT = "dm.request.accept.result"
+DM_REQUEST_DECLINE = "dm.request.decline"
+DM_REQUEST_DECLINE_RESULT = "dm.request.decline.result"
 DM_CREATED = "dm.created"
 DM_UPDATED = "dm.updated"
 
@@ -287,6 +291,22 @@ VOICE_STATE_SET = "voice.state.set"
 VOICE_STATE_SET_RESULT = "voice.state.set.result"
 VOICE_STATE_UPDATED = "voice.state_updated"
 
+# Friends and blocking
+FRIEND_LIST = "friend.list"
+FRIEND_LIST_RESULT = "friend.list.result"
+FRIEND_REQUEST = "friend.request"
+FRIEND_REQUEST_RESULT = "friend.request.result"
+FRIEND_ACCEPT = "friend.accept"
+FRIEND_ACCEPT_RESULT = "friend.accept.result"
+FRIEND_REMOVE = "friend.remove"
+FRIEND_REMOVE_RESULT = "friend.remove.result"
+USER_BLOCK = "user.block"
+USER_BLOCK_RESULT = "user.block.result"
+USER_UNBLOCK = "user.unblock"
+USER_UNBLOCK_RESULT = "user.unblock.result"
+RELATIONSHIP_UPDATED = "relationship.updated"
+RELATIONSHIP_REMOVED = "relationship.removed"
+
 # Generic error for frames that can't be attributed to a request type
 ERROR = "error"
 
@@ -339,6 +359,11 @@ VOICE_DISABLED = "voice_disabled"
 PIN_LIMIT = "pin_limit"
 FEATURE_DISABLED = "feature_disabled"
 MEDIA_INVALID = "media_invalid"
+BLOCKED = "blocked"
+DM_NOT_ALLOWED = "dm_not_allowed"
+REQUEST_PENDING = "request_pending"
+ALREADY_FRIENDS = "already_friends"
+NOT_FRIENDS = "not_friends"
 
 ERROR_CODES = frozenset(
     {
@@ -351,7 +376,8 @@ ERROR_CODES = frozenset(
         BANNED, TIMED_OUT, AVATAR_INVALID, TOO_MANY_REACTIONS, DM_LIMIT,
         INVALID_CURRENT_PASSWORD, FILE_TOO_LARGE, MUTED, IP_BANNED, DEVICE_BANNED,
         SLOWMODE, INVITE_EXPIRED, LEGAL_REQUIRED, VOICE_DISABLED, PIN_LIMIT,
-        FEATURE_DISABLED, MEDIA_INVALID,
+        FEATURE_DISABLED, MEDIA_INVALID, BLOCKED, DM_NOT_ALLOWED, REQUEST_PENDING, ALREADY_FRIENDS,
+        NOT_FRIENDS,
     }
 )
 
@@ -462,6 +488,8 @@ STAFF_ROLES = ("none", "moderator", "admin")
 
 PRESENCE_PREFS = ("online", "idle", "dnd", "invisible")
 NOTIFY_LEVELS = ("all", "mentions", "none")
+DM_PRIVACY = ("everyone", "requests", "friends")
+USER_SEARCH_MODES = ("off", "staff", "on")
 
 
 class ProtocolError(Exception):

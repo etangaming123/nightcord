@@ -2,7 +2,7 @@
 // server/nightcord/protocol.py — edit that file, then regenerate. Both follow
 // docs/PROTOCOL.md; server/tests/test_protocol_sync.py checks all three agree.
 
-export const PROTOCOL_VERSION = "0.5";
+export const PROTOCOL_VERSION = "0.6";
 
 export const T = Object.freeze({
   SETUP_CLAIM: "setup.claim",
@@ -194,6 +194,10 @@ export const T = Object.freeze({
   DM_ADD_RECIPIENT_RESULT: "dm.add_recipient.result",
   DM_LEAVE: "dm.leave",
   DM_LEAVE_RESULT: "dm.leave.result",
+  DM_REQUEST_ACCEPT: "dm.request.accept",
+  DM_REQUEST_ACCEPT_RESULT: "dm.request.accept.result",
+  DM_REQUEST_DECLINE: "dm.request.decline",
+  DM_REQUEST_DECLINE_RESULT: "dm.request.decline.result",
   DM_CREATED: "dm.created",
   DM_UPDATED: "dm.updated",
   MESSAGE_SEND: "message.send",
@@ -240,18 +244,35 @@ export const T = Object.freeze({
   VOICE_STATE_SET: "voice.state.set",
   VOICE_STATE_SET_RESULT: "voice.state.set.result",
   VOICE_STATE_UPDATED: "voice.state_updated",
+  FRIEND_LIST: "friend.list",
+  FRIEND_LIST_RESULT: "friend.list.result",
+  FRIEND_REQUEST: "friend.request",
+  FRIEND_REQUEST_RESULT: "friend.request.result",
+  FRIEND_ACCEPT: "friend.accept",
+  FRIEND_ACCEPT_RESULT: "friend.accept.result",
+  FRIEND_REMOVE: "friend.remove",
+  FRIEND_REMOVE_RESULT: "friend.remove.result",
+  USER_BLOCK: "user.block",
+  USER_BLOCK_RESULT: "user.block.result",
+  USER_UNBLOCK: "user.unblock",
+  USER_UNBLOCK_RESULT: "user.unblock.result",
+  RELATIONSHIP_UPDATED: "relationship.updated",
+  RELATIONSHIP_REMOVED: "relationship.removed",
   ERROR: "error",
 });
 
 export const ERR = Object.freeze({
   ACCOUNT_DISABLED: "account_disabled",
+  ALREADY_FRIENDS: "already_friends",
   ALREADY_MEMBER: "already_member",
   AVATAR_INVALID: "avatar_invalid",
   BAD_REQUEST: "bad_request",
   BANNED: "banned",
+  BLOCKED: "blocked",
   CONTENT_TOO_LONG: "content_too_long",
   DEVICE_BANNED: "device_banned",
   DM_LIMIT: "dm_limit",
+  DM_NOT_ALLOWED: "dm_not_allowed",
   FEATURE_DISABLED: "feature_disabled",
   FILE_TOO_LARGE: "file_too_large",
   FORBIDDEN: "forbidden",
@@ -270,10 +291,12 @@ export const ERR = Object.freeze({
   MUTED: "muted",
   NOT_AUTHENTICATED: "not_authenticated",
   NOT_FOUND: "not_found",
+  NOT_FRIENDS: "not_friends",
   PIN_LIMIT: "pin_limit",
   RATE_LIMITED: "rate_limited",
   REGISTRATION_CLOSED: "registration_closed",
   REGISTRATION_PENDING_APPROVAL: "registration_pending_approval",
+  REQUEST_PENDING: "request_pending",
   SESSION_EXPIRED: "session_expired",
   SETUP_ALREADY_DONE: "setup_already_done",
   SETUP_REQUIRED: "setup_required",
@@ -355,4 +378,6 @@ export const LIMITS = Object.freeze({
   MAX_ROLE_COLORS: 3,
   MEDIA_KINDS: Object.freeze({emoji: Object.freeze({ maxBytes: 262144, maxDim: 256 }), sticker: Object.freeze({ maxBytes: 524288, maxDim: 320 }), avatar: Object.freeze({ maxBytes: 1048576, maxDim: null }), guild_icon: Object.freeze({ maxBytes: 1048576, maxDim: null }), banner: Object.freeze({ maxBytes: 2097152, maxDim: null }), guild_banner: Object.freeze({ maxBytes: 2097152, maxDim: null }), role_icon: Object.freeze({ maxBytes: 262144, maxDim: null })}),
   CUSTOMIZATION_FEATURES: Object.freeze(["profile_banner", "profile_colors", "animated_media", "guild_banner", "gradient_roles", "role_icons", "client_themes"]),
+  DM_PRIVACY: Object.freeze(["everyone", "requests", "friends"]),
+  USER_SEARCH_MODES: Object.freeze(["off", "staff", "on"]),
 });

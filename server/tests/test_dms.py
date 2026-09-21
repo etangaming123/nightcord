@@ -1,10 +1,11 @@
 """Direct messages (PROTOCOL.md §5 Direct messages)."""
 
-from conftest import types
+from conftest import befriend, types
 
 
 async def test_one_to_one(user):
     a, b = await user("alice"), await user("bob")
+    await b.ok("user.update", {"dm_privacy": "everyone"})  # plain DMs; requests are in test_friends.py
     assert await a.err("dm.open", {"user_id": a.uid}) == "bad_request"
     assert await a.err("dm.open", {"user_id": "12345"}) == "not_found"
     ch = (await a.ok("dm.open", {"user_id": b.uid}))["channel"]
@@ -37,6 +38,10 @@ async def test_one_to_one(user):
 
 async def test_group(user):
     a, b, c, d = [await user(n) for n in ("alice", "bob", "carol", "dave")]
+    await befriend(a, b)
+    assert await a.err("dm.create_group", {"user_ids": [b.uid, c.uid]}) == "not_friends"
+    await befriend(a, c)
+    await befriend(c, d)
     assert await a.err("dm.create_group", {"user_ids": []}) == "bad_request"
     ch = (await a.ok("dm.create_group", {"user_ids": [b.uid, c.uid]}))["channel"]
     assert ch["kind"] == "group_dm" and ch["owner_user_id"] == a.uid
@@ -44,6 +49,8 @@ async def test_group(user):
     await b.ok("dm.update", {"channel_id": ch["channel_id"], "name": "Friends"})
     ev = [e for e in await c.drain() if e["type"] == "dm.updated"]
     assert ev[-1]["payload"]["name"] == "Friends"
+    # Only your own friends: bob doesn't know dave, carol does.
+    assert await b.err("dm.add_recipient", {"channel_id": ch["channel_id"], "user_id": d.uid}) == "not_friends"
     await c.ok("dm.add_recipient", {"channel_id": ch["channel_id"], "user_id": d.uid})
     assert "dm.created" in types(await d.drain())
     assert await c.err("dm.add_recipient", {"channel_id": ch["channel_id"], "user_id": d.uid}) == "already_member"
@@ -61,15 +68,23 @@ async def test_group_limit(user, ctx):
     ctx.login_throttle.attempts = 100  # 11 registrations from one IP
     a = await user("alice")
     others = [await user(f"user{i}") for i in range(10)]
+    for o in others:
+        await befriend(a, o)
     assert await a.err("dm.create_group", {"user_ids": [o.uid for o in others]}) == "dm_limit"
     ch = (await a.ok("dm.create_group", {"user_ids": [o.uid for o in others[:9]]}))["channel"]
     assert await a.err("dm.add_recipient", {"channel_id": ch["channel_id"], "user_id": others[9].uid}) == "dm_limit"
 
 
-async def test_user_search(user):
+async def test_user_search(user, db, owner):
     a = await user("alice")
     await user("bob")
     await user("bobby")
+    # Off by default; "staff" lets only server staff search.
+    assert await a.err("user.search", {"query": "bo"}) == "feature_disabled"
+    db.set_server_config({"user_search": "staff"})
+    assert await a.err("user.search", {"query": "bo"}) == "feature_disabled"
+    assert [u["username"] for u in (await owner.ok("user.search", {"query": "bo"}))["users"]] == ["bob", "bobby"]
+    db.set_server_config({"user_search": "on"})
     names = [u["username"] for u in (await a.ok("user.search", {"query": "BO"}))["users"]]
     assert names == ["bob", "bobby"]
     assert (await a.ok("user.search", {"query": "ali"}))["users"] == []  # never yourself

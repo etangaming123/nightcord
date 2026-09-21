@@ -1,8 +1,9 @@
 // Server → client events (PROTOCOL.md §5): keep state in sync and redraw.
 
 import {
-  ackCurrent, addMessage, applyGuildEmojis, applyGuildStickers, applyReaction, expireTyping, forgetGuild, legalChanged,
-  loadAll, openGuild, openHome, reloadRoles, removeMessage, setServerInfo, updateMessage, upsertMember,
+  ackCurrent, addMessage, applyGuildEmojis, applyGuildStickers, applyReaction, applyRelationship,
+  dropRelationship, expireTyping, forgetGuild, legalChanged, loadAll, openFriends, openGuild, openHome, reloadRoles,
+  removeMessage, setServerInfo, updateMessage, upsertMember,
 } from "./actions.js";
 import { req } from "./api.js";
 import { notifyMessage, playSound } from "./notify.js";
@@ -10,7 +11,7 @@ import { applyPrefs } from "./prefs.js";
 import { T } from "./protocol.js";
 import { invalidate } from "./render.js";
 import {
-  currentChannel, ensureReadState, mentionsMe, rememberUser, sortChannels, state,
+  currentChannel, ensureReadState, isIncomingRequest, mentionsMe, nameOf, rememberUser, sortChannels, state,
 } from "./state.js";
 import { renderTyping } from "./ui/chat.js";
 import { idGt } from "./ui/dom.js";
@@ -87,7 +88,8 @@ export function wireEvents(conn) {
         requestAnimationFrame(() => ackCurrent());
       }
     }
-    if (!mine) notifyMessage(m, channel, () => goTo(channel));
+    // Message requests make one sound when they arrive (dm.created), not per message.
+    if (!mine && !isIncomingRequest(channel)) notifyMessage(m, channel, () => goTo(channel));
     invalidate("rail", "sidebar", "title");
   });
 
@@ -271,19 +273,50 @@ export function wireEvents(conn) {
 
   // --- DMs ---
   on(T.DM_CREATED, (ch) => {
+    const known = state.dms.has(ch.channel_id);
     state.dms.set(ch.channel_id, ch);
     ch.recipients.forEach(rememberUser);
     ensureReadState(ch);
-    invalidate("sidebar", "rail");
+    if (!known && isIncomingRequest(ch)) {
+      const from = ch.recipients.find((u) => u.user_id === ch.request.from_user_id);
+      playSound("message");
+      toast(t("message_request_toast", { name: nameOf(from, null) }));
+    }
+    invalidate("sidebar", "rail", "title", "chat");
   });
 
   on(T.DM_UPDATED, (ch) => {
     const mine = ch.recipients.some((u) => u.user_id === state.user.user_id);
-    if (!mine) { state.dms.delete(ch.channel_id); invalidate(); return; }
+    // Declined (maybe on another device): it's gone for us.
+    const declined = ch.request?.state === "declined" && ch.request.from_user_id !== state.user.user_id;
+    if (!mine || declined) {
+      state.dms.delete(ch.channel_id);
+      if (state.channelId === ch.channel_id) openFriends("requests");
+      else invalidate();
+      return;
+    }
     state.dms.set(ch.channel_id, ch);
     ch.recipients.forEach(rememberUser);
     invalidate("sidebar", "header", "members", "composer");
   });
+
+  // --- friends ---
+  on(T.RELATIONSHIP_UPDATED, (rel) => {
+    const before = applyRelationship(rel);
+    if (rel.kind === "incoming" && before !== "incoming") {
+      playSound("message");
+      toast(t("friend_request_toast", { name: nameOf(rel.user, null) }));
+    } else if (rel.kind === "friend" && before === "outgoing") {
+      toast(t("friend_accepted_toast", { name: nameOf(rel.user, null) }));
+    }
+    if (rel.kind === "friend") {
+      req(T.PRESENCE_LIST, { user_ids: [rel.user.user_id] }).then(({ presences }) => {
+        for (const [id, s] of Object.entries(presences)) state.presences.set(id, s);
+        invalidate("chat", "sidebar");
+      }).catch(() => {});
+    }
+  });
+  on(T.RELATIONSHIP_REMOVED, ({ user_id }) => dropRelationship(user_id));
 
   // --- admin ---
   on(T.ADMIN_ACCOUNT_REQUESTED, ({ user }) => {

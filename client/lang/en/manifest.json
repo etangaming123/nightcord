@@ -18,6 +18,7 @@
   "connection",
   "render",
   "state",
+  "ui/friends",
   "ui/chat",
   "ui/composer",
   "ui/attachments",

@@ -23,7 +23,7 @@
   "muted_title": "Muted",
   "dm_section_label": "Direct messages",
   "new_message": "New message",
-  "no_conversations": "No conversations yet. Press + to message someone on this server.",
+  "no_conversations": "No conversations yet. Press + to message a friend.",
   "group_members_count": { "one": "{count} member", "other": "{count} members" },
   "close_conversation": "Close conversation",
   "leave_group": "Leave group",
@@ -38,5 +38,8 @@
   "mute_button": "🎙 Mute",
   "unmute_button": "🔇 Unmute",
   "deafen_button": "🎧 Deafen",
-  "undeafen_button": "🔕 Undeafen"
+  "undeafen_button": "🔕 Undeafen",
+
+  "friends": "Friends",
+  "message_requests": "Message requests"
 }

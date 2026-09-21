@@ -10,6 +10,7 @@ from ._access import require_server_owner
 _CONFIG_ENUMS = {
     "guild_creation": ("off", "on"),
     "account_creation": ("off", "request", "on"),
+    "user_search": P.USER_SEARCH_MODES,
 }
 
 

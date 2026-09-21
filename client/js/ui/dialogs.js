@@ -202,9 +202,9 @@ export function deleteChannelDialog(channel, onDelete) {
 }
 
 // A search-as-you-type user picker. multi: allow several (group DMs).
-function userPicker({ search, exclude = [], multi = true, max = LIMITS.GROUP_DM_MAX - 1 }) {
+function userPicker({ search, exclude = [], multi = true, max = LIMITS.GROUP_DM_MAX - 1, placeholder = t("search_friends_placeholder") }) {
   const picked = new Map();
-  const input = h("input", { type: "search", placeholder: t("search_username_placeholder"), "aria-label": t("search_users_aria"), spellcheck: "false", autocapitalize: "off" });
+  const input = h("input", { type: "search", placeholder, "aria-label": t("search_users_aria"), spellcheck: "false", autocapitalize: "off" });
   const chips = h("div", { class: "pick-chips" });
   const results = h("div", { class: "pick-results" });
   let seq = 0;
@@ -215,12 +215,11 @@ function userPicker({ search, exclude = [], multi = true, max = LIMITS.GROUP_DM_
   const run = async () => {
     const q = input.value.trim();
     const mine = ++seq;
-    if (!q) { clear(results, h("p", { class: "muted small" }, t("type_to_search"))); return; }
     try {
       const users = (await search(q)).filter((u) => !exclude.includes(u.user_id));
       if (mine !== seq) return;
       clear(results);
-      if (!users.length) add(results, h("p", { class: "muted small" }, t("nobody_found")));
+      if (!users.length) add(results, h("p", { class: "muted small" }, q ? t("nobody_found") : t("no_friends_yet")));
       for (const u of users) {
         const on = picked.has(u.user_id);
         add(results, h("button", {
@@ -250,11 +249,11 @@ function userPicker({ search, exclude = [], multi = true, max = LIMITS.GROUP_DM_
   return { el: h("div", { class: "user-picker" }, input, chips, results), picked };
 }
 
-export function newDmDialog({ search, onCreate }) {
-  const picker = userPicker({ search });
+export function newDmDialog({ search, searchAllowed, onCreate }) {
+  const picker = userPicker({ search, placeholder: t("search_friends_placeholder") });
   formModal({
     title: t("new_message_title"),
-    subtitle: t("new_message_subtitle"),
+    subtitle: searchAllowed ? t("new_message_subtitle_search") : t("new_message_subtitle_friends"),
     submitLabel: t("start_conversation_button"),
     fields: [picker.el],
     onSubmit: async () => {

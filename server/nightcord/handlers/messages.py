@@ -128,7 +128,20 @@ async def send(ctx, conn, payload):
             extra.append(target["author_user_id"])
     if not conn.allow_message():
         raise ProtocolError(P.RATE_LIMITED, "You're sending messages too fast")
+    request_state = None
+    if channel["kind"] == "dm":
+        from .dms import dm_gate
+
+        other = next(u["user_id"] for u in channel["recipients"] if u["user_id"] != conn.user_id)
+        request_state = dm_gate(ctx, conn.user_id, other, channel)
     mentions, everyone = parse_mentions(ctx, channel, content, perms, extra)
+    if request_state is not None:
+        from_user = conn.user_id if request_state == "pending" else channel["request"]["from_user_id"]
+        ctx.db.set_dm_request(channel["channel_id"], from_user, request_state)
+        channel = ctx.db.get_channel(channel["channel_id"])
+        from .dms import announce_dm
+
+        await announce_dm(ctx, channel, exclude_hidden=True)
     if channel["guild_id"] is None:
         await _reveal_dm(ctx, channel)
     message = ctx.db.create_message(

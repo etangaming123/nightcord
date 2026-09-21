@@ -94,6 +94,8 @@ def main() -> None:
             f"{k}: Object.freeze({{ maxBytes: {b}, maxDim: {'null' if d is None else d} }})"
             for k, (b, d) in P.MEDIA_KINDS.items()) + "}),",
         "  CUSTOMIZATION_FEATURES: Object.freeze([" + ", ".join(f'"{f}"' for f in P.CUSTOMIZATION_FEATURES) + "]),",
+        "  DM_PRIVACY: Object.freeze([" + ", ".join(f'"{f}"' for f in P.DM_PRIVACY) + "]),",
+        "  USER_SEARCH_MODES: Object.freeze([" + ", ".join(f'"{f}"' for f in P.USER_SEARCH_MODES) + "]),",
         "});",
         "",
     ]

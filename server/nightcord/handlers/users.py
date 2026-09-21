@@ -59,6 +59,10 @@ async def update(ctx, conn, payload):
             if val is not None:
                 val = P.opt_text(payload, key, limit)
             fields[key] = val or None
+    if "dm_privacy" in payload:
+        if payload["dm_privacy"] not in P.DM_PRIVACY:
+            raise ProtocolError(P.BAD_REQUEST, f"'dm_privacy' must be one of {P.DM_PRIVACY}")
+        fields["dm_privacy"] = payload["dm_privacy"]
     if "avatar_color" in payload:
         fields["avatar_color"] = P.validate_color(payload["avatar_color"])
     if "profile_colors" in payload:
@@ -233,6 +237,11 @@ async def delete(ctx, conn, payload):
 
 @handles(P.USER_SEARCH)
 async def search(ctx, conn, payload):
+    from ._access import MODERATOR, staff_level
+
+    mode = ctx.db.get_server_config()["user_search"]
+    if mode == "off" or (mode == "staff" and staff_level(conn.user) < MODERATOR):
+        raise ProtocolError(P.FEATURE_DISABLED, "User search is off on this server; add friends by username")
     query = P.req_str(payload, "query", max_len=32).strip()
     if not query:
         return {"users": []}

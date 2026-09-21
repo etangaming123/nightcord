@@ -3,11 +3,12 @@
 
 import { LIMITS } from "../protocol.js";
 import {
-  STAFF_LABEL, can, channelTitle, currentChannel, currentGuild, isDm, isPrivate, mentionsMe, nameOf,
+  STAFF_LABEL, can, channelTitle, currentChannel, currentGuild, isBlocked, isDm, isPrivate, mentionsMe, nameOf,
   statusOf, userById,
 } from "../state.js";
 import { renderAttachments } from "./attachments.js";
 import { $, add, avatar, clear, h, iconBtn, idGt } from "./dom.js";
+import { renderFriendsHeader, renderFriendsPage } from "./friends.js";
 import { QUICK_REACTIONS, customOf, emojiGlyph } from "./emoji.js";
 import { jumboCount, plainText, render as renderMarkdown } from "./markdown.js";
 import { nameAttrs, roleIconEl } from "./names.js";
@@ -94,8 +95,10 @@ export function renderChatHeader(state, actions) {
     add(header, iconBtn("📌", t("pinned_messages"), (e) => actions.showPins(e.currentTarget)));
     add(header, iconBtn("👥", t("show_members"), actions.toggleMembers, { cls: "members-btn" }));
     add(header, searchButton(actions));
+  } else if (state.view === "home") {
+    renderFriendsHeader(header, state, actions);
   } else {
-    add(header, h("span", { class: "title" }, currentGuild()?.name || (state.view === "home" ? t("direct_messages") : "")));
+    add(header, h("span", { class: "title" }, currentGuild()?.name || ""));
   }
 }
 
@@ -231,6 +234,8 @@ function editBox(m, state, actions) {
       h("button", { class: "btn link", type: "button", on: { click: () => actions.saveEdit(m, input.value) } }, t("edit_hint_save"))));
 }
 
+const shownBlocked = new Set();
+
 // DOM nodes for message m given the message before it (or null).
 function messageNodes(m, prev, state, actions) {
   const d = new Date(m.sent_at);
@@ -246,6 +251,16 @@ function messageNodes(m, prev, state, actions) {
     return nodes;
   }
   const author = authorOf(m);
+  // Messages from people you blocked stay folded until you ask to see them.
+  if (isBlocked(author?.user_id) && !shownBlocked.has(m.message_id)) {
+    nodes.push(h("div", { class: "msg msg-blocked", dataset: { id: m.message_id } },
+      h("span", { "aria-hidden": "true" }, "🚫"), t("blocked_message"),
+      h("button", {
+        class: "btn link", type: "button",
+        on: { click: () => { shownBlocked.add(m.message_id); actions.refreshChat(); } },
+      }, t("blocked_show"))));
+    return nodes;
+  }
   const continued = !newDay && !m.reply_to_id && prev.author?.user_id === m.author?.user_id
     && (!prev.type || prev.type === "default") && d - pd < GROUP_GAP_MS;
   const editing = state.editingId === m.message_id;
@@ -283,12 +298,7 @@ function messageNodes(m, prev, state, actions) {
 }
 
 function emptyState(state, actions) {
-  if (state.view === "home") {
-    return h("div", { class: "empty-state" },
-      h("h2", {}, t("dm_empty_title")),
-      h("p", {}, t("dm_empty_body")),
-      h("button", { class: "btn primary", type: "button", on: { click: actions.newDm } }, t("dm_empty_cta")));
-  }
+  if (state.view === "home") return renderFriendsPage(state, actions);
   if (!state.guilds.size) {
     return h("div", { class: "empty-state" },
       h("h2", {}, t("no_guilds_title")),
