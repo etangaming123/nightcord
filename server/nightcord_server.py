@@ -16,6 +16,7 @@
     python nightcord_server.py config show
     python nightcord_server.py config set <key> <value>
     python nightcord_server.py guilds
+    python nightcord_server.py backup [--out DIR]
 
 Admin commands operate on the same SQLite database and are safe to run
 while the server is up. Most of them are also in the client's Admin panel.
@@ -24,9 +25,13 @@ while the server is up. Most of them are also in the client's Admin panel.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import logging
 import secrets
+import sqlite3
 import sys
+import tempfile
+import zipfile
 from pathlib import Path
 
 from nightcord.config import Config, load_config
@@ -191,6 +196,43 @@ def cmd_config(db: Database, cfg: Config, action: str, key: str | None, value: s
     return 0
 
 
+# Folders under the data directory that a backup includes. TLS keys are left
+# out on purpose: a restored server makes a fresh certificate.
+BACKUP_DIRS = ("media", "files", "avatars", "legal")
+
+
+def cmd_backup(cfg: Config, out_dir: Path | None) -> int:
+    """Zips a consistent snapshot of the database plus uploads and the rules
+    pages. Safe while the server is running (SQLite's online backup API)."""
+    if not cfg.db_path.exists():
+        print(f"No database at {cfg.db_path}", file=sys.stderr)
+        return 1
+    out_dir = out_dir or cfg.data_dir.parent / "backups"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    stamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    target = out_dir / f"nightcord-backup-{stamp}.zip"
+    with tempfile.TemporaryDirectory() as tmp:
+        snapshot = Path(tmp) / "nightcord.db"
+        src = sqlite3.connect(str(cfg.db_path))
+        dst = sqlite3.connect(str(snapshot))
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+            src.close()
+        with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.write(snapshot, "nightcord.db")
+            for name in BACKUP_DIRS:
+                folder = cfg.data_dir / name
+                if folder.is_dir():
+                    for path in sorted(folder.rglob("*")):
+                        if path.is_file():
+                            zf.write(path, str(path.relative_to(cfg.data_dir)))
+    print(f"Backup written to {target}")
+    print("Restore: stop the server, unzip it into an empty data directory, start the server.")
+    return 0
+
+
 def cmd_staff(db: Database, action: str, username: str | None, role: str | None) -> int:
     if action == "list":
         found = False
@@ -310,6 +352,8 @@ def build_parser() -> argparse.ArgumentParser:
     perks = sub.add_parser("perks", help="customisation allow-list")
     perks.add_argument("action", choices=["list", "add", "remove"])
     perks.add_argument("username", nargs="?")
+    backup = sub.add_parser("backup", help="zip the database, uploads and rules pages")
+    backup.add_argument("--out", type=Path, help="folder for the zip (default: backups/ next to the data folder)")
     return p
 
 
@@ -332,6 +376,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command in (None, "run"):
         cmd_run(cfg)
         return 0
+    if args.command == "backup":
+        return cmd_backup(cfg, args.out)
     db = Database(cfg.db_path)
     try:
         if args.command == "pending":
