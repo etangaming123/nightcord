@@ -1,6 +1,6 @@
 # Nightcord Protocol
 
-Version: `0.7`
+Version: `0.8`
 
 This document is the single source of truth for the wire format between the
 Nightcord client (GitHub Pages, vanilla JS) and a Nightcord server (Python).
@@ -20,6 +20,7 @@ Each protocol version arrived with one commit on `main`, named in the middle col
 | 0.5 | Custom emoji and stickers, image uploads and customisation | Custom emoji and stickers (per guild, usable everywhere); image uploads over HTTP (`/media`) with animated images; profile banners and colours, guild banners, gradient role colours and role icons; server-wide customisation settings with an allow-list (§8d). |
 | 0.6 | Friends, blocking and message requests | Friends and friend requests, one-sided blocking, per-user DM privacy with message requests, group DMs limited to friends, and user search as a server setting (off by default). |
 | 0.7 | Announcements inbox | A server-wide announcements inbox with per-account read state, and automatic entries when the Terms or Privacy Policy change. |
+| 0.8 | Account switcher | `max_accounts_per_client`, an advisory server setting for clients that keep several accounts. |
 
 ---
 
@@ -230,7 +231,8 @@ Password is never sent to the client; the server stores only a bcrypt hash.
     "client_themes": true
   },
   "user_search": "off | staff | on",
-  "announcements_admins": false
+  "announcements_admins": false,
+  "max_accounts_per_client": 0
 }
 ```
 Defaults: `guild_creation: "on"`, `account_creation: "on"`,
@@ -244,7 +246,10 @@ to be true for it to appear.
 `user_search` (default `"off"`) decides who may call `user.search`:
 nobody, server staff only, or everyone; people add friends by exact
 username either way. `announcements_admins` (default false) lets server
-admins post announcements as well as the owner.
+admins post announcements as well as the owner. `max_accounts_per_client`
+(default 0 = no limit, up to 20) is advisory: clients with an account
+switcher stop offering "Add account" for this server once they hold that
+many; the server doesn't enforce it.
 
 ### Guild
 ```json

@@ -26,6 +26,7 @@ const IDLE_AFTER_MS = 10 * 60 * 1000;
 const BANNED_CLOSE = 4003;
 
 let pendingInvite = null; // ?invite=CODE, opened once logged in
+let addingAccount = false; // on the login screen to add another account (not replace one)
 
 setActions(actions);
 
@@ -52,7 +53,8 @@ function showConnect({ error = null, prefill = "" } = {}) {
         click: () => connectTo(s.url),
         keydown: (e) => { if (e.key === "Enter") connectTo(s.url); },
       },
-    }, h("div", { class: "meta" }, h("div", { class: "name" }, s.label), h("div", { class: "url" }, s.url)), remove));
+    }, h("div", { class: "meta" }, h("div", { class: "name" }, s.label), h("div", { class: "url" }, s.url,
+      store.getAccounts(s.url).length ? ` · ${t("account_count", { count: store.getAccounts(s.url).length })}` : "")), remove));
   }
   const form = $("#connect-form");
   if (prefill) form.address.value = prefill.replace(/^(https?|wss?):\/\//i, "");
@@ -106,7 +108,8 @@ function ipWarning(url) {
   });
 }
 
-async function connectTo(input) {
+// addAccount: go to the login screen even if this server has saved accounts.
+async function connectTo(input, { addAccount = false } = {}) {
   let url;
   try {
     url = normalizeServerUrl(input);
@@ -146,24 +149,25 @@ async function connectTo(input) {
   setAvatarBase(url);
   wireEvents(conn);
   wireConnection(conn);
-  store.saveServer(url, state.info.server_name);
+  store.saveServer(url, state.info.server_name, state.info.max_accounts_per_client);
   store.setLastServer(url);
 
   if (state.info.setup_required) {
     showSetup();
     return;
   }
-  const token = store.getToken(url);
-  if (token) {
+  // Resume the active account; if its session died, try the others.
+  while (!addAccount && store.getToken(url)) {
     try {
-      await enterApp(await req(T.AUTH_RESUME, { session_token: token, device_id: store.getDeviceId(url) }));
+      await enterApp(await req(T.AUTH_RESUME, { session_token: store.getToken(url), device_id: store.getDeviceId(url) }));
       return;
     } catch (e) {
       if (e.code === ERR.DEVICE_BANNED) { showAuth({ message: e.message }); return; }
-      if (e.code !== ERR.SESSION_EXPIRED) toast(e.message, { error: true });
-      store.setToken(url, null);
+      if (e.code !== ERR.SESSION_EXPIRED) { toast(e.message, { error: true }); break; }
+      store.removeAccount(url);
     }
   }
+  addingAccount = addAccount;
   if (needsLegal()) showLegal();
   else showAuth();
 }
@@ -253,7 +257,7 @@ async function submitSetup(e) {
       guild_list_visible: form.guild_list_visible.checked,
     });
     state.info = await req(T.SERVER_INFO);
-    store.saveServer(state.url, state.info.server_name);
+    store.saveServer(state.url, state.info.server_name, state.info.max_accounts_per_client);
     form.reset();
     setupStep = 0;
     await enterApp(ok);
@@ -300,7 +304,10 @@ function showAuth({ message = null, info = false } = {}) {
   if (links) { links.id = "auth-legal"; form.after(links); }
 
   const box = $("#auth-message");
-  if (!message && policy === "off" && authMode === "login") {
+  if (!message && addingAccount) {
+    message = t("adding_account");
+    info = true;
+  } else if (!message && policy === "off" && authMode === "login") {
     message = t("accounts_closed");
     info = true;
   }
@@ -353,7 +360,8 @@ async function submitAuth(e) {
 // App
 
 async function enterApp({ session_token, user, legal_update_required }) {
-  store.setToken(state.url, session_token);
+  store.saveAccount(state.url, user, session_token);
+  addingAccount = false;
   state.user = user;
   state.users.set(user.user_id, user);
   state.connected = true;
@@ -406,10 +414,13 @@ function toLogin(message) {
   showAuth(message ? { message } : {});
 }
 
+// Logs the current account out. Another saved account on this server takes
+// over if there is one; otherwise it's back to the login screen.
 async function logout() {
   try { await req(T.AUTH_LOGOUT); } catch { /* the token dies with the session anyway */ }
-  store.setToken(state.url, null);
-  toLogin();
+  store.removeAccount(state.url, state.user?.user_id);
+  if (store.getToken(state.url)) connectTo(state.url);
+  else toLogin();
 }
 
 function switchServer() {
@@ -418,10 +429,32 @@ function switchServer() {
   showConnect();
 }
 
+// Account switcher (ui/accounts.js). One connection at a time: switching
+// reconnects as the other account.
+function switchAccount(url, userId) {
+  if (url === state.url && userId === state.user?.user_id) return;
+  store.setActiveAccount(url, userId);
+  connectTo(url);
+}
+
+function addAccount(url) {
+  connectTo(url, { addAccount: true });
+}
+
+// Forget a saved account on this device without switching to it.
+function forgetAccount(url, userId) {
+  if (url === state.url && userId === state.user?.user_id) { logout(); return; }
+  store.removeAccount(url, userId);
+  if (url === state.url) store.setActiveAccount(url, state.user?.user_id ?? null);
+}
+
 setSessionHooks({
   logout,
   switchServer,
-  accountDeleted: () => { store.setToken(state.url, null); toLogin(t("account_deleted")); },
+  switchAccount,
+  addAccount,
+  forgetAccount,
+  accountDeleted: () => { store.removeAccount(state.url, state.user?.user_id); toLogin(t("account_deleted")); },
   legalChanged: () => { if (state.user && !state.user.is_server_owner && state.user.legal_version !== state.info.legal_version) promptLegalUpdate(); },
 });
 
@@ -469,7 +502,7 @@ function wireConnection(conn) {
     } catch (e) {
       setBanner(null);
       if (e.code === ERR.SESSION_EXPIRED || e.code === ERR.DEVICE_BANNED) {
-        store.setToken(state.url, null);
+        store.removeAccount(state.url, state.user?.user_id);
         toLogin(t("logged_out"));
       }
     }
@@ -539,6 +572,8 @@ async function boot() {
   $("#setup-back").addEventListener("click", () => { setupStep = Math.max(0, setupStep - 1); showSetup(); });
   for (const id of ["#auth-back", "#setup-cancel", "#legal-back"]) {
     $(id).addEventListener("click", () => {
+      // Backing out of "add account": return to the account you were using.
+      if (addingAccount && store.getToken(state.url)) { connectTo(state.url); return; }
       disconnect();
       store.setLastServer(null);
       showConnect();

@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-PROTOCOL_VERSION = "0.7"
+PROTOCOL_VERSION = "0.8"
 
 # --- Message types -----------------------------------------------------------
 
@@ -507,6 +507,7 @@ NOTIFY_LEVELS = ("all", "mentions", "none")
 DM_PRIVACY = ("everyone", "requests", "friends")
 USER_SEARCH_MODES = ("off", "staff", "on")
 ANNOUNCEMENT_MAX_CHARS = 4000
+MAX_ACCOUNTS_PER_CLIENT = 20
 
 
 class ProtocolError(Exception):

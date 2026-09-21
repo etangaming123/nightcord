@@ -97,6 +97,7 @@ def main() -> None:
         "  DM_PRIVACY: Object.freeze([" + ", ".join(f'"{f}"' for f in P.DM_PRIVACY) + "]),",
         "  USER_SEARCH_MODES: Object.freeze([" + ", ".join(f'"{f}"' for f in P.USER_SEARCH_MODES) + "]),",
         f"  ANNOUNCEMENT_MAX_CHARS: {P.ANNOUNCEMENT_MAX_CHARS},",
+        f"  MAX_ACCOUNTS_PER_CLIENT: {P.MAX_ACCOUNTS_PER_CLIENT},",
         "});",
         "",
     ]

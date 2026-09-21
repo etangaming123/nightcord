@@ -47,7 +47,9 @@ async def test_legal_change_posts_automatically(owner, user):
 
 async def test_new_server_settings(owner):
     cfg = (await owner.ok("server.info"))
-    assert cfg["user_search"] == "off" and cfg["announcements_admins"] is False
+    assert cfg["user_search"] == "off" and cfg["announcements_admins"] is False and cfg["max_accounts_per_client"] == 0
     assert await owner.err("server.config.update", {"user_search": "sometimes"}) == "bad_request"
-    cfg = (await owner.ok("server.config.update", {"user_search": "on"}))["config"]
-    assert cfg["user_search"] == "on"
+    assert await owner.err("server.config.update", {"max_accounts_per_client": 21}) == "bad_request"
+    assert await owner.err("server.config.update", {"max_accounts_per_client": True}) == "bad_request"
+    cfg = (await owner.ok("server.config.update", {"user_search": "on", "max_accounts_per_client": 2}))["config"]
+    assert cfg["user_search"] == "on" and cfg["max_accounts_per_client"] == 2

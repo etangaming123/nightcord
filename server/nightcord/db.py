@@ -45,6 +45,8 @@ DEFAULT_SERVER_CONFIG = {
     "user_search": "off",
     # Server admins may post announcements too (the owner always can).
     "announcements_admins": False,
+    # Advisory: how many accounts one client should keep for this server (0 = no limit).
+    "max_accounts_per_client": 0,
 }
 
 STAFF_LEVELS = {"none": 0, "moderator": 1, "admin": 2, "owner": 3}

@@ -228,7 +228,6 @@ textarea { resize: vertical; }
 .guild-icon.home, .guild-icon.home:not(.static):hover, .guild-icon.home.active { background: none; }
 .guild-icon.home .brand-mark { width: 48px; height: 48px; border-radius: inherit; transition: border-radius .15s, filter .15s; filter: saturate(.75); }
 .guild-icon.home:hover .brand-mark, .guild-icon.home.active .brand-mark { filter: none; }
-.guild-icon.server { background: var(--bg-3); font-size: 18px; color: var(--text-2); }
 .guild-icon.add { color: var(--ok); font-size: 24px; font-weight: 400; }
 .guild-icon.add:hover { background: var(--ok); color: var(--accent-ink); }
 .guild-icon::before {
@@ -1214,4 +1213,22 @@ canvas.still { display: block; }
 @media (max-width: 700px) {
   .friends-page { padding: 12px; }
 }
+
+/* --- Account switcher (ui/accounts.js) --- */
+.accounts-pop { width: 300px; max-height: min(520px, 80vh); overflow-y: auto; padding: 8px; }
+.account-switcher .switcher-title { font-weight: 700; padding: 4px 8px 8px; }
+.account-server + .account-server { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 6px; }
+.account-server .section-label { padding: 6px 8px 4px; }
+.account-server .section-label .tag { margin-left: 6px; }
+.account-row-item { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.account-row-item:hover { background: var(--bg-3); }
+.account-row-item.current { cursor: default; background: var(--pill-bg); }
+.account-row-item .meta { flex: 1; min-width: 0; display: grid; }
+.account-row-item .name { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-row-item .sub { font-size: 12px; color: var(--muted); }
+.account-row-item .tick { color: var(--accent-text); font-weight: 700; }
+.account-row-item .icon-btn { width: 26px; height: 26px; }
+.add-account { padding: 6px 8px; font-size: 14px; }
+.pad-x { padding: 0 8px; }
+.account-footer { border-top: 1px solid var(--line); margin-top: 8px; padding: 10px 8px 4px; }
 

@@ -47,15 +47,6 @@ export function renderRail(state, actions) {
     class: "guild-icon add", type: "button", title: t("rail_add_guild"), "aria-label": t("rail_add_guild"),
     on: { click: actions.addGuild },
   }, "+"));
-  const serverName = state.info?.server_name || t("rail_server_fallback");
-  add(rail,
-    h("div", { class: "rail-spacer" }),
-    h("button", {
-      class: "guild-icon server", type: "button",
-      title: t("rail_switch_server_title", { server: serverName }), "aria-label": t("rail_switch_server_aria", { server: serverName }),
-      on: { click: actions.switchServer },
-    }, "⇄"),
-  );
 }
 
 export function renderChannelSidebar(state, actions) {
@@ -305,6 +296,10 @@ function renderUserPanel(state, actions) {
     h("span", { class: "who" },
       h("span", { class: "name" }, nameOf(me)),
       h("span", { class: "sub" }, me.custom_status || (me.presence === "invisible" ? t("invisible_label") : me.username)))),
+    h("button", {
+      class: "icon-btn", type: "button", title: t("switch_account"), "aria-label": t("switch_account"), "aria-haspopup": "dialog",
+      on: { click: (e) => actions.showAccounts(e.currentTarget) },
+    }, "⇄"),
     h("button", {
       class: "icon-btn gear", type: "button", title: t("user_settings"), "aria-label": t("user_settings"),
       on: { click: () => actions.userSettings() },

@@ -174,9 +174,14 @@ def cmd_config(db: Database, cfg: Config, action: str, key: str | None, value: s
         db.set_server_config({"max_upload_bytes": int(value) * 1024 * 1024})
         print(f"max_upload_bytes = {int(value) * 1024 * 1024}")
         return 0
+    if key == "max_accounts_per_client" and value and value.isdigit() and int(value) <= 20:
+        db.set_server_config({key: int(value)})
+        print(f"{key} = {int(value)}")
+        return 0
     if key not in allowed or value not in allowed[key]:
         print(
-            f"Usage: config set <key> <value>; keys: server_name, max_upload_mb (1-1024), {allowed}",
+            "Usage: config set <key> <value>; keys: server_name, max_upload_mb (1-1024), "
+            f"max_accounts_per_client (0-20, 0 = no limit), {allowed}",
             file=sys.stderr,
         )
         return 2

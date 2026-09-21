@@ -1,0 +1,15 @@
+{
+  "title": "Accounts",
+  "current_account": "You're using this account",
+  "switch_to": "Switch to {name}",
+  "unknown_account": "Saved account",
+  "account_options": "Account options",
+  "switch": "Switch to this account",
+  "log_out": "Log out",
+  "forget": "Log out on this device",
+  "connected": "CONNECTED",
+  "limit": "{count} / {limit}",
+  "limit_reached": "This server asks for at most this many accounts per device.",
+  "add_account": "+ Add an account",
+  "other_server": "Connect to another server"
+}

@@ -8,6 +8,7 @@ import {
 import { req } from "./api.js";
 import { notifyMessage, playSound } from "./notify.js";
 import { applyPrefs } from "./prefs.js";
+import * as store from "./storage.js";
 import { T } from "./protocol.js";
 import { invalidate } from "./render.js";
 import {
@@ -140,6 +141,7 @@ export function wireEvents(conn) {
       const wasMuted = state.user.muted_until;
       const perksBefore = state.user.perks;
       state.user = { ...state.user, ...u };
+      store.refreshAccount(state.url, state.user);
       if ("perks" in u && u.perks !== perksBefore) applyPrefs();
       if ("muted_until" in u && u.muted_until !== wasMuted) {
         toast(u.muted_until ? t("user_muted") : t("user_unmuted"), { error: !!u.muted_until });

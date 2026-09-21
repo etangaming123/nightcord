@@ -235,5 +235,7 @@
   "user_search_on": "Everyone",
   "user_search_hint": "Whether people can look others up by partial name (and get suggestions when adding friends).",
   "announcements_admins_label": "Admins can post announcements",
-  "announcements_admins_hint": "You can always post in everyone's Inbox; this lets server admins do it too."
+  "announcements_admins_hint": "You can always post in everyone's Inbox; this lets server admins do it too.",
+  "max_accounts_label": "Accounts per device",
+  "max_accounts_hint": "How many accounts the account switcher offers for this server (0 = no limit). A courtesy limit, not enforced."
 }

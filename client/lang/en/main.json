@@ -34,5 +34,8 @@
   "logged_out": "You were logged out. Please log in again.",
   "please_log_in_again": "Please log in again",
   "must_accept_rules": "You need to accept a server's rules to join it.",
-  "brand": "Nightcord"
+  "brand": "Nightcord",
+
+  "account_count": { "one": "{count} account", "other": "{count} accounts" },
+  "adding_account": "Log in with another account. Your other accounts stay saved on this device."
 }

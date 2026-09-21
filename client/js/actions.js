@@ -23,6 +23,7 @@ import { render as renderMarkdown } from "./ui/markdown.js";
 import { uploadImage } from "./ui/images.js";
 import { closeFullscreen, closeModal, confirmModal, fullscreenOpen, openMenu, openModal, openPopover, refreshFullscreen, toast } from "./ui/modals.js";
 import { inviteDialog, invitePreview } from "./ui/invites.js";
+import { openAccountSwitcher } from "./ui/accounts.js";
 import { openPins } from "./ui/pins.js";
 import { copyText, openProfile } from "./ui/profile.js";
 import { openSearch } from "./ui/search.js";
@@ -602,12 +603,13 @@ export { rememberUser, req };
 export function setSelf(user) {
   state.user = { ...state.user, ...user };
   rememberUser(user);
+  store.refreshAccount(state.url, state.user);
   invalidate();
 }
 
 export function setServerInfo(config) {
   state.info = { ...state.info, ...config };
-  store.saveServer(state.url, state.info.server_name);
+  store.saveServer(state.url, state.info.server_name, state.info.max_accounts_per_client);
   invalidate("rail", "sidebar", "title");
 }
 
@@ -1263,6 +1265,10 @@ export function memberMenu(userId, anchor) {
 let hooks = {};
 export const setSessionHooks = (h) => { hooks = h; };
 export const switchServer = () => hooks.switchServer();
+export const switchAccount = (url, userId) => hooks.switchAccount(url, userId);
+export const addAccount = (url) => hooks.addAccount(url);
+export const forgetAccount = (url, userId) => hooks.forgetAccount(url, userId);
+export const showAccounts = (anchor) => openAccountSwitcher(anchor, actions);
 export const logout = () => hooks.logout();
 export const accountDeleted = () => hooks.accountDeleted();
 export const legalChanged = () => hooks.legalChanged();
@@ -1286,7 +1292,7 @@ export const actions = {
   unblockUser, friendItems, userSearchAllowed,
   loadOlderAnnouncements, canPostAnnouncements, ackAnnouncements, postAnnouncement, editAnnouncement, deleteAnnouncement,
   myRank, outranks, assignableRoles, setMemberRoles, moderationItems, memberMenu, reloadRoles,
-  switchServer, logout, accountDeleted,
+  switchServer, logout, accountDeleted, switchAccount, addAccount, forgetAccount, showAccounts,
   isGuildOwner: () => isGuildOwner(),
   isDm: () => isDm(currentChannel()),
   close: () => { closeModal(); closeFullscreen(); },

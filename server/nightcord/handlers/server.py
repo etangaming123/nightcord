@@ -32,6 +32,9 @@ def apply_config_updates(ctx, payload: dict) -> dict:
         elif key == "max_upload_bytes":
             if not isinstance(val, int) or isinstance(val, bool) or not 1024 * 1024 <= val <= P.MAX_UPLOAD_BYTES_CEILING:
                 raise ProtocolError(P.BAD_REQUEST, "'max_upload_bytes' must be between 1 MB and 1 GB")
+        elif key == "max_accounts_per_client":
+            if not isinstance(val, int) or isinstance(val, bool) or not 0 <= val <= P.MAX_ACCOUNTS_PER_CLIENT:
+                raise ProtocolError(P.BAD_REQUEST, f"'{key}' must be 0 (no limit) to {P.MAX_ACCOUNTS_PER_CLIENT}")
         elif key == "server_name":
             val = P.validate_server_name(val)
         elif key == "customization_mode":
