@@ -1,10 +1,23 @@
+# Editors and OS
 *.code-workspace
 .DS_Store
-.venv
+.claude/
+
+# Python
+.venv/
 __pycache__/
 *.pyc
 .pytest_cache/
-server/data/
+
+# Node (only used for tests)
+node_modules/
+
+# Server data: databases, uploads, TLS keys, backups, local config
 data/
+data-*/
+server/data/
+backups/
+*.db
+*.pem
 nightcord.toml
-.claude
+.env

@@ -1,169 +1,193 @@
 # Nightcord
 
-Self-hosted, Discord-style chat. You run a small Python **server**. Friends connect to it from a static web **client**
-hosted on GitHub Pages. One server can host many **guilds**, each with its own channels, roles and members, plus
-direct messages between anyone on the server.
+A web-based messaging app, built for selfhosting. A parody of Discord.
 
-- `docs/PROTOCOL.md` is the wire protocol and the source of truth. If the code disagrees with it, the code is wrong.
-- `server/` holds the Python server: aiohttp, SQLite, and bcrypt.
-- `client/` holds the client: vanilla JS modules with no build step.
+[Website](https://etangaming123.github.io/nightcord/) · [Open the client](https://etangaming123.github.io/nightcord/app/) · [Protocol spec](docs/PROTOCOL.md)
 
-## What's in it (v4)
+> [!WARNING]
+> **This is vibecoded by Claude, have fun :)**
+> It works and it has tests, but nobody has audited it. Don't put anything on it you'd be upset to lose or leak.
 
-- **Chat:** markdown (`**bold**`, `*italic*`, `` `code` ``, code blocks, quotes, `||spoilers||`), replies, emoji
-  reactions, edit and delete, pins, @mentions and @everyone, typing indicators, unread and mention badges that sync
-  across your devices.
-- **Custom emoji and stickers:** every guild can upload its own (200 emoji, 60 stickers). Unlike Discord, anyone in
-  the guild can use them in any guild or DM — no Nitro. Type `:name:`, pick from the picker, or react with them.
-  Animated GIFs stay animated.
-- **Customisation:** profile banners and profile colours, guild banners, gradient role names, role icons, and app
-  themes (presets plus a custom gradient of up to five colours). The server owner decides who gets these: everyone,
-  an allow-list of people an admin picks, or nobody — and can switch each feature on or off.
-- **Files:** upload with the + button, paste, or drag and drop. Images and videos show inline, text files open in a
-  viewer, anything else downloads. The server owner sets the size limit.
-- **Search:** Ctrl/Cmd+F searches a guild or conversation, with `from:`, `in:`, `has:image|file|video|link` and
-  `pinned:true`. Results jump straight to the message. Ctrl/Cmd+K opens a quick switcher.
-- **Guild layout:** channel categories (collapsible, drag to reorder, permissions that sync like Discord's), channel
-  topics, slowmode, a guild icon, per-guild nicknames, and optional join/leave messages.
-- **Invites:** expiry and use limits, a list of active invites with who made them, revoking, a permanent public
-  link, "invited by" on every member, and share links that open straight into an invite card.
-- **Voice channels (preview):** you can join a voice channel and everyone sees who's in it, but there's no audio
-  yet. The server owner turns them on.
-- **Direct messages:** 1:1 and group DMs (up to 10 people) with anyone on the server.
-- **Profiles:** display name, avatar image (animated allowed), banner, profile colours, bio, custom status, and online / idle / do not disturb /
-  invisible status (idle kicks in after 10 minutes away). Avatars, banners and guild images go through a built-in cropper —
-  drag to move, scroll or drag the slider to zoom.
-- **User settings:** account and password, profile editor with live preview, logged-in devices, dark/light theme, font
-  size, compact mode, desktop notifications and sound. Per-guild and per-channel mute and notification levels live in
-  the guild and channel menus.
-- **Roles and permissions:** colored roles with 20 permissions, role hierarchy, roles displayed separately in the
-  member list, and per-channel overrides for private and read-only channels.
-- **Moderation:** kick, ban (optionally deleting recent messages), timeouts, and an audit log.
-- **Server staff:** the owner can appoint server **admins** and **moderators**. Moderators handle account requests,
-  mute people server-wide, and ban IP addresses and devices. Admins can also delete accounts, reset passwords and
-  manage every guild. Everything staff do is in a server audit log.
-- **Server owner:** first-run setup in the browser, server settings (upload limit, voice), Terms of Service and
-  Privacy Policy pages, and read-only "ghost" joins into any guild.
-- **Safety prompts:** before connecting to a new server the client warns that its owner can see your IP address, and
-  if the server has rules, people read and accept them before creating an account (and again when they change).
+> [!WARNING]
+> **Whoever runs a server can see your IP address and read everything on it.** Only join servers run by people you
+> trust. The client warns about this before it connects anywhere new.
 
-Deferred (see PROTOCOL.md §10): voice audio, link embeds, server-wide emoji packs.
+> [!NOTE]
+> Nightcord is built for **personal use**: a few friends, a big friend group at most. It's one small Python process
+> and one SQLite file, not a public service that scales to thousands of strangers. It isn't affiliated with Discord.
 
-## Run a server
+## Features
 
-Requires Python 3.11+.
+### Chat
+- Guilds with text channels, categories, topics, slowmode and (placeholder) voice channels
+- Markdown, replies, reactions, pins, edits, @mentions, typing indicators, unread badges synced across devices
+- Search with `from:`, `in:`, `has:` and `pinned:` filters; Ctrl/Cmd+K quick switcher
+- File uploads with inline images and video
+- Custom emoji and stickers per guild, usable **everywhere by everyone**. No Nitro required, or even possible.
 
-```sh
-cd server
-python -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt
-cp nightcord.example.toml nightcord.toml   # edit server_name, public_hostnames, allowed_origins
-python nightcord_server.py --config nightcord.toml
-```
+### People
+- **Friends:** add people by exact username, accept or decline requests, block people
+- **Message requests:** strangers get one message that waits in your Message Requests until you say yes. You pick
+  who can DM you: everyone, friends plus requests (the default), or friends only.
+- 1:1 and group DMs. Only your friends can add you to a group.
+- **Inbox:** announcements from the server owner, plus automatic notices when the rules change
+- **Account switcher:** keep several accounts on several servers and hop between them
+- Profiles with avatars, banners, gradient profile colours, bios and custom statuses
 
-On first start the server does two things:
+### Running a server
+- Roles and permissions with per-channel overrides, kicks, bans, timeouts and audit logs
+- Server staff (admins and moderators), account approval, IP and device bans
+- Terms of Service and Privacy Policy pages that people accept before joining
+- Server-wide switches for who can customise their profile, whether user search exists, and more
+- One-command backups
 
-- It prints a one-time **setup code**. Open the client, connect to the server, and it walks you through setup: enter
-  the code, choose the server-owner username and password, and pick the server name and account/guild policies. Until
-  then nobody can register or log in. A new code is printed on every start until setup is done.
-- It generates a **self-signed TLS certificate** in `data/`. The cert includes `localhost`, `127.0.0.1`, and every
-  entry in `public_hostnames`.
+## Screenshots
 
-Databases from Nightcord v2 and v3 upgrade in place the first time v4 starts. Databases from v1 aren't compatible;
-the server refuses to open one. Move or delete the old `data/` folder.
+| Guilds | Friends | Inbox |
+|---|---|---|
+| ![A guild channel](site/screenshots/chat.png) | ![The Friends page](site/screenshots/friends.png) | ![The announcements inbox](site/screenshots/inbox.png) |
 
-Uploaded files are stored in `data/files/`, emoji, stickers, avatars and banners in `data/media/` (and older small
-avatars in `data/avatars/`), and the rules pages in `data/legal/terms.md` and `data/legal/privacy.md`. You can edit
-those two files by hand or in the client.
+## Quickstart
 
-### Behind a reverse proxy
+To **join** a server, open [the client](https://etangaming123.github.io/nightcord/app/), type in the server's
+address (`host:port`) and make an account. That's it.
 
-If people reach the server through nginx, Caddy or a tunnel, set `trust_proxy = true` in `nightcord.toml` so the
-server sees real client IPs (for IP bans and the Accounts list). Leave it off when clients connect directly;
-otherwise anyone could fake their address.
+To **host** one, keep reading.
 
-### Letting browsers trust the certificate
+## Selfhosting
 
-The client is served over https from GitHub Pages, so it must connect with `wss://`. Browsers refuse self-signed
-certificates until the user accepts them. Each user needs to do this once per server:
+### You will need
+- Python 3.11 or newer
+- A machine that stays on (a spare PC, a Raspberry Pi, a cheap VPS)
+- A port your friends can reach (8765 by default), or a tunnel or reverse proxy
 
-1. Open `https://your-host:8765/` in the browser.
-2. Accept the certificate warning. You'll then see a "Nightcord server" page.
-3. Go back to the client and connect.
+### Steps
+1. Get the server running:
+   ```sh
+   cd server
+   python -m venv .venv && . .venv/bin/activate
+   pip install -r requirements.txt
+   cp nightcord.example.toml nightcord.toml   # set server_name, public_hostnames, allowed_origins
+   python nightcord_server.py --config nightcord.toml
+   ```
+2. The first start prints a **setup code** and makes a self-signed TLS certificate in `data/`.
+3. Open the client, connect to your server and enter the setup code. You'll pick the owner account, the server name
+   and who may create accounts and guilds.
+4. Send your friends the link. `https://etangaming123.github.io/nightcord/app/?server=your-host:8765` opens the
+   client already pointed at your server.
 
-If connecting fails, the client shows this link automatically.
+### Updating
+Pull the new code and restart the server. The database upgrades itself on start; run a [backup](#backups) first if
+you're nervous. (Databases from the very first commit, protocol 0.2, can't be upgraded; the server says so and won't start.)
+
+### Certificates
+The hosted client runs over https, so it has to use `wss://`. Browsers reject self-signed certificates until you
+accept them once. Each person opens `https://your-host:8765/`, accepts the warning, then goes back and connects. The
+client shows this link when a connection fails. A real certificate (or Cloudflare Tunnel, Caddy and so on) skips this
+step.
 
 ### Allowed origins
+The server only accepts browsers from the origins in `allowed_origins`. Add wherever the client is hosted, e.g.
+`https://etangaming123.github.io`. Behind a reverse proxy, set `trust_proxy = true` so IP bans see real addresses.
+Leave it off otherwise, or anyone can fake theirs.
 
-The server rejects WebSocket connections from browser origins that aren't in `allowed_origins`. Add your Pages origin
-(e.g. `https://you.github.io`). Using `--allow-origin '*'` disables the check.
+### Hosting the client yourself
+Fork this repo, then go to *Settings → Pages → Source: GitHub Actions*. Every push to `main` publishes the homepage
+at `/` and the client at `/app/`. The client is plain files with no build step, so any static host works too:
+serve `site/` at the root and `client/` at `/app/`.
 
-### Admin
+## Customising
 
-Most admin work happens in the client: log in as the server owner (or a staff member) and open **User settings (⚙) →
-Server admin**. Staff get a live badge when someone asks for an account, and staff actions are also in each person's
-profile and right-click menu. The CLI works too, and is safe to run while the server is up:
+Everything here is a plain file you can replace. Keep the name and format.
+
+| What | Where |
+|---|---|
+| Logo (favicon, home button, homepage) | `client/assets/logo.png`, a square PNG (512×512 recommended) |
+| Message sound | `client/assets/sounds/message.wav` (also used for friend requests, message requests and announcements) |
+| Mention sound | `client/assets/sounds/mention.wav` |
+| Voice join / leave | `client/assets/sounds/voice-join.wav`, `voice-leave.wav` |
+| Every piece of UI text | `client/lang/en/**/*.json` |
+| Homepage | `site/index.html`, `site/style.css` |
+
+`python tools/gen_assets.py` regenerates the default logo and sounds. It overwrites your replacements, so only run
+it to get the defaults back.
+
+## Server admin
+
+Most of this lives in the client under **User settings (⚙) → Server admin**. The same things work from the command
+line, even while the server is running:
 
 ```sh
-python nightcord_server.py pending list                 # account requests (account_creation = request)
-python nightcord_server.py pending approve <username>
-python nightcord_server.py pending reject <username>
-python nightcord_server.py users list [--status disabled]
-python nightcord_server.py users disable <username>     # or: users enable <username>
+python nightcord_server.py pending list|approve|reject <username>   # account requests
+python nightcord_server.py users list|disable|enable <username>
+python nightcord_server.py staff list|set <username> admin|moderator|none
+python nightcord_server.py perks list|add|remove <username>         # customisation allow-list
+python nightcord_server.py ipban list|add|remove <ip-or-cidr>
+python nightcord_server.py guilds                                   # every guild and its ID
+python nightcord_server.py owner reset-password                     # locked out? prints a new password
 python nightcord_server.py config show
-python nightcord_server.py config set account_creation request   # off | request | on
-python nightcord_server.py config set guild_creation off         # off | on
-python nightcord_server.py config set guild_list_visible false
-python nightcord_server.py config set server_name "Night Owls"
-python nightcord_server.py config set max_upload_mb 50             # per-file upload limit
-python nightcord_server.py config set voice_enabled true           # voice channels (preview, no audio)
-python nightcord_server.py staff list                   # server admins and moderators
-python nightcord_server.py staff set <username> moderator        # or: admin | none
-python nightcord_server.py ipban list                   # or: ipban add|remove 203.0.113.0/24
-python nightcord_server.py config set customization_mode allowlist   # off | allowlist | on
-python nightcord_server.py perks list                   # who may use banners, gradients and themes
-python nightcord_server.py perks add <username>         # or: perks remove <username>
-python nightcord_server.py guilds                       # every guild + ID
-python nightcord_server.py owner reset-password         # locked out? prints a new owner password
+python nightcord_server.py config set <key> <value>
 ```
 
-## Use the client
+Settings you can `config set`:
 
-- **Hosted:** push to `main` and the `Deploy homepage and client to GitHub Pages` workflow publishes the homepage
-  (`site/`) at the root and the client (`client/`) under `/app/`. To enable it, go to
-  *Settings → Pages → Source: GitHub Actions*.
-- **Share a direct link:** `https://you.github.io/nightcord/?server=chat.example.com:8765` opens the client already
-  pointed at that server. Invite links from the client add `&invite=CODE` and open the invite card.
-- **Address format:** enter `host:port` (the field already shows `https://`) and the client uses `wss://`. You can
-  also paste a full `ws://` or `wss://` URL. The `localhost:8765` chip fills in a server on your own computer.
-- **Tips:** right-click guilds, channels and members for menus; ↑ in an empty message box edits your last message;
-  Shift-click the delete button to skip the confirmation; Ctrl/Cmd+K jumps anywhere; drag channels to reorder them; type `:name:`
-  for custom emoji and 🗒 for stickers.
+| Key | Values |
+|---|---|
+| `server_name` | any name |
+| `account_creation` | `on`, `request` (staff approve), `off` |
+| `guild_creation` | `on`, `off` (owner only) |
+| `guild_list_visible` | `true`, `false` |
+| `max_upload_mb` | 1–1024 |
+| `voice_enabled` | `true`, `false` (voice has no audio yet) |
+| `customization_mode` | `on`, `allowlist`, `off` |
+| `user_search` | `off` (default: add friends by exact username), `staff`, `on` |
+| `announcements_admins` | `true`, `false` (the owner can always post) |
+| `max_accounts_per_client` | 0 (no limit) to 20. A courtesy limit for the account switcher, not enforced. |
 
-Guild emoji and stickers live in **Server settings → Emoji / Stickers** (needs the Manage expressions permission).
-Banners, profile colours, gradient roles and themes are in **User settings → Profile / Appearance** and the role
-editor; if they're greyed out, the server has them off or limited to an allow-list (**Server admin → Customisation**).
-
-## Local development
+## Backups
 
 ```sh
-# terminal 1: server without TLS
-cd server && python nightcord_server.py --no-tls --port 8765 --data-dir data-dev
+python nightcord_server.py backup            # writes backups/nightcord-backup-<date>.zip
+python nightcord_server.py backup --out /somewhere/safe
+```
+
+The zip has a consistent snapshot of the database plus uploads, emoji, avatars and the rules pages. It's safe to run
+while the server is up. To restore, stop the server, unzip into an empty `data/` folder and start it again. TLS keys
+aren't included; the server makes a new certificate.
+
+## Development
+
+```sh
+# terminal 1: the server, without TLS
+python server/nightcord_server.py --no-tls --port 8765 --data-dir data-dev
 
 # terminal 2: homepage at / and client at /app/
 python tools/localhost.py
 ```
 
-Open http://127.0.0.1:8000/app/?server=localhost:8765. The default allowed origins already include `localhost:8000` and
-`127.0.0.1:8000`.
+Open <http://127.0.0.1:8000/app/?server=http://localhost:8765>.
 
-Run the tests:
-
+Tests:
 ```sh
 cd server && pip install -r requirements-dev.txt && pytest
 node client/tests/markdown.test.mjs
 ```
 
-`client/js/protocol.js` is generated from `server/nightcord/protocol.py`; after changing message types, error codes or
-limits, run `python server/tools/gen_client_protocol.py`. `server/tests/test_protocol_sync.py` fails whenever
-`docs/PROTOCOL.md`, `protocol.py` and `protocol.js` disagree on message types, error codes or permission bits.
+[`docs/PROTOCOL.md`](docs/PROTOCOL.md) is the source of truth for the wire protocol. `client/js/protocol.js` is
+generated from `server/nightcord/protocol.py` by `python server/tools/gen_client_protocol.py`, and
+`server/tests/test_protocol_sync.py` fails if the three disagree.
+
+## Work in progress
+
+Things that might happen one day:
+- Slash commands (`/shrug`, `/roll`, `/8ball`…)
+- Polls
+- Saved messages
+- Private notes on people's profiles
+- A keyboard shortcut cheat sheet
+- Voice and video that actually carry audio
+- Link previews
+
+## License
+
+[MIT](LICENSE). Nightcord is a parody and isn't affiliated with or endorsed by Discord.
