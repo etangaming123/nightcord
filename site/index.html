@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nightcord</title>
+  <meta name="description" content="A web-based messaging app, built for selfhosting. A parody of Discord.">
+  <meta name="theme-color" content="#884499">
+  <link rel="icon" type="image/png" href="app/assets/logo.png">
+  <link rel="apple-touch-icon" href="app/assets/logo.png">
+  <link rel="stylesheet" href="style.css">
+  <script>
+    // Old share links pointed at the client directly (?server=…&invite=…).
+    // The client lives at app/ now, so send them on.
+    if (/[?&](server|invite)=/.test(location.search)) location.replace(`app/${location.search}${location.hash}`);
+  </script>
+</head>
+<body>
+  <nav class="nav">
+    <a class="nav-brand" href="./"><img src="app/assets/logo.png" alt="" width="28" height="28">Nightcord</a>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#start">Get started</a>
+      <a href="https://github.com/etangaming123/nightcord">GitHub</a>
+      <a class="btn small" href="app/">Open Nightcord</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <img class="hero-logo" src="app/assets/logo.png" alt="Nightcord logo" width="112" height="112">
+    <h1>Nightcord</h1>
+    <p class="lede">A web-based messaging app, built for selfhosting. A parody of Discord.</p>
+    <p class="sub">Guilds, DMs, friends and custom emoji on a server you run yourself, for the people you actually talk to.
+      It's like the real thing, minus the ads and the Nitro upsell. Plus a few bugs, probably.</p>
+    <div class="cta">
+      <a class="btn primary" href="app/">Open Nightcord</a>
+      <a class="btn ghost" href="https://github.com/etangaming123/nightcord#selfhosting">Host your own</a>
+    </div>
+  </header>
+
+  <main>
+    <section id="features" class="section">
+      <h2>What's in it?</h2>
+      <div class="cols">
+        <article class="col">
+          <div class="col-icon" aria-hidden="true">💬</div>
+          <h3>Chat</h3>
+          <p>Guilds with channels, categories, roles and permissions. Replies, reactions, pins, search, markdown and
+            spoilers. Custom emoji and stickers work everywhere, for everyone, free. <span class="aside">(Take that, Nitro.)</span></p>
+        </article>
+        <article class="col">
+          <div class="col-icon" aria-hidden="true">👋</div>
+          <h3>Friends</h3>
+          <p>Friend requests by username, message requests from people you don't know yet, blocking, group DMs, and
+            an inbox for server announcements. Hop between accounts and servers from one switcher.</p>
+        </article>
+        <article class="col">
+          <div class="col-icon" aria-hidden="true">🏠</div>
+          <h3>Yours</h3>
+          <p>One small Python server and one SQLite file. You own the data and set the rules. Back everything up with
+            one command. Swap the logo and sounds for your own by replacing a file.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section" id="screenshots">
+      <h2>Screenshots</h2>
+      <div class="shots">
+        <figure><img src="screenshots/chat.png" alt="A guild channel with messages, reactions and the member list" loading="lazy"><figcaption>Guilds and channels</figcaption></figure>
+        <figure><img src="screenshots/friends.png" alt="The Friends page with friends online and pending requests" loading="lazy"><figcaption>Friends and message requests</figcaption></figure>
+        <figure><img src="screenshots/inbox.png" alt="The announcements inbox" loading="lazy"><figcaption>Announcements inbox</figcaption></figure>
+      </div>
+    </section>
+
+    <section class="section" id="start">
+      <h2>Let's get started!</h2>
+      <ol class="steps">
+        <li><strong>Someone runs a server.</strong> A Python 3.11+ box: a spare PC, a Raspberry Pi, a cheap VPS.
+          <a href="https://github.com/etangaming123/nightcord#selfhosting">The README</a> walks through it.</li>
+        <li><strong>Everyone opens the client.</strong> It's this website. Nothing to install.</li>
+        <li><strong>Type in the server's address,</strong> make an account and say hi.</li>
+      </ol>
+      <div class="cta">
+        <a class="btn primary" href="app/">Open Nightcord</a>
+        <a class="btn ghost" href="https://github.com/etangaming123/nightcord">GitHub repository</a>
+      </div>
+    </section>
+
+    <section class="section notice" aria-labelledby="notice-title">
+      <h2 id="notice-title">Before you dive in</h2>
+      <ul>
+        <li><strong>This is vibecoded by Claude, have fun :)</strong> It works, it has tests, but nobody has audited it.</li>
+        <li><strong>Built for personal use:</strong> a few friends, a big friend group at most. It's not meant to be a
+          big public service.</li>
+        <li><strong>Server owners can see your IP address,</strong> and they can read everything on their server. Only
+          join servers run by people you trust.</li>
+        <li>Nightcord is a parody. It isn't affiliated with or endorsed by Discord.</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>Nightcord · MIT License · made by etangaming123 (and Claude)</p>
+    <p class="muted">No cookies, no tracking. This page is just files.</p>
+  </footer>
+</body>
+</html>

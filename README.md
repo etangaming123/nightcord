@@ -129,7 +129,8 @@ python nightcord_server.py owner reset-password         # locked out? prints a n
 
 ## Use the client
 
-- **Hosted:** push to `main` and the `Deploy client to GitHub Pages` workflow publishes `client/`. To enable it, go to
+- **Hosted:** push to `main` and the `Deploy homepage and client to GitHub Pages` workflow publishes the homepage
+  (`site/`) at the root and the client (`client/`) under `/app/`. To enable it, go to
   *Settings → Pages → Source: GitHub Actions*.
 - **Share a direct link:** `https://you.github.io/nightcord/?server=chat.example.com:8765` opens the client already
   pointed at that server. Invite links from the client add `&invite=CODE` and open the invite card.
@@ -149,11 +150,11 @@ editor; if they're greyed out, the server has them off or limited to an allow-li
 # terminal 1: server without TLS
 cd server && python nightcord_server.py --no-tls --port 8765 --data-dir data-dev
 
-# terminal 2: client
-python client/localhost.py
+# terminal 2: homepage at / and client at /app/
+python tools/localhost.py
 ```
 
-Open http://127.0.0.1:8000/?server=localhost:8765. The default allowed origins already include `localhost:8000` and
+Open http://127.0.0.1:8000/app/?server=localhost:8765. The default allowed origins already include `localhost:8000` and
 `127.0.0.1:8000`.
 
 Run the tests:

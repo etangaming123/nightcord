@@ -1,9 +1,9 @@
-name: Deploy client to GitHub Pages
+name: Deploy homepage and client to GitHub Pages
 
 on:
   push:
     branches: [main]
-    paths: ["client/**", ".github/workflows/pages.yml"]
+    paths: ["client/**", "site/**", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
@@ -24,8 +24,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      # The homepage at the root, the client under /app/.
+      - name: Assemble site
+        run: |
+          mkdir -p _site/app
+          cp -R site/. _site/
+          cp -R client/. _site/app/
+          rm -rf _site/app/tests _site/app/package.json
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: client
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v4
