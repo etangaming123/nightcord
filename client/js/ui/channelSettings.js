@@ -8,27 +8,30 @@ import { add, clear, h } from "./dom.js";
 import { CHANNEL_PERM_KEYS, PERM_INFO } from "./guildSettings.js";
 import { closeFullscreen, confirmModal, openFullscreen, toast } from "./modals.js";
 import { normalizeChannelName } from "./dialogs.js";
+import { scopedT } from "../strings.js";
 
-const LABELS = Object.fromEntries(PERM_INFO.filter((p) => Array.isArray(p)).map(([k, label, desc]) => [k, { label, desc }]));
+const t = scopedT("ui/channelSettings");
+
+const LABELS = () => Object.fromEntries(PERM_INFO().filter((p) => Array.isArray(p)).map(([k, label, desc]) => [k, { label, desc }]));
 
 const titleOf = (c) => (c.kind === "text" ? `#${c.name}` : c.name);
-const nounOf = (c) => (c.kind === "category" ? "category" : "channel");
+const nounOf = (c) => (c.kind === "category" ? t("noun_category") : t("noun_channel"));
 
-const SLOWMODE_LABEL = (s) => (!s ? "Off" : s < 60 ? `${s}s` : s < 3600 ? `${s / 60}m` : `${s / 3600}h`);
+const SLOWMODE_LABEL = (s) => (!s ? t("slowmode_off") : s < 60 ? `${s}s` : s < 3600 ? `${s / 60}m` : `${s / 3600}h`);
 
 export function channelSettings(channel, actions, initial) {
   openFullscreen({
-    title: `${titleOf(channel)} settings`,
+    title: t("settings_title", { title: titleOf(channel) }),
     initial,
     sections: [
       { heading: titleOf(channel) },
-      { id: "overview", label: "Overview", render: (el) => overview(el, channel, actions) },
-      can("MANAGE_ROLES") ? { id: "permissions", label: "Permissions", render: (el) => permissions(el, channel, actions) } : null,
+      { id: "overview", label: t("tab_overview"), render: (el) => overview(el, channel, actions) },
+      can("MANAGE_ROLES") ? { id: "permissions", label: t("tab_permissions"), render: (el) => permissions(el, channel, actions) } : null,
       { separator: true },
-      { label: `Delete ${nounOf(channel)}`, danger: true, onClick: () => confirmModal({
-        title: `Delete ${titleOf(channel)}?`,
-        message: channel.kind === "category" ? "Its channels are kept and move out of the category." : "All of its messages will be deleted too. This can't be undone.",
-        confirmLabel: `Delete ${nounOf(channel)}`,
+      { label: t("delete_noun_label", { noun: nounOf(channel) }), danger: true, onClick: () => confirmModal({
+        title: t("delete_title", { title: titleOf(channel) }),
+        message: channel.kind === "category" ? t("delete_category_message") : t("delete_channel_message"),
+        confirmLabel: t("delete_confirm_label", { noun: nounOf(channel) }),
         onConfirm: async () => { await actions.req(T.CHANNEL_DELETE, { channel_id: channel.channel_id }); closeFullscreen(); },
       }) },
     ],
@@ -42,22 +45,22 @@ function overview(el, channel, actions) {
   const text = ch.kind === "text";
   const input = h("input", { name: "name", required: true, maxLength: 40, value: ch.name, spellcheck: "false", autocapitalize: "off" });
   const hint = h("p", { class: "muted small hint", hidden: !text });
-  const update = () => { hint.textContent = `Saved as #${normalizeChannelName(input.value) || "…"}`; };
+  const update = () => { hint.textContent = t("saved_as", { name: normalizeChannelName(input.value) || "…" }); };
   input.addEventListener("input", update);
   update();
-  const topic = text ? h("textarea", { name: "topic", rows: 3, maxLength: LIMITS.TOPIC_MAX, placeholder: "Let everyone know how to use this channel!" }, ch.topic || "") : null;
+  const topic = text ? h("textarea", { name: "topic", rows: 3, maxLength: LIMITS.TOPIC_MAX, placeholder: t("topic_placeholder") }, ch.topic || "") : null;
   const slow = text ? h("select", { name: "slowmode" }, LIMITS.SLOWMODE_PRESETS.map((v) => h("option", { value: v, selected: v === ch.slowmode_seconds }, SLOWMODE_LABEL(v)))) : null;
   const form = h("form", { class: "stack narrow" },
-    h("label", {}, ch.kind === "category" ? "Category name" : "Channel name", input), hint,
-    text ? h("label", {}, "Topic", topic, h("span", { class: "muted small block" }, "Shown in the channel header. Markdown works.")) : null,
-    text ? h("label", {}, "Slowmode", slow, h("span", { class: "muted small block" }, "How long members wait between messages. Members who can manage messages or channels aren't affected.")) : null,
-    h("div", {}, h("button", { class: "btn primary", type: "submit" }, "Save changes")));
+    h("label", {}, ch.kind === "category" ? t("category_name_label") : t("channel_name_label"), input), hint,
+    text ? h("label", {}, t("topic_label"), topic, h("span", { class: "muted small block" }, t("topic_hint"))) : null,
+    text ? h("label", {}, t("slowmode_label"), slow, h("span", { class: "muted small block" }, t("slowmode_hint"))) : null,
+    h("div", {}, h("button", { class: "btn primary", type: "submit" }, t("save_changes_btn"))));
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const patch = { channel_id: ch.channel_id };
     if (text) {
       patch.name = normalizeChannelName(input.value);
-      if (!LIMITS.CHANNEL_NAME_RE.test(patch.name)) { toast("Use letters, numbers, - or _ (up to 32).", { error: true }); return; }
+      if (!LIMITS.CHANNEL_NAME_RE.test(patch.name)) { toast(t("invalid_channel_name"), { error: true }); return; }
       patch.topic = topic.value.trim();
       patch.slowmode_seconds = Number(slow.value);
     } else {
@@ -65,7 +68,7 @@ function overview(el, channel, actions) {
     }
     try {
       await actions.req(T.CHANNEL_UPDATE, patch);
-      toast("Saved");
+      toast(t("saved_toast"));
     } catch (err) {
       toast(err.message, { error: true });
     }
@@ -77,17 +80,18 @@ function overview(el, channel, actions) {
 function permissions(el, channel, actions) {
   const ch = fresh(channel);
   const parent = ch.parent_id ? state.channels.find((c) => c.channel_id === ch.parent_id) : null;
+  const labels = LABELS();
   if (parent) {
     add(el, h("div", { class: `sync-box ${ch.perms_synced ? "synced" : ""}` },
       h("span", {}, ch.perms_synced
-        ? ["Permissions are synced with ", h("strong", {}, parent.name), ". Editing them below unsyncs this channel."]
-        : ["This channel has its own permissions, not ", h("strong", {}, parent.name), "'s."]),
+        ? [t("synced_before"), h("strong", {}, parent.name), t("synced_after")]
+        : [t("not_synced_before"), h("strong", {}, parent.name), t("not_synced_after")]),
       ch.perms_synced ? null : h("button", {
         class: "btn", type: "button",
-        on: { click: async () => { try { await actions.req(T.CHANNEL_UPDATE, { channel_id: ch.channel_id, perms_synced: true }); toast("Synced with the category"); } catch (e) { toast(e.message, { error: true }); } } },
-      }, "Sync now")));
+        on: { click: async () => { try { await actions.req(T.CHANNEL_UPDATE, { channel_id: ch.channel_id, perms_synced: true }); toast(t("synced_now_toast")); } catch (e) { toast(e.message, { error: true }); } } },
+      }, t("sync_now_btn"))));
     if (ch.perms_synced) {
-      add(el, h("p", { class: "muted" }, "Edit the category's permissions to change this channel, or override them here."));
+      add(el, h("p", { class: "muted" }, t("sync_hint")));
     }
   }
   const source = ch.perms_synced && parent ? parent : ch;
@@ -113,8 +117,8 @@ function permissions(el, channel, actions) {
     const ow = draft.get(selected) || { allow: 0, deny: 0 };
     clear(grid,
       h("p", { class: "muted" }, role?.is_everyone
-        ? "Overrides for everyone. To make a private channel, deny View channel here and allow it for some roles."
-        : `Overrides for ${role?.name}. They win over @everyone's.`));
+        ? t("everyone_overrides_note")
+        : t("role_overrides_note", { name: role?.name })));
     for (const key of CHANNEL_PERM_KEYS) {
       const bit = PERMS[key];
       const value = ow.allow & bit ? "allow" : ow.deny & bit ? "deny" : "inherit";
@@ -127,13 +131,13 @@ function permissions(el, channel, actions) {
         drawGrid();
       };
       const btn = (v, glyph, label) => h("button", {
-        class: `tri ${v} ${value === v ? "on" : ""}`, type: "button", title: label, "aria-label": `${label}: ${LABELS[key].label}`,
+        class: `tri ${v} ${value === v ? "on" : ""}`, type: "button", title: label, "aria-label": t("tri_aria_label", { action: label, perm: labels[key].label }),
         "aria-pressed": String(value === v), disabled: v === "allow" && !(myPerms & bit) && value !== "allow",
         on: { click: () => set(v) },
       }, glyph);
       add(grid, h("div", { class: "perm-row" },
-        h("span", { class: "meta" }, h("span", { class: "name" }, LABELS[key].label), h("span", { class: "sub" }, LABELS[key].desc)),
-        h("span", { class: "tri-group", role: "group" }, btn("deny", "✕", "Deny"), btn("inherit", "／", "Inherit"), btn("allow", "✓", "Allow"))));
+        h("span", { class: "meta" }, h("span", { class: "name" }, labels[key].label), h("span", { class: "sub" }, labels[key].desc)),
+        h("span", { class: "tri-group", role: "group" }, btn("deny", "✕", t("deny_label")), btn("inherit", "／", t("inherit_label")), btn("allow", "✓", t("allow_label")))));
     }
     add(grid, h("div", { class: "row sticky-actions" },
       h("button", {
@@ -143,13 +147,13 @@ function permissions(el, channel, actions) {
             const overwrites = [...draft].map(([role_id, o]) => ({ role_id, ...o })).filter((o) => o.allow || o.deny);
             try {
               await actions.req(T.CHANNEL_UPDATE, { channel_id: ch.channel_id, overwrites });
-              toast(isPrivate({ ...ch, overwrites }) ? "Saved — this channel is now private" : "Saved");
+              toast(isPrivate({ ...ch, overwrites }) ? t("saved_private_toast") : t("saved_toast"));
             } catch (e) {
               toast(e.message, { error: true });
             }
           },
         },
-      }, "Save permissions")));
+      }, t("save_permissions_btn"))));
   };
 
   add(el, h("div", { class: "roles-layout" }, roleList, grid));

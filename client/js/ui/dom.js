@@ -1,6 +1,10 @@
 // Tiny DOM builder. Strings become text nodes, never HTML, so user content
 // can't inject markup.
 
+import { scopedT } from "../strings.js";
+
+const t = scopedT("ui/dom");
+
 export function h(tag, attrs = {}, ...children) {
   const el = document.createElement(tag);
   for (const [key, val] of Object.entries(attrs || {})) {
@@ -47,8 +51,8 @@ export function colorFor(name) {
 }
 
 export function displayName(user) {
-  if (user?.deleted) return "Deleted User";
-  return user?.display_name || user?.username || "Unknown user";
+  if (user?.deleted) return t("deleted_user");
+  return user?.display_name || user?.username || t("unknown_user");
 }
 
 // Where avatar images and files live: the server's https origin (same host as /ws).
@@ -110,8 +114,8 @@ export function fmtBytes(n) {
   return `${v < 10 ? v.toFixed(1) : Math.round(v)} ${units[i]}`;
 }
 
-const STATUS_LABEL = { online: "Online", idle: "Idle", dnd: "Do Not Disturb", offline: "Offline", invisible: "Invisible" };
-export const statusLabel = (s) => STATUS_LABEL[s] || "Offline";
+const STATUS_KEY = { online: "status_online", idle: "status_idle", dnd: "status_dnd", offline: "status_offline", invisible: "status_invisible" };
+export const statusLabel = (s) => t(STATUS_KEY[s] || "status_offline");
 
 // user: PublicUser (or anything with username/avatar_id/avatar_color).
 // status: null (no dot) or online | idle | dnd | offline.

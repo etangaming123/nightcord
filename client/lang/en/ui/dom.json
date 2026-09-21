@@ -1,0 +1,9 @@
+{
+  "deleted_user": "Deleted User",
+  "unknown_user": "Unknown user",
+  "status_online": "Online",
+  "status_idle": "Idle",
+  "status_dnd": "Do Not Disturb",
+  "status_offline": "Offline",
+  "status_invisible": "Invisible"
+}

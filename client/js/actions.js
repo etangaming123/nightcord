@@ -27,6 +27,10 @@ import { copyText, openProfile } from "./ui/profile.js";
 import { openSearch } from "./ui/search.js";
 import { userSettings } from "./ui/settings.js";
 import { openSwitcher } from "./ui/switcher.js";
+import { scopedT } from "./strings.js";
+
+const t = scopedT("actions");
+const tc = scopedT("common");
 
 const fail = (e) => toast(e.message, { error: true });
 
@@ -430,9 +434,9 @@ export function deleteMessage(m, skipConfirm = false) {
   });
   if (skipConfirm) { run().catch(fail); return; }
   confirmModal({
-    title: "Delete message?",
-    message: "This can't be undone. Tip: hold Shift while clicking delete to skip this.",
-    confirmLabel: "Delete",
+    title: t("delete_message_title"),
+    message: t("delete_message_body"),
+    confirmLabel: t("delete_action"),
     onConfirm: run,
   });
 }
@@ -475,16 +479,16 @@ export async function sendSticker(sticker) {
 export async function emojiInfo(emoji, anchor) {
   const body = h("div", { class: "emoji-info" },
     h("img", { class: "cemoji huge", src: anchor.src, alt: `:${emoji.name}:` }),
-    h("div", {}, h("strong", {}, `:${emoji.name}:`), h("p", { class: "muted small" }, "Loading…")));
+    h("div", {}, h("strong", {}, `:${emoji.name}:`), h("p", { class: "muted small" }, tc("loading"))));
   openPopover(anchor, body, { placement: "top" });
   try {
     const info = await req(T.EMOJI_INFO, { emoji_id: emoji.id });
     const note = info.is_member
-      ? `From ${info.guild.name}. You can use it anywhere.`
-      : info.guild ? `From ${info.guild.name}. Join that guild to use this emoji anywhere.` : "This emoji is from a guild you're not in.";
+      ? t("emoji_from_member", { guild: info.guild.name })
+      : info.guild ? t("emoji_from_other_guild", { guild: info.guild.name }) : t("emoji_from_unknown_guild");
     body.lastChild.lastChild.textContent = note;
   } catch (e) {
-    body.lastChild.lastChild.textContent = e.code === ERR.NOT_FOUND ? "This emoji was deleted." : e.message;
+    body.lastChild.lastChild.textContent = e.code === ERR.NOT_FOUND ? t("emoji_deleted") : e.message;
   }
 }
 
@@ -522,8 +526,8 @@ export async function jumpTo(messageId, channelId = state.channelId, guildId = u
   await openChannel(channelId, { around: messageId });
 }
 
-export const pinMessage = (m) => req(T.MESSAGE_PIN, { message_id: m.message_id }).then(() => toast("Pinned"), fail);
-export const unpinMessage = (m) => req(T.MESSAGE_UNPIN, { message_id: m.message_id }).then(() => toast("Unpinned"), fail);
+export const pinMessage = (m) => req(T.MESSAGE_PIN, { message_id: m.message_id }).then(() => toast(t("message_pinned")), fail);
+export const unpinMessage = (m) => req(T.MESSAGE_UNPIN, { message_id: m.message_id }).then(() => toast(t("message_unpinned")), fail);
 export const showPins = (anchor) => openPins(anchor, actions);
 export const showSearch = (initial) => openSearch(actions, initial);
 export const showSwitcher = () => openSwitcher(actions);
@@ -604,23 +608,23 @@ export function statusMenu(anchor) {
     invalidate("sidebar", "members", "header");
   }).catch(fail);
   openMenu(anchor, [
-    { label: "Online", icon: "🟢", checked: cur === "online", onClick: () => set("online") },
-    { label: "Idle", icon: "🌙", checked: cur === "idle", onClick: () => set("idle") },
-    { label: "Do Not Disturb", icon: "⛔", hint: "Mutes notifications", checked: cur === "dnd", onClick: () => set("dnd") },
-    { label: "Invisible", icon: "⚪", hint: "Appear offline", checked: cur === "invisible", onClick: () => set("invisible") },
+    { label: t("status_online"), icon: "🟢", checked: cur === "online", onClick: () => set("online") },
+    { label: t("status_idle"), icon: "🌙", checked: cur === "idle", onClick: () => set("idle") },
+    { label: t("status_dnd"), icon: "⛔", hint: t("status_dnd_hint"), checked: cur === "dnd", onClick: () => set("dnd") },
+    { label: t("status_invisible"), icon: "⚪", hint: t("status_invisible_hint"), checked: cur === "invisible", onClick: () => set("invisible") },
     "-",
     {
-      label: state.user.custom_status ? "Edit custom status" : "Set custom status", icon: "💬",
+      label: state.user.custom_status ? t("edit_custom_status") : t("set_custom_status"), icon: "💬",
       onClick: () => dialogs.customStatusDialog(state.user.custom_status, async (text) => {
         setSelf((await req(T.USER_UPDATE, { custom_status: text || null })).user);
       }),
     },
     state.user.custom_status ? {
-      label: "Clear custom status", icon: "✕",
+      label: t("clear_custom_status"), icon: "✕",
       onClick: async () => { try { setSelf((await req(T.USER_UPDATE, { custom_status: null })).user); } catch (e) { fail(e); } },
     } : null,
-    { label: "Edit profile", icon: "✎", onClick: () => openUserSettings("profile") },
-    { label: "Copy user ID", icon: "🆔", onClick: () => copyText(state.user.user_id, "User ID copied") },
+    { label: t("edit_profile"), icon: "✎", onClick: () => openUserSettings("profile") },
+    { label: t("copy_user_id"), icon: "🆔", onClick: () => copyText(state.user.user_id, t("copied_user_id")) },
   ], { placement: "top" });
 }
 
@@ -644,7 +648,7 @@ export const addGuild = () => dialogs.addGuildDialog(state, {
 
 export async function ghostJoin(guildId) {
   await joined((await req(T.GUILD_OWNER_OVERRIDE_JOIN, { guild_id: guildId })).guild);
-  toast("Joined as a ghost. Members can't see you, and you can't post.");
+  toast(t("ghost_joined"));
 }
 
 export async function updateGuild(patch) {
@@ -673,7 +677,7 @@ export async function openInvite(code) {
       },
     });
   } catch (e) {
-    toast(e.code === ERR.INVITE_EXPIRED ? "That invite has expired." : e.message, { error: true });
+    toast(e.code === ERR.INVITE_EXPIRED ? t("invite_expired") : e.message, { error: true });
   }
 }
 
@@ -717,11 +721,11 @@ function levelItems(targetId, { inherit }) {
   const p = pref(targetId);
   const set = (patch) => setNotifyPref(targetId, { level: p.level, muted: p.muted, ...patch });
   return [
-    { heading: "Notifications" },
+    { heading: t("notifications_heading") },
     inherit ? { label: inherit, checked: !p.level, onClick: () => set({ level: null }) } : null,
-    { label: "All messages", checked: p.level === "all" || (!inherit && !p.level), onClick: () => set({ level: "all" }) },
-    { label: "Only @mentions", checked: p.level === "mentions", onClick: () => set({ level: "mentions" }) },
-    { label: "Nothing", checked: p.level === "none", onClick: () => set({ level: "none" }) },
+    { label: t("notify_all_messages"), checked: p.level === "all" || (!inherit && !p.level), onClick: () => set({ level: "all" }) },
+    { label: t("notify_only_mentions"), checked: p.level === "mentions", onClick: () => set({ level: "mentions" }) },
+    { label: t("notify_nothing"), checked: p.level === "none", onClick: () => set({ level: "none" }) },
   ];
 }
 
@@ -739,18 +743,18 @@ export async function guildMenu(g, anchor) {
   if (state.guildId !== g.guild_id || state.view !== "guild") await openGuild(g.guild_id);
   const p = pref(g.guild_id);
   openMenu(anchor, [
-    { label: "Mark as read", icon: "✓", onClick: () => markGuildRead(g.guild_id) },
-    can("CREATE_INVITE") ? { label: "Invite people", icon: "✉", onClick: openInviteDialog } : null,
-    hasGuildSettings() ? { label: "Guild settings", icon: "⚙", onClick: () => openGuildSettings() } : null,
-    can("MANAGE_CHANNELS") ? { label: "Create channel", icon: "＋", onClick: () => createChannel() } : null,
-    can("MANAGE_CHANNELS") ? { label: "Create category", icon: "▤", onClick: () => createChannel({ kind: "category" }) } : null,
-    !g.ghost && can("CHANGE_NICKNAME") ? { label: "Change nickname", icon: "✎", onClick: () => changeNickname(state.user.user_id) } : null,
+    { label: t("mark_as_read"), icon: "✓", onClick: () => markGuildRead(g.guild_id) },
+    can("CREATE_INVITE") ? { label: t("invite_people"), icon: "✉", onClick: openInviteDialog } : null,
+    hasGuildSettings() ? { label: t("guild_settings"), icon: "⚙", onClick: () => openGuildSettings() } : null,
+    can("MANAGE_CHANNELS") ? { label: t("create_channel"), icon: "＋", onClick: () => createChannel() } : null,
+    can("MANAGE_CHANNELS") ? { label: t("create_category"), icon: "▤", onClick: () => createChannel({ kind: "category" }) } : null,
+    !g.ghost && can("CHANGE_NICKNAME") ? { label: t("change_nickname"), icon: "✎", onClick: () => changeNickname(state.user.user_id) } : null,
     "-",
-    { label: p.muted ? "Unmute guild" : "Mute guild", icon: p.muted ? "🔔" : "🔕", onClick: () => setNotifyPref(g.guild_id, { level: p.level, muted: !p.muted }) },
+    { label: p.muted ? t("unmute_guild") : t("mute_guild"), icon: p.muted ? "🔔" : "🔕", onClick: () => setNotifyPref(g.guild_id, { level: p.level, muted: !p.muted }) },
     ...levelItems(g.guild_id, { inherit: null }),
     "-",
-    { label: "Copy guild ID", icon: "🆔", onClick: () => copyText(g.guild_id, "Guild ID copied") },
-    isGuildOwner(g) ? null : { label: g.ghost ? "Leave (ghost)" : "Leave guild", icon: "⇥", danger: true, onClick: () => leaveGuild(g) },
+    { label: t("copy_guild_id"), icon: "🆔", onClick: () => copyText(g.guild_id, t("copied_guild_id")) },
+    isGuildOwner(g) ? null : { label: g.ghost ? t("leave_ghost") : t("leave_guild"), icon: "⇥", danger: true, onClick: () => leaveGuild(g) },
   ], { placement: anchor instanceof Element ? "bottom" : "right" });
 }
 
@@ -851,19 +855,18 @@ export function channelMenu(c, anchor) {
   const p = pref(c.channel_id);
   const manage = can("MANAGE_CHANNELS", c);
   const isCat = c.kind === "category";
-  const noun = isCat ? "category" : "channel";
   openMenu(anchor, [
-    isCat || c.kind === "voice" ? null : { label: "Mark as read", icon: "✓", disabled: !isUnread(c.channel_id), onClick: () => markChannelRead(c.channel_id) },
-    c.kind === "text" ? { label: p.muted ? "Unmute channel" : "Mute channel", icon: p.muted ? "🔔" : "🔕", onClick: () => setNotifyPref(c.channel_id, { level: p.level, muted: !p.muted }) } : null,
-    ...(c.kind === "text" ? levelItems(c.channel_id, { inherit: "Use guild default" }) : []),
-    isCat && can("MANAGE_CHANNELS") ? { label: "Create channel here", icon: "＋", onClick: () => createChannel({ parentId: c.channel_id }) } : null,
+    isCat || c.kind === "voice" ? null : { label: t("mark_as_read"), icon: "✓", disabled: !isUnread(c.channel_id), onClick: () => markChannelRead(c.channel_id) },
+    c.kind === "text" ? { label: p.muted ? t("unmute_channel") : t("mute_channel"), icon: p.muted ? "🔔" : "🔕", onClick: () => setNotifyPref(c.channel_id, { level: p.level, muted: !p.muted }) } : null,
+    ...(c.kind === "text" ? levelItems(c.channel_id, { inherit: t("use_guild_default") }) : []),
+    isCat && can("MANAGE_CHANNELS") ? { label: t("create_channel_here"), icon: "＋", onClick: () => createChannel({ parentId: c.channel_id }) } : null,
     manage ? "-" : null,
-    manage ? { label: `Edit ${noun}`, icon: "⚙", onClick: () => openChannelSettings(c) } : null,
-    manage ? { label: "Move up", icon: "↑", onClick: () => moveChannel(c, -1) } : null,
-    manage ? { label: "Move down", icon: "↓", onClick: () => moveChannel(c, 1) } : null,
-    manage ? { label: `Delete ${noun}`, icon: "🗑", danger: true, onClick: () => dialogs.deleteChannelDialog(c, () => req(T.CHANNEL_DELETE, { channel_id: c.channel_id })) } : null,
+    manage ? { label: isCat ? t("edit_category") : t("edit_channel"), icon: "⚙", onClick: () => openChannelSettings(c) } : null,
+    manage ? { label: t("move_up"), icon: "↑", onClick: () => moveChannel(c, -1) } : null,
+    manage ? { label: t("move_down"), icon: "↓", onClick: () => moveChannel(c, 1) } : null,
+    manage ? { label: isCat ? t("delete_category") : t("delete_channel"), icon: "🗑", danger: true, onClick: () => dialogs.deleteChannelDialog(c, () => req(T.CHANNEL_DELETE, { channel_id: c.channel_id })) } : null,
     "-",
-    { label: "Copy channel ID", icon: "🆔", onClick: () => copyText(c.channel_id, "Channel ID copied") },
+    { label: t("copy_channel_id"), icon: "🆔", onClick: () => copyText(c.channel_id, t("copied_channel_id")) },
   ], { placement: "right" });
 }
 
@@ -950,18 +953,18 @@ export function leaveDm(ch) {
     invalidate();
   };
   if (ch.kind === "dm") { run().catch(fail); return; }
-  confirmModal({ title: "Leave group?", message: "You won't get its messages unless someone adds you back.", confirmLabel: "Leave group", onConfirm: run });
+  confirmModal({ title: t("leave_group_title"), message: t("leave_group_body"), confirmLabel: t("leave_group"), onConfirm: run });
 }
 
 export function dmMenu(ch, anchor) {
   const p = pref(ch.channel_id);
   openMenu(anchor, [
-    { label: "Mark as read", icon: "✓", disabled: !isUnread(ch.channel_id), onClick: () => markChannelRead(ch.channel_id) },
-    { label: p.muted ? "Unmute conversation" : "Mute conversation", icon: p.muted ? "🔔" : "🔕", onClick: () => setNotifyPref(ch.channel_id, { level: p.level, muted: !p.muted }) },
-    ch.kind === "group_dm" ? { label: "Rename group", icon: "✎", onClick: () => renameGroup(ch) } : null,
-    ch.kind === "group_dm" ? { label: "Add people", icon: "＋", onClick: () => addToGroup(ch) } : null,
+    { label: t("mark_as_read"), icon: "✓", disabled: !isUnread(ch.channel_id), onClick: () => markChannelRead(ch.channel_id) },
+    { label: p.muted ? t("unmute_conversation") : t("mute_conversation"), icon: p.muted ? "🔔" : "🔕", onClick: () => setNotifyPref(ch.channel_id, { level: p.level, muted: !p.muted }) },
+    ch.kind === "group_dm" ? { label: t("rename_group"), icon: "✎", onClick: () => renameGroup(ch) } : null,
+    ch.kind === "group_dm" ? { label: t("add_people"), icon: "＋", onClick: () => addToGroup(ch) } : null,
     "-",
-    { label: ch.kind === "dm" ? "Close conversation" : "Leave group", icon: "✕", danger: ch.kind !== "dm", onClick: () => leaveDm(ch) },
+    { label: ch.kind === "dm" ? t("close_conversation") : t("leave_group"), icon: "✕", danger: ch.kind !== "dm", onClick: () => leaveDm(ch) },
   ], { placement: "right" });
 }
 
@@ -1021,18 +1024,18 @@ export function changeNickname(userId) {
 export function moderationItems(userId) {
   const m = memberById(userId);
   const nick = m && state.view === "guild" && userId !== state.user.user_id && can("MANAGE_NICKNAMES") && outranks(userId)
-    ? [{ label: "Change nickname", icon: "✎", onClick: () => changeNickname(userId) }] : [];
+    ? [{ label: t("change_nickname"), icon: "✎", onClick: () => changeNickname(userId) }] : [];
   if (!m || state.view !== "guild" || !outranks(userId)) return nick;
   const user = userById(userId) || m.user;
   const gid = state.guildId;
   const timedOut = m.timed_out_until && new Date(m.timed_out_until) > new Date();
   return [
     can("MODERATE_MEMBERS") ? (timedOut
-      ? { label: "Remove timeout", icon: "⏳", onClick: () => req(T.MEMBER_TIMEOUT, { guild_id: gid, user_id: userId, duration_seconds: null }).then((r) => upsertMember(r.member), fail) }
-      : { label: `Time out ${displayName(user)}`, icon: "⏳", onClick: () => dialogs.timeoutDialog(user, async (seconds, reason) => upsertMember((await req(T.MEMBER_TIMEOUT, { guild_id: gid, user_id: userId, duration_seconds: seconds, reason })).member)) })
+      ? { label: t("remove_timeout"), icon: "⏳", onClick: () => req(T.MEMBER_TIMEOUT, { guild_id: gid, user_id: userId, duration_seconds: null }).then((r) => upsertMember(r.member), fail) }
+      : { label: t("time_out_user", { name: displayName(user) }), icon: "⏳", onClick: () => dialogs.timeoutDialog(user, async (seconds, reason) => upsertMember((await req(T.MEMBER_TIMEOUT, { guild_id: gid, user_id: userId, duration_seconds: seconds, reason })).member)) })
       : null,
-    can("KICK_MEMBERS") ? { label: `Kick ${displayName(user)}`, icon: "👢", danger: true, onClick: () => dialogs.kickDialog(user, (reason) => req(T.MEMBER_KICK, { guild_id: gid, user_id: userId, reason })) } : null,
-    can("BAN_MEMBERS") ? { label: `Ban ${displayName(user)}`, icon: "🔨", danger: true, onClick: () => dialogs.banDialog(user, (reason, deleteSeconds) => req(T.MEMBER_BAN, { guild_id: gid, user_id: userId, reason, delete_seconds: deleteSeconds })) } : null,
+    can("KICK_MEMBERS") ? { label: t("kick_user", { name: displayName(user) }), icon: "👢", danger: true, onClick: () => dialogs.kickDialog(user, (reason) => req(T.MEMBER_KICK, { guild_id: gid, user_id: userId, reason })) } : null,
+    can("BAN_MEMBERS") ? { label: t("ban_user", { name: displayName(user) }), icon: "🔨", danger: true, onClick: () => dialogs.banDialog(user, (reason, deleteSeconds) => req(T.MEMBER_BAN, { guild_id: gid, user_id: userId, reason, delete_seconds: deleteSeconds })) } : null,
     ...nick,
   ].filter(Boolean);
 }
@@ -1047,12 +1050,12 @@ export function staffItems(userId) {
 export function memberMenu(userId, anchor) {
   const me = userId === state.user.user_id;
   openMenu(anchor, [
-    { label: "Profile", icon: "👤", onClick: () => openProfileAction(userId, anchor instanceof Element ? anchor : { ...anchor }) },
-    me ? null : { label: "Message", icon: "💬", onClick: () => messageUser(userId) },
+    { label: t("profile"), icon: "👤", onClick: () => openProfileAction(userId, anchor instanceof Element ? anchor : { ...anchor }) },
+    me ? null : { label: t("message_user"), icon: "💬", onClick: () => messageUser(userId) },
     ...(moderationItems(userId).length ? ["-", ...moderationItems(userId)] : []),
-    ...(staffItems(userId).length ? ["-", { heading: "Server staff" }, ...staffItems(userId)] : []),
+    ...(staffItems(userId).length ? ["-", { heading: t("server_staff_heading") }, ...staffItems(userId)] : []),
     "-",
-    { label: "Copy user ID", icon: "🆔", onClick: () => copyText(userId, "User ID copied") },
+    { label: t("copy_user_id"), icon: "🆔", onClick: () => copyText(userId, t("copied_user_id")) },
   ], { placement: "left" });
 }
 

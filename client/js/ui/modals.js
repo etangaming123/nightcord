@@ -2,6 +2,10 @@
 // No window.alert/confirm/prompt anywhere.
 
 import { $, add, clear, h } from "./dom.js";
+import { scopedT } from "../strings.js";
+
+const t = scopedT("ui/modals");
+const tc = scopedT("common");
 
 let current = null;
 
@@ -45,7 +49,8 @@ export function openModal({ title, subtitle, content, actions = [], onClose, wid
 
 // A form modal. onSubmit(formData, form) may throw/reject to show an error
 // inline; resolve to close (or resolve `false` to keep it open).
-export function formModal({ title, subtitle, fields, submitLabel = "Save", danger = false, onSubmit, wide = false }) {
+export function formModal({ title, subtitle, fields, submitLabel, danger = false, onSubmit, wide = false }) {
+  submitLabel ??= tc("save");
   const error = h("div", { class: "error-box", hidden: true });
   const submit = h("button", { type: "submit", class: `btn ${danger ? "danger" : "primary"}` }, submitLabel);
   const form = h("form", { class: "stack", id: "modal-form" }, fields, error);
@@ -68,11 +73,12 @@ export function formModal({ title, subtitle, fields, submitLabel = "Save", dange
     subtitle,
     wide,
     content: form,
-    actions: [h("button", { type: "button", class: "btn", on: { click: closeModal } }, "Cancel"), submit],
+    actions: [h("button", { type: "button", class: "btn", on: { click: closeModal } }, tc("cancel")), submit],
   });
 }
 
-export function confirmModal({ title, message, confirmLabel = "Confirm", danger = true, onConfirm, fields = [] }) {
+export function confirmModal({ title, message, confirmLabel, danger = true, onConfirm, fields = [] }) {
+  confirmLabel ??= tc("confirm");
   return formModal({ title, subtitle: message, fields, submitLabel: confirmLabel, danger, onSubmit: onConfirm });
 }
 
@@ -190,7 +196,7 @@ export function openFullscreen({ sections, initial, onClose, title }) {
     h("div", { class: "fs-side" }, nav),
     h("div", { class: "fs-main" },
       body,
-      h("button", { class: "fs-close", type: "button", title: "Close (Esc)", "aria-label": "Close", on: { click: closeFullscreen } }, "✕")));
+      h("button", { class: "fs-close", type: "button", title: t("close_esc_title"), "aria-label": tc("close"), on: { click: closeFullscreen } }, "✕")));
   let active = null;
   const show = (id) => {
     const section = sections.find((s) => s.id === id);

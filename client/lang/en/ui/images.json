@@ -1,0 +1,5 @@
+{
+  "shrink_failed": "Couldn't shrink that image enough; try a smaller one.",
+  "pick_image_type": "Pick a PNG, JPEG, GIF or WebP image.",
+  "read_failed": "That image couldn't be read."
+}

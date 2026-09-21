@@ -6,6 +6,9 @@ import { renderChat, renderChatHeader, renderTyping } from "./ui/chat.js";
 import { renderComposer } from "./ui/composer.js";
 import { renderMembers } from "./ui/members.js";
 import { renderChannelSidebar, renderRail } from "./ui/sidebar.js";
+import { scopedT } from "./strings.js";
+
+const t = scopedT("render");
 
 let actions = null;
 export const setActions = (a) => { actions = a; };
@@ -54,6 +57,6 @@ function renderTitle() {
   for (const id of state.guilds.keys()) unread += guildBadge(id).mentions;
   const ch = currentChannel();
   const g = currentGuild();
-  const where = ch ? `${channelTitle(ch)}${g ? ` · ${g.name}` : ""}` : g ? g.name : state.view === "home" ? "Direct Messages" : "";
-  document.title = `${unread ? `(${unread}) ` : ""}${where ? `${where} — ` : ""}Nightcord`;
+  const where = ch ? `${channelTitle(ch)}${g ? ` · ${g.name}` : ""}` : g ? g.name : state.view === "home" ? t("direct_messages") : "";
+  document.title = `${unread ? `(${unread}) ` : ""}${where ? `${where} — ` : ""}${t("brand")}`;
 }

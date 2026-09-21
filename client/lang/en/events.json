@@ -1,0 +1,11 @@
+{
+  "channel_access_removed": "You no longer have access to that channel.",
+  "guild_kicked": "You were kicked from {name}.",
+  "guild_banned": "You were banned from {name}.",
+  "guild_deleted": "{name} was deleted.",
+  "guild_left": "You left {name}.",
+  "channel_gone": "This channel is gone or hidden from you now.",
+  "user_muted": "You've been muted on this server by its staff.",
+  "user_unmuted": "You're no longer muted.",
+  "account_request_pending": "{username} is asking for an account — see User settings → Accounts."
+}

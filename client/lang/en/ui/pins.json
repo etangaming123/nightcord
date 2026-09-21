@@ -1,0 +1,9 @@
+{
+  "heading": "Pinned messages",
+  "empty_body": "This channel doesn't have any pinned messages yet.",
+  "empty_hint_can_unpin": "Hover over a message and press 📌 to pin it.",
+  "empty_hint_cannot_unpin": "Moderators can pin important messages here.",
+  "attachment_count": { "one": "📎 {count} attachment", "other": "📎 {count} attachments" },
+  "jump": "Jump",
+  "unpin": "Unpin"
+}

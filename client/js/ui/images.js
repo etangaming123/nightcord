@@ -6,6 +6,9 @@
 
 import { LIMITS } from "../protocol.js";
 import { uploadMedia } from "../uploads.js";
+import { scopedT } from "../strings.js";
+
+const t = scopedT("ui/images");
 
 // kind -> how to fit: "cover" crops to the box's aspect ratio, "contain" fits inside it.
 export const SHAPES = {
@@ -31,14 +34,14 @@ export async function encode(canvas, maxBytes) {
       if (type === "image/png") break; // quality doesn't apply
     }
   }
-  throw new Error("Couldn't shrink that image enough; try a smaller one.");
+  throw new Error(t("shrink_failed"));
 }
 
 // Returns a Blob ready to upload for `kind`.
 // still: always re-encode on a canvas (drops animation).
 export async function prepareImage(file, kind, { still = false } = {}) {
   if (!file.type.startsWith("image/") || file.type === "image/svg+xml") {
-    throw new Error("Pick a PNG, JPEG, GIF or WebP image.");
+    throw new Error(t("pick_image_type"));
   }
   const shape = SHAPES[kind];
   const cap = LIMITS.MEDIA_KINDS[kind];
@@ -46,7 +49,7 @@ export async function prepareImage(file, kind, { still = false } = {}) {
   try {
     bitmap = await createImageBitmap(file);
   } catch {
-    throw new Error("That image couldn't be read.");
+    throw new Error(t("read_failed"));
   }
   const { width, height } = bitmap;
   const maxDim = cap.maxDim || Infinity;

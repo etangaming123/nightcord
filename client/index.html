@@ -11,24 +11,24 @@
   <script type="module" src="js/main.js"></script>
 </head>
 <body>
-  <noscript>Nightcord needs JavaScript.</noscript>
+  <noscript data-i18n="noscript">Nightcord needs JavaScript.</noscript>
 
   <!-- Pick / add a server -->
   <section id="screen-connect" class="screen" hidden>
     <div class="card">
-      <h1 class="brand"><span class="brand-mark" aria-hidden="true"></span>Nightcord</h1>
-      <p class="muted">Connect to a Nightcord server.</p>
+      <h1 class="brand"><span class="brand-mark" aria-hidden="true"></span><span data-i18n="brand">Nightcord</span></h1>
+      <p class="muted" data-i18n="connect_tagline">Connect to a Nightcord server.</p>
       <ul id="saved-servers" class="saved-servers"></ul>
       <form id="connect-form" class="stack" autocomplete="on">
-        <label for="connect-address">Server address</label>
+        <label for="connect-address" data-i18n="server_address_label">Server address</label>
         <div class="url-field">
           <span id="connect-scheme" class="url-prefix" aria-hidden="true">https://</span>
-          <input id="connect-address" name="address" placeholder="chat.example.com:8765" required spellcheck="false" autocapitalize="off" autocomplete="url" inputmode="url">
+          <input id="connect-address" name="address" data-i18n-placeholder="server_address_placeholder" placeholder="chat.example.com:8765" required spellcheck="false" autocapitalize="off" autocomplete="url" inputmode="url">
         </div>
         <div class="chips">
-          <button type="button" class="chip" id="connect-localhost" title="Fill in a server running on this computer">localhost:8765</button>
+          <button type="button" class="chip" id="connect-localhost" data-i18n-title="localhost_title" title="Fill in a server running on this computer">localhost:8765</button>
         </div>
-        <button type="submit" class="btn primary">Connect</button>
+        <button type="submit" class="btn primary" data-i18n="connect_submit">Connect</button>
       </form>
       <div id="connect-error" class="error-box" hidden></div>
     </div>
@@ -37,53 +37,53 @@
   <!-- First-run setup: claim a server that has no owner yet (PROTOCOL.md §8a) -->
   <section id="screen-setup" class="screen" hidden>
     <div class="card wide">
-      <button id="setup-cancel" class="btn link" type="button">← Servers</button>
-      <h1 class="server-title">Set up your server</h1>
+      <button id="setup-cancel" class="btn link" type="button" data-i18n="back_to_servers">← Servers</button>
+      <h1 class="server-title" data-i18n="setup_title">Set up your server</h1>
       <p id="setup-server-url" class="muted small mono"></p>
-      <ol id="setup-steps" class="steps" aria-label="Setup steps">
-        <li>Setup code</li><li>Owner account</li><li>Server settings</li>
+      <ol id="setup-steps" class="steps" data-i18n-aria-label="setup_steps_aria" aria-label="Setup steps">
+        <li data-i18n="step_setup_code">Setup code</li><li data-i18n="step_owner_account">Owner account</li><li data-i18n="step_server_settings">Server settings</li>
       </ol>
       <form id="setup-form" class="stack" autocomplete="off" novalidate>
         <div class="setup-step stack">
-          <p class="muted">This server has no owner yet. The server printed a one-time <strong>setup code</strong> in its console when it started.</p>
-          <label>Setup code
-            <input name="code" required placeholder="ABCD-EFGH-JKLM" spellcheck="false" autocapitalize="characters" class="mono">
+          <p class="muted"><span data-i18n="setup_code_intro_before">This server has no owner yet. The server printed a one-time </span><strong data-i18n="setup_code_intro_strong">setup code</strong><span data-i18n="setup_code_intro_after"> in its console when it started.</span></p>
+          <label><span data-i18n="setup_code_label">Setup code</span>
+            <input name="code" required data-i18n-placeholder="setup_code_placeholder" placeholder="ABCD-EFGH-JKLM" spellcheck="false" autocapitalize="characters" class="mono">
           </label>
         </div>
         <div class="setup-step stack" hidden>
-          <p class="muted">Create the server-owner account. It manages accounts, server settings and can read any guild.</p>
-          <label>Username
+          <p class="muted" data-i18n="owner_account_intro">Create the server-owner account. It manages accounts, server settings and can read any guild.</p>
+          <label><span data-i18n="username_label">Username</span>
             <input name="username" required minlength="3" maxlength="32" autocomplete="username" spellcheck="false" autocapitalize="off">
           </label>
-          <label>Password
+          <label><span data-i18n="password_label">Password</span>
             <input name="password" type="password" required minlength="8" maxlength="72" autocomplete="new-password">
           </label>
-          <label>Confirm password
+          <label><span data-i18n="confirm_password_label">Confirm password</span>
             <input name="confirm" type="password" required minlength="8" maxlength="72" autocomplete="new-password">
           </label>
         </div>
         <div class="setup-step stack" hidden>
-          <label>Server name
+          <label><span data-i18n="server_name_label">Server name</span>
             <input name="server_name" required maxlength="64">
           </label>
-          <label>Who can create accounts?
+          <label><span data-i18n="account_creation_label">Who can create accounts?</span>
             <select name="account_creation">
-              <option value="on">Anyone (open registration)</option>
-              <option value="request">People who ask — I approve each one</option>
-              <option value="off">Nobody (closed)</option>
+              <option value="on" data-i18n="account_creation_open">Anyone (open registration)</option>
+              <option value="request" data-i18n="account_creation_request">People who ask — I approve each one</option>
+              <option value="off" data-i18n="account_creation_closed">Nobody (closed)</option>
             </select>
           </label>
-          <label>Who can create guilds?
+          <label><span data-i18n="guild_creation_label">Who can create guilds?</span>
             <select name="guild_creation">
-              <option value="on">Everyone</option>
-              <option value="off">Only me</option>
+              <option value="on" data-i18n="guild_creation_everyone">Everyone</option>
+              <option value="off" data-i18n="guild_creation_only_me">Only me</option>
             </select>
           </label>
-          <label class="check"><input type="checkbox" name="guild_list_visible" checked> Allow a public guild directory</label>
-          <p class="muted small">You can change all of this later in User settings → Server.</p>
+          <label class="check"><input type="checkbox" name="guild_list_visible" checked> <span data-i18n="guild_directory_label">Allow a public guild directory</span></label>
+          <p class="muted small" data-i18n="setup_change_later_note">You can change all of this later in User settings → Server.</p>
         </div>
         <div class="row end">
-          <button id="setup-back" class="btn" type="button" hidden>Back</button>
+          <button id="setup-back" class="btn" type="button" hidden data-i18n="back">Back</button>
           <button id="setup-next" class="btn primary" type="submit">Continue</button>
         </div>
       </form>
@@ -94,14 +94,14 @@
   <!-- The server's Terms of Service / Privacy Policy (PROTOCOL.md §8b) -->
   <section id="screen-legal" class="screen" hidden>
     <div class="card wide">
-      <button id="legal-back" class="btn link" type="button">← Servers</button>
+      <button id="legal-back" class="btn link" type="button" data-i18n="back_to_servers">← Servers</button>
       <h1 id="legal-server-name" class="server-title"></h1>
-      <p class="muted">Before you join, read this server's rules. You'll be asked to accept them when you create an account.</p>
+      <p class="muted" data-i18n="legal_intro">Before you join, read this server's rules. You'll be asked to accept them when you create an account.</p>
       <div id="legal-tabs" class="tabs" role="tablist"></div>
       <div id="legal-body" class="legal-doc scroll" tabindex="0"></div>
       <div class="row end">
-        <button id="legal-decline" class="btn" type="button">I don't agree</button>
-        <button id="legal-accept" class="btn primary" type="button">I agree</button>
+        <button id="legal-decline" class="btn" type="button" data-i18n="legal_disagree">I don't agree</button>
+        <button id="legal-accept" class="btn primary" type="button" data-i18n="legal_agree">I agree</button>
       </div>
     </div>
   </section>
@@ -109,18 +109,18 @@
   <!-- Log in / register on the chosen server -->
   <section id="screen-auth" class="screen" hidden>
     <div class="card">
-      <button id="auth-back" class="btn link" type="button">← Servers</button>
+      <button id="auth-back" class="btn link" type="button" data-i18n="back_to_servers">← Servers</button>
       <h1 id="auth-server-name" class="server-title"></h1>
       <p id="auth-server-url" class="muted small mono"></p>
       <div id="auth-tabs" class="tabs" role="tablist"></div>
       <form id="auth-form" class="stack">
-        <label>Username
+        <label><span data-i18n="username_label">Username</span>
           <input name="username" autocomplete="username" required minlength="3" maxlength="32" spellcheck="false" autocapitalize="off">
         </label>
-        <label>Password
+        <label><span data-i18n="password_label">Password</span>
           <input name="password" type="password" autocomplete="current-password" required minlength="8">
         </label>
-        <label id="auth-note-field" hidden>Note for the server owner <span class="muted">(optional)</span>
+        <label id="auth-note-field" hidden><span data-i18n="note_for_owner">Note for the server owner</span> <span class="muted" data-i18n="note_optional">(optional)</span>
           <textarea name="note" rows="2" maxlength="500"></textarea>
         </label>
         <button type="submit" class="btn primary" id="auth-submit">Log in</button>
@@ -131,8 +131,8 @@
 
   <!-- Main app -->
   <div id="app" hidden>
-    <nav id="guild-rail" aria-label="Guilds"></nav>
-    <aside id="channel-sidebar" aria-label="Channels">
+    <nav id="guild-rail" data-i18n-aria-label="guilds_aria" aria-label="Guilds"></nav>
+    <aside id="channel-sidebar" data-i18n-aria-label="channels_aria" aria-label="Channels">
       <header id="guild-header"></header>
       <div id="channel-list" class="scroll"></div>
       <footer id="user-panel"></footer>
@@ -144,7 +144,7 @@
       <form id="composer" autocomplete="off"></form>
       <div id="typing" aria-live="polite"></div>
     </main>
-    <aside id="member-list" class="scroll" aria-label="Members"></aside>
+    <aside id="member-list" class="scroll" data-i18n-aria-label="members_aria" aria-label="Members"></aside>
     <div id="drawer-scrim" hidden></div>
   </div>
 

@@ -1,0 +1,10 @@
+{
+  "preset_default": "Default",
+  "preset_midnight": "Midnight",
+  "preset_ash": "Ash",
+  "preset_forest": "Forest",
+  "preset_ocean": "Ocean",
+  "preset_sunset": "Sunset",
+  "preset_sakura": "Sakura",
+  "preset_custom": "Custom gradient"
+}

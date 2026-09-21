@@ -2,6 +2,9 @@
 // requests carry an `id`, responses echo it; frames without an id are events.
 
 import { AUTH_OK_TYPES, ERR, T } from "./protocol.js";
+import { scopedT } from "./strings.js";
+
+const t = scopedT("connection");
 
 const REQUEST_TIMEOUT_MS = 15000;
 const BACKOFF_START_MS = 1000;
@@ -19,7 +22,7 @@ export class NightcordError extends Error {
 // Returns the canonical ws(s)://host[:port]/ws URL, or throws.
 export function normalizeServerUrl(input) {
   let s = String(input || "").trim();
-  if (!s) throw new Error("Enter a server address");
+  if (!s) throw new Error(t("enter_server_address"));
   if (/^https?:\/\//i.test(s)) s = s.replace(/^http/i, "ws");
   if (!/^wss?:\/\//i.test(s)) {
     const host = s.split("/")[0].split(":")[0];
@@ -80,7 +83,7 @@ export class Connection extends EventTarget {
         this.#failPending();
         if (!settled) {
           settled = true;
-          reject(new NightcordError(ERR.DISCONNECTED, "Could not connect to the server"));
+          reject(new NightcordError(ERR.DISCONNECTED, t("could_not_connect")));
           return;
         }
         this.#emit("disconnected", { code: e.code, reason: e.reason });
@@ -104,13 +107,13 @@ export class Connection extends EventTarget {
   // a NightcordError carrying the server's error code.
   request(type, payload = {}) {
     if (!this.isOpen) {
-      return Promise.reject(new NightcordError(ERR.DISCONNECTED, "Not connected"));
+      return Promise.reject(new NightcordError(ERR.DISCONNECTED, t("not_connected")));
     }
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new NightcordError(ERR.TIMEOUT, "The server didn't respond"));
+        reject(new NightcordError(ERR.TIMEOUT, t("server_no_response")));
       }, REQUEST_TIMEOUT_MS);
       this.pending.set(id, { type, resolve, reject, timer });
       this.ws.send(JSON.stringify({ type, payload, id }));
@@ -152,7 +155,7 @@ export class Connection extends EventTarget {
   #failPending() {
     for (const { reject, timer } of this.pending.values()) {
       clearTimeout(timer);
-      reject(new NightcordError(ERR.DISCONNECTED, "Connection lost"));
+      reject(new NightcordError(ERR.DISCONNECTED, t("connection_lost")));
     }
     this.pending.clear();
   }

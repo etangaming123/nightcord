@@ -5,6 +5,9 @@ import { T } from "../protocol.js";
 import { dmTitle, nameOf, state, userById } from "../state.js";
 import { avatar, clear, h, initials } from "./dom.js";
 import { closeModal, openModal } from "./modals.js";
+import { scopedT } from "../strings.js";
+
+const t = scopedT("ui/switcher");
 
 // guild_id -> channels, fetched when the switcher opens.
 const channelCache = new Map();
@@ -41,7 +44,7 @@ function entries() {
     const other = ch.kind === "dm" ? ch.recipients.find((u) => u.user_id !== state.user.user_id) : null;
     if (other) seen.add(other.user_id);
     out.push({
-      kind: other ? "person" : "group", label: dmTitle(ch), sub: other ? other.username : "Group",
+      kind: other ? "person" : "group", label: dmTitle(ch), sub: other ? other.username : t("group_label"),
       icon: other ? avatar(userById(other.user_id) || other, { size: "xs" }) : h("span", { class: "sw-hash", "aria-hidden": "true" }, "👥"),
       go: (a) => a.openDm(ch.channel_id),
     });
@@ -62,7 +65,7 @@ export function openSwitcher(actions) {
       actions.req(T.CHANNEL_LIST, { guild_id: g.guild_id }).then(({ channels }) => { channelCache.set(g.guild_id, channels); draw(); }).catch(() => {});
     }
   }
-  const input = h("input", { type: "text", placeholder: "Where would you like to go?", "aria-label": "Search channels, people and guilds", spellcheck: "false", autocomplete: "off" });
+  const input = h("input", { type: "text", placeholder: t("search_placeholder"), "aria-label": t("search_aria_label"), spellcheck: "false", autocomplete: "off" });
   const list = h("div", { class: "switcher-list", role: "listbox" });
   let index = 0;
   let items = [];
@@ -83,7 +86,7 @@ export function openSwitcher(actions) {
       class: `sw-item ${i === index ? "active" : ""}`, role: "option", "aria-selected": String(i === index),
       on: { mousedown: (ev) => { ev.preventDefault(); go(e); }, mousemove: () => { if (index !== i) { index = i; draw(); } } },
     }, e.icon, h("span", { class: "sw-label" }, e.label), e.sub ? h("span", { class: "sw-sub" }, e.sub) : null))
-      : h("p", { class: "muted pad" }, "Nothing matches."));
+      : h("p", { class: "muted pad" }, t("nothing_matches")));
   }
   input.addEventListener("input", () => { index = 0; draw(); });
   input.addEventListener("keydown", (e) => {
@@ -97,8 +100,8 @@ export function openSwitcher(actions) {
     }
   });
   openModal({
-    title: "Quick switcher",
-    content: [input, list, h("p", { class: "muted small sw-tip" }, "Tip: start with # for channels, @ for people, * for guilds.")],
+    title: t("modal_title"),
+    content: [input, list, h("p", { class: "muted small sw-tip" }, t("tip"))],
     cls: "switcher",
   });
   input.focus();

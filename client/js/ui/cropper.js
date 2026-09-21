@@ -9,6 +9,10 @@ import { LIMITS } from "../protocol.js";
 import { h } from "./dom.js";
 import { SHAPES, encode } from "./images.js";
 import { closeModal, openModal } from "./modals.js";
+import { scopedT } from "../strings.js";
+
+const t = scopedT("ui/cropper");
+const tc = scopedT("common");
 
 const VIEW_W = 380; // the crop box on screen; the output is `kind`'s own size
 const MAX_ZOOM = 4;
@@ -31,9 +35,9 @@ export function cropImage(file, kind, { allowAnimated = false } = {}) {
 function openCropper(bitmap, file, kind, shape, allowAnimated, finish) {
   const viewW = Math.min(VIEW_W, shape.w);
   const viewH = Math.round(viewW * shape.h / shape.w);
-  const canvas = h("canvas", { width: viewW, height: viewH, class: "cropper-canvas", title: "Drag to move" });
+  const canvas = h("canvas", { width: viewW, height: viewH, class: "cropper-canvas", title: t("drag_to_move") });
   const ctx = canvas.getContext("2d");
-  const zoom = h("input", { type: "range", min: "1", max: String(MAX_ZOOM), step: "0.01", value: "1", class: "cropper-zoom", "aria-label": "Zoom" });
+  const zoom = h("input", { type: "range", min: "1", max: String(MAX_ZOOM), step: "0.01", value: "1", class: "cropper-zoom", "aria-label": t("zoom_aria") });
 
   const min = Math.max(viewW / bitmap.width, viewH / bitmap.height);
   let scale = min;
@@ -87,7 +91,7 @@ function openCropper(bitmap, file, kind, shape, allowAnimated, finish) {
     zoomTo(next);
   }, { passive: false });
 
-  const apply = h("button", { class: "btn primary", type: "button" }, "Apply");
+  const apply = h("button", { class: "btn primary", type: "button" }, t("apply"));
   apply.addEventListener("click", async () => {
     apply.disabled = true;
     const out = h("canvas", { width: shape.w, height: shape.h });
@@ -106,16 +110,16 @@ function openCropper(bitmap, file, kind, shape, allowAnimated, finish) {
     }
   });
   const keep = allowAnimated && MAYBE_ANIMATED.has(file.type)
-    ? h("button", { class: "btn", type: "button", title: "Upload the whole image without cropping" }, "Keep animation")
+    ? h("button", { class: "btn", type: "button", title: t("keep_animation_title") }, t("keep_animation"))
     : null;
   keep?.addEventListener("click", () => { bitmap.close?.(); closeModal(); finish(file); });
 
   openModal({
-    title: "Crop image",
-    subtitle: keep ? "Drag to move, scroll or use the slider to zoom. Cropping keeps the first frame only." : "Drag to move, scroll or use the slider to zoom.",
+    title: t("crop_image_title"),
+    subtitle: keep ? t("crop_subtitle_with_keep") : t("crop_subtitle"),
     content: h("div", { class: "cropper" }, h("div", { class: "cropper-stage" }, canvas), zoom),
     actions: [
-      h("button", { class: "btn", type: "button", on: { click: () => { bitmap.close?.(); closeModal(); finish(null); } } }, "Cancel"),
+      h("button", { class: "btn", type: "button", on: { click: () => { bitmap.close?.(); closeModal(); finish(null); } } }, tc("cancel")),
       keep,
       apply,
     ].filter(Boolean),

@@ -1,0 +1,14 @@
+{
+  "too_many_attachments": "You can attach at most {max} files to a message.",
+  "file_too_large": "{name} is too large — this server allows files up to {max}.",
+  "file_empty": "{name} is empty.",
+  "upload_failed_http": "Upload failed (HTTP {status})",
+  "upload_failed_connection": "Upload failed — check your connection",
+  "cancelled": "Cancelled",
+  "item_upload_failed": "{name}: {message}",
+  "remove_failed_upload_first": {
+    "one": "Remove the failed upload first.",
+    "other": "Remove the failed uploads first."
+  },
+  "media_too_large": "That image is too large — at most {max} here."
+}

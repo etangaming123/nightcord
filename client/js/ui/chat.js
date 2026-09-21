@@ -12,6 +12,10 @@ import { QUICK_REACTIONS, customOf, emojiGlyph } from "./emoji.js";
 import { jumboCount, plainText, render as renderMarkdown } from "./markdown.js";
 import { nameAttrs, roleIconEl } from "./names.js";
 import { stickerImg } from "./stickers.js";
+import { scopedT } from "../strings.js";
+
+const t = scopedT("ui/chat");
+const tc = scopedT("common");
 
 const displayName = (u) => nameOf(u);
 
@@ -31,13 +35,13 @@ function relativeDay(d) {
   const today = new Date();
   const yesterday = new Date(today);
   yesterday.setDate(today.getDate() - 1);
-  if (dayKey(d) === dayKey(today)) return "Today";
-  if (dayKey(d) === dayKey(yesterday)) return "Yesterday";
+  if (dayKey(d) === dayKey(today)) return t("today");
+  if (dayKey(d) === dayKey(yesterday)) return t("yesterday");
   return dayFmt.format(d);
 }
 
 function stamp(d, { short = false } = {}) {
-  const label = short ? timeFmt.format(d) : `${relativeDay(d)} at ${timeFmt.format(d)}`;
+  const label = short ? timeFmt.format(d) : t("time_full", { day: relativeDay(d), time: timeFmt.format(d) });
   return h("time", { class: "msg-time", datetime: d.toISOString(), title: fullFmt.format(d) }, label);
 }
 
@@ -58,7 +62,7 @@ export function mdContext(state, actions) {
 export function renderChatHeader(state, actions) {
   const header = clear($("#chat-header"));
   const channel = currentChannel();
-  add(header, iconBtn("☰", "Open guilds and channels", () => actions.toggleNav(), { cls: "menu-btn" }));
+  add(header, iconBtn("☰", t("open_nav"), () => actions.toggleNav(), { cls: "menu-btn" }));
   if (channel && isDm(channel)) {
     const others = channel.recipients.filter((u) => u.user_id !== state.user?.user_id);
     if (channel.kind === "dm" && others[0]) {
@@ -69,50 +73,50 @@ export function renderChatHeader(state, actions) {
     }
     add(header, h("span", { class: "title" }, channelTitle(channel)));
     add(header, h("span", { class: "grow" }));
-    add(header, iconBtn("📌", "Pinned messages", (e) => actions.showPins(e.currentTarget)));
+    add(header, iconBtn("📌", t("pinned_messages"), (e) => actions.showPins(e.currentTarget)));
     if (channel.kind === "group_dm") {
-      add(header, iconBtn("✎", "Rename group", () => actions.renameGroup(channel)));
-      add(header, iconBtn("＋", "Add people", () => actions.addToGroup(channel)));
-      add(header, iconBtn("👥", "Show members", actions.toggleMembers, { cls: "members-btn" }));
+      add(header, iconBtn("✎", t("rename_group"), () => actions.renameGroup(channel)));
+      add(header, iconBtn("＋", t("add_people"), () => actions.addToGroup(channel)));
+      add(header, iconBtn("👥", t("show_members"), actions.toggleMembers, { cls: "members-btn" }));
     }
     add(header, searchButton(actions));
   } else if (channel) {
     add(header,
-      h("span", { class: "hash", "aria-hidden": "true", title: isPrivate(channel) ? "Private channel" : null }, isPrivate(channel) ? "🔒" : "#"),
+      h("span", { class: "hash", "aria-hidden": "true", title: isPrivate(channel) ? t("private_channel") : null }, isPrivate(channel) ? "🔒" : "#"),
       h("span", { class: "title" }, channel.name),
       channel.topic ? h("button", {
         class: "topic", type: "button", title: channel.topic,
         on: { click: () => actions.showTopic(channel) },
       }, renderMarkdown(channel.topic.split("\n")[0], mdContext(state, actions))) : h("span", { class: "grow" }),
     );
-    if (channel.slowmode_seconds) add(header, h("span", { class: "slow-tag", title: `Slowmode: one message every ${channel.slowmode_seconds}s` }, "🐢"));
-    if (can("CREATE_INVITE") && !currentGuild()?.ghost) add(header, iconBtn("✉", "Invite people", () => actions.openInviteDialog(), { cls: "hide-narrow" }));
-    add(header, iconBtn("📌", "Pinned messages", (e) => actions.showPins(e.currentTarget)));
-    add(header, iconBtn("👥", "Show members", actions.toggleMembers, { cls: "members-btn" }));
+    if (channel.slowmode_seconds) add(header, h("span", { class: "slow-tag", title: t("slowmode_title", { seconds: channel.slowmode_seconds }) }, "🐢"));
+    if (can("CREATE_INVITE") && !currentGuild()?.ghost) add(header, iconBtn("✉", t("invite_people"), () => actions.openInviteDialog(), { cls: "hide-narrow" }));
+    add(header, iconBtn("📌", t("pinned_messages"), (e) => actions.showPins(e.currentTarget)));
+    add(header, iconBtn("👥", t("show_members"), actions.toggleMembers, { cls: "members-btn" }));
     add(header, searchButton(actions));
   } else {
-    add(header, h("span", { class: "title" }, currentGuild()?.name || (state.view === "home" ? "Direct Messages" : "")));
+    add(header, h("span", { class: "title" }, currentGuild()?.name || (state.view === "home" ? t("direct_messages") : "")));
   }
 }
 
 function searchButton(actions) {
   return h("button", {
-    class: "search-btn", type: "button", title: "Search (Ctrl+F)", "aria-label": "Search messages",
+    class: "search-btn", type: "button", title: t("search_title"), "aria-label": t("search_aria"),
     on: { click: () => actions.showSearch() },
-  }, h("span", {}, "Search"), h("span", { "aria-hidden": "true" }, "🔍"));
+  }, h("span", {}, t("search_label")), h("span", { "aria-hidden": "true" }, "🔍"));
 }
 
 // --- message list ----------------------------------------------------------
 
 const JOIN_LINES = [
-  (n) => [n, " joined the party."],
-  (n) => ["Welcome, ", n, ". We hope you brought pizza."],
-  (n) => ["A wild ", n, " appeared."],
-  (n) => [n, " just landed."],
-  (n) => [n, " hopped into the guild."],
-  (n) => ["Everyone welcome ", n, "!"],
-  (n) => ["Glad you're here, ", n, "."],
-  (n) => [n, " just showed up!"],
+  (n) => [n, t("join_line_1_suffix")],
+  (n) => [t("join_line_2_before"), n, t("join_line_2_after")],
+  (n) => [t("join_line_3_before"), n, t("join_line_3_after")],
+  (n) => [n, t("join_line_4_suffix")],
+  (n) => [n, t("join_line_5_suffix")],
+  (n) => [t("join_line_6_before"), n, t("join_line_6_after")],
+  (n) => [t("join_line_7_before"), n, t("join_line_7_after")],
+  (n) => [n, t("join_line_8_suffix")],
 ];
 
 // Join / leave / pin lines (PROTOCOL.md §4 Message: system messages).
@@ -127,13 +131,13 @@ function systemNodes(m, state, actions) {
     text = JOIN_LINES[Number(BigInt(m.message_id) % BigInt(JOIN_LINES.length))](who);
   } else if (m.type === "member_leave") {
     icon = h("span", { class: "sys-icon leave", "aria-hidden": "true" }, "←");
-    text = [who, " left the guild."];
+    text = [who, t("leave_suffix")];
   } else {
     icon = h("span", { class: "sys-icon sys-pin", "aria-hidden": "true" }, "📌");
-    text = [who, " pinned ",
-      m.reply_to_id ? h("button", { class: "btn link", type: "button", on: { click: () => actions.jumpTo(m.reply_to_id) } }, "a message") : "a message",
-      " to this channel. ",
-      h("button", { class: "btn link", type: "button", on: { click: (e) => actions.showPins(e.currentTarget) } }, "See all pinned messages"), "."];
+    text = [who, t("pin_prefix"),
+      m.reply_to_id ? h("button", { class: "btn link", type: "button", on: { click: () => actions.jumpTo(m.reply_to_id) } }, t("pin_message_link")) : t("pin_message_link"),
+      t("pin_suffix"),
+      h("button", { class: "btn link", type: "button", on: { click: (e) => actions.showPins(e.currentTarget) } }, t("pin_see_all")), "."];
   }
   return h("div", { class: "msg msg-system", dataset: { id: m.message_id } },
     icon, h("span", { class: "sys-text" }, text), stamp(d),
@@ -144,11 +148,11 @@ function replyPreview(m, state, actions) {
   if (!m.reply_to_id) return null;
   const r = m.reply_to;
   if (!r) {
-    return h("div", { class: "reply-preview missing" }, h("span", { class: "reply-spine", "aria-hidden": "true" }), "Original message was deleted");
+    return h("div", { class: "reply-preview missing" }, h("span", { class: "reply-spine", "aria-hidden": "true" }), t("reply_deleted"));
   }
   const author = userById(r.author?.user_id) || r.author;
   return h("div", {
-    class: "reply-preview", role: "button", tabindex: "0", title: "Jump to message",
+    class: "reply-preview", role: "button", tabindex: "0", title: t("jump_to_message"),
     on: { click: () => actions.jumpTo(r.message_id), keydown: (e) => { if (e.key === "Enter") actions.jumpTo(r.message_id); } },
   },
   h("span", { class: "reply-spine", "aria-hidden": "true" }),
@@ -165,19 +169,19 @@ function reactionsRow(m, state, actions) {
   return h("div", { class: "reactions" },
     m.reactions.map((r) => {
       const mine = r.user_ids.includes(me);
-      const names = r.user_ids.slice(0, 10).map((id) => displayName(userById(id) || { username: "someone" }));
-      const more = r.user_ids.length > 10 ? ` and ${r.user_ids.length - 10} more` : "";
+      const names = r.user_ids.slice(0, 10).map((id) => displayName(userById(id) || { username: t("someone") }));
+      const more = r.user_ids.length > 10 ? t("reaction_and_more", { count: r.user_ids.length - 10 }) : "";
       const custom = customOf(r.emoji);
       const label = custom ? `:${custom.name}:` : r.emoji;
       return h("button", {
         class: `reaction ${mine ? "mine" : ""}`, type: "button",
-        title: `${names.join(", ")}${more} reacted with ${label}`,
+        title: t("reaction_tooltip", { names: names.join(", "), more, label }),
         "aria-pressed": String(mine), disabled: !mine && !canReact,
         on: { click: () => (mine ? actions.unreact(m, r.emoji) : actions.react(m, r.emoji)) },
       }, emojiGlyph(r.emoji), h("span", { class: "count" }, String(r.user_ids.length)));
     }),
     canReact ? h("button", {
-      class: "reaction add", type: "button", title: "Add reaction", "aria-label": "Add reaction",
+      class: "reaction add", type: "button", title: t("add_reaction"), "aria-label": t("add_reaction"),
       on: { click: (e) => actions.pickReaction(m, e.currentTarget) },
     }, "☺＋") : null);
 }
@@ -191,18 +195,18 @@ function toolbar(m, state, actions) {
   const canDelete = mine || (channel && !isDm(channel) && can("MANAGE_MESSAGES", channel));
   const canPin = !system && channel && (isDm(channel) || can("MANAGE_MESSAGES", channel));
   if (!state.connected) return null;
-  return h("div", { class: "msg-toolbar", role: "toolbar", "aria-label": "Message actions" },
-    canReact ? QUICK_REACTIONS.slice(0, 3).map((e) => iconBtn(e, `React ${e}`, () => actions.react(m, e), { cls: "quick" })) : null,
-    canReact ? iconBtn("☺", "Add reaction", (e) => actions.pickReaction(m, e.currentTarget)) : null,
-    canSend && !system ? iconBtn("↩", "Reply", () => actions.reply(m)) : null,
-    mine && canSend ? iconBtn("✎", "Edit", () => actions.startEdit(m)) : null,
-    canPin ? iconBtn("📌", m.pinned ? "Unpin" : "Pin", () => (m.pinned ? actions.unpinMessage(m) : actions.pinMessage(m)), { cls: m.pinned ? "on" : "" }) : null,
-    canDelete ? iconBtn("🗑", "Delete (shift-click skips confirmation)", (e) => actions.deleteMessage(m, e.shiftKey), { cls: "danger" }) : null,
+  return h("div", { class: "msg-toolbar", role: "toolbar", "aria-label": t("message_actions") },
+    canReact ? QUICK_REACTIONS.slice(0, 3).map((e) => iconBtn(e, t("react_with", { emoji: e }), () => actions.react(m, e), { cls: "quick" })) : null,
+    canReact ? iconBtn("☺", t("add_reaction"), (e) => actions.pickReaction(m, e.currentTarget)) : null,
+    canSend && !system ? iconBtn("↩", t("reply"), () => actions.reply(m)) : null,
+    mine && canSend ? iconBtn("✎", t("edit"), () => actions.startEdit(m)) : null,
+    canPin ? iconBtn("📌", m.pinned ? t("unpin") : t("pin"), () => (m.pinned ? actions.unpinMessage(m) : actions.pinMessage(m)), { cls: m.pinned ? "on" : "" }) : null,
+    canDelete ? iconBtn("🗑", t("delete_with_hint"), (e) => actions.deleteMessage(m, e.shiftKey), { cls: "danger" }) : null,
   );
 }
 
 function editBox(m, state, actions) {
-  const input = h("textarea", { class: "edit-input", rows: 1, maxLength: LIMITS.CONTENT_MAX_CHARS + 500, "aria-label": "Edit message" });
+  const input = h("textarea", { class: "edit-input", rows: 1, maxLength: LIMITS.CONTENT_MAX_CHARS + 500, "aria-label": t("edit_message_aria") });
   input.value = state.editDraft;
   const autosize = () => {
     input.style.height = "auto";
@@ -221,10 +225,10 @@ function editBox(m, state, actions) {
     }
   });
   return h("div", { class: "edit-box" }, input,
-    h("div", { class: "edit-hint muted small" }, "Escape to ",
-      h("button", { class: "btn link", type: "button", on: { click: actions.cancelEdit } }, "cancel"),
-      " • Enter to ",
-      h("button", { class: "btn link", type: "button", on: { click: () => actions.saveEdit(m, input.value) } }, "save")));
+    h("div", { class: "edit-hint muted small" }, t("edit_hint_before"),
+      h("button", { class: "btn link", type: "button", on: { click: actions.cancelEdit } }, t("edit_hint_cancel")),
+      t("edit_hint_middle"),
+      h("button", { class: "btn link", type: "button", on: { click: () => actions.saveEdit(m, input.value) } }, t("edit_hint_save"))));
 }
 
 // DOM nodes for message m given the message before it (or null).
@@ -263,7 +267,7 @@ function messageNodes(m, prev, state, actions) {
   } else {
     nodes.push(h("div", { class: `${cls} msg-group`, dataset: { id: m.message_id } },
       replyPreview(m, state, actions),
-      h("button", { class: "avatar-btn", type: "button", "aria-label": `${displayName(author)}'s profile`, on: { click: profile } }, avatar(author, { size: "lg" })),
+      h("button", { class: "avatar-btn", type: "button", "aria-label": t("profile_aria", { name: displayName(author) }), on: { click: profile } }, avatar(author, { size: "lg" })),
       h("div", { class: "msg-head" },
         h("button", { ...nameAttrs(author?.user_id, "msg-author"), type: "button", on: { click: profile } }, displayName(author)),
         roleIconEl(author?.user_id),
@@ -281,15 +285,15 @@ function messageNodes(m, prev, state, actions) {
 function emptyState(state, actions) {
   if (state.view === "home") {
     return h("div", { class: "empty-state" },
-      h("h2", {}, "Direct messages"),
-      h("p", {}, "Talk one-on-one or in small groups with anyone on this server."),
-      h("button", { class: "btn primary", type: "button", on: { click: actions.newDm } }, "Start a conversation"));
+      h("h2", {}, t("dm_empty_title")),
+      h("p", {}, t("dm_empty_body")),
+      h("button", { class: "btn primary", type: "button", on: { click: actions.newDm } }, t("dm_empty_cta")));
   }
   if (!state.guilds.size) {
     return h("div", { class: "empty-state" },
-      h("h2", {}, "No guilds yet"),
-      h("p", {}, "Create a guild, join one with an invite code, or browse the public list."),
-      h("button", { class: "btn primary", type: "button", on: { click: actions.addGuild } }, "Create or join a guild"));
+      h("h2", {}, t("no_guilds_title")),
+      h("p", {}, t("no_guilds_body")),
+      h("button", { class: "btn primary", type: "button", on: { click: actions.addGuild } }, t("no_guilds_cta")));
   }
   return null;
 }
@@ -310,24 +314,24 @@ export function renderChat(state, actions) {
   }
 
   if (state.hasMore) {
-    add(box, h("div", { class: "history-edge" }, state.loadingOlder ? "Loading…" : "Scroll up for older messages"));
+    add(box, h("div", { class: "history-edge" }, state.loadingOlder ? tc("loading") : t("scroll_older")));
   } else if (isDm(channel)) {
     const others = channel.recipients.filter((u) => u.user_id !== state.user.user_id);
     add(box, h("div", { class: "channel-intro" },
       channel.kind === "dm" && others[0] ? avatar(userById(others[0].user_id) || others[0], { size: "xl" }) : null,
       h("h2", {}, channelTitle(channel)),
       h("p", {}, channel.kind === "dm"
-        ? `This is the beginning of your direct message history with ${channelTitle(channel)}.`
-        : "This is the beginning of this group.")));
+        ? t("dm_intro_body", { name: channelTitle(channel) })
+        : t("group_intro_body"))));
   } else {
     add(box, h("div", { class: "channel-intro" },
       h("div", { class: "intro-icon", "aria-hidden": "true" }, "#"),
-      h("h2", {}, `Welcome to #${channel.name}`),
-      h("p", {}, `This is the start of #${channel.name} in ${currentGuild()?.name || "this guild"}.`),
+      h("h2", {}, t("channel_intro_title", { name: channel.name })),
+      h("p", {}, t("channel_intro_body", { channel: channel.name, guild: currentGuild()?.name || t("this_guild_fallback") })),
       channel.topic ? h("p", { class: "muted topic-intro" }, renderMarkdown(channel.topic, mdContext(state, actions))) : null));
   }
   if (!can("READ_HISTORY", channel) && !state.messages.length) {
-    add(box, h("p", { class: "muted small pad" }, "You can't read this channel's history — only new messages appear here."));
+    add(box, h("p", { class: "muted small pad" }, t("no_history")));
   }
   let prev = null;
   const frag = document.createDocumentFragment();
@@ -337,13 +341,13 @@ export function renderChat(state, actions) {
   }
   add(box, frag);
   if (state.hasMoreAfter) {
-    add(box, h("div", { class: "history-edge" }, state.loadingOlder ? "Loading…" : "Scroll down for newer messages"));
+    add(box, h("div", { class: "history-edge" }, state.loadingOlder ? tc("loading") : t("scroll_newer")));
   }
   $("#jump-present")?.remove();
   if (state.hasMoreAfter) {
     $("#chat").append(h("button", {
       id: "jump-present", class: "jump-present", type: "button", on: { click: () => actions.jumpToPresent() },
-    }, "You're viewing older messages", h("strong", {}, "Jump to present ↓")));
+    }, t("viewing_older"), h("strong", {}, t("jump_to_present"))));
   }
 
   if (state.scrollTo === "bottom") {
@@ -400,12 +404,12 @@ export function renderTyping(state) {
   const now = Date.now();
   const names = [];
   for (const [uid, until] of state.typing) {
-    if (until > now && uid !== state.user?.user_id) names.push(displayName(userById(uid) || { username: "Someone" }));
+    if (until > now && uid !== state.user?.user_id) names.push(displayName(userById(uid) || { username: t("someone") }));
   }
   if (!names.length) return;
-  const text = names.length === 1 ? `${names[0]} is typing…`
-    : names.length === 2 ? `${names[0]} and ${names[1]} are typing…`
-      : names.length === 3 ? `${names[0]}, ${names[1]} and ${names[2]} are typing…`
-        : "Several people are typing…";
+  const text = names.length === 1 ? t("typing_one", { name: names[0] })
+    : names.length === 2 ? t("typing_two", { name1: names[0], name2: names[1] })
+      : names.length === 3 ? t("typing_three", { name1: names[0], name2: names[1], name3: names[2] })
+        : t("typing_many");
   add(el, h("span", { class: "typing-dots", "aria-hidden": "true" }, h("i"), h("i"), h("i")), h("strong", {}, text));
 }

@@ -1,0 +1,9 @@
+{
+  "group_members_count_label": "Members — {count}",
+  "role_group_count_label": "{label} — {count}",
+  "online_label": "Online",
+  "offline_label": "Offline",
+  "guild_owner_title": "Guild owner",
+  "view_full_profile": "View full profile",
+  "nobody_can_see_channel": "Nobody else can see this channel."
+}

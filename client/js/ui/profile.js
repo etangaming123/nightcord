@@ -6,6 +6,9 @@ import { STAFF_LABEL, can, memberById, memberRoles, state, statusOf, userById } 
 import { add, avatar, clear, displayName, fmtDate, h, statusLabel } from "./dom.js";
 import { closePopover, openMenu, openPopover, repositionPopover, toast } from "./modals.js";
 import { nameAttrs, profileBanner, profileThemeAttrs, roleIconOf, roleSwatch } from "./names.js";
+import { scopedT } from "../strings.js";
+
+const t = scopedT("ui/profile");
 
 export function openProfile(userId, anchor, actions, { placement = "right" } = {}) {
   const cached = userById(userId) || memberById(userId)?.user;
@@ -20,8 +23,8 @@ export function openProfile(userId, anchor, actions, { placement = "right" } = {
       clear(body,
         h("div", { class: "profile-banner", style: "background:var(--muted)" }),
         h("div", { class: "profile-avatar" }, avatar(user, { size: "xl" })),
-        h("div", { class: "profile-card" }, h("div", { class: "profile-name" }, "Deleted User"),
-          h("p", { class: "muted small" }, "This account was deleted. Its messages are kept.")));
+        h("div", { class: "profile-card" }, h("div", { class: "profile-name" }, t("deleted_user_name")),
+          h("p", { class: "muted small" }, t("deleted_user_note"))));
       repositionPopover();
       return;
     }
@@ -37,24 +40,24 @@ export function openProfile(userId, anchor, actions, { placement = "right" } = {
           STAFF_LABEL[user.server_role] ? h("span", { class: `tag staff ${user.server_role}` }, STAFF_LABEL[user.server_role].toUpperCase()) : null),
         user.custom_status ? h("div", { class: "profile-status" }, user.custom_status) : null,
         h("div", { class: "muted small" }, statusLabel(status)),
-        extra.bio ? section("About me", h("p", { class: "profile-bio" }, extra.bio)) : null,
-        section("Member since", h("p", {},
-          extra.created_at ? `Nightcord: ${fmtDate(extra.created_at)}` : "…",
+        extra.bio ? section(t("about_me"), h("p", { class: "profile-bio" }, extra.bio)) : null,
+        section(t("member_since_heading"), h("p", {},
+          extra.created_at ? t("nightcord_since", { date: fmtDate(extra.created_at) }) : t("unknown_date_placeholder"),
           member ? h("br") : null,
-          member ? `This guild: ${fmtDate(member.joined_at)}` : null)),
+          member ? t("this_guild_since", { date: fmtDate(member.joined_at) }) : null)),
         member ? rolesSection(member, actions) : null,
         member?.timed_out_until && new Date(member.timed_out_until) > new Date()
-          ? h("p", { class: "timeout-note" }, `⏳ Timed out until ${new Date(member.timed_out_until).toLocaleString()}`) : null,
+          ? h("p", { class: "timeout-note" }, t("timed_out_note", { until: new Date(member.timed_out_until).toLocaleString() })) : null,
         h("div", { class: "profile-actions" },
           me
-            ? h("button", { class: "btn", type: "button", on: { click: () => { closePopover(); actions.userSettings("profile"); } } }, "Edit profile")
-            : h("button", { class: "btn primary", type: "button", on: { click: () => { closePopover(); actions.messageUser(user.user_id); } } }, "Message"),
-          me && member && can("CHANGE_NICKNAME") ? h("button", { class: "btn", type: "button", on: { click: () => { closePopover(); actions.changeNickname(user.user_id); } } }, "Nickname") : null,
+            ? h("button", { class: "btn", type: "button", on: { click: () => { closePopover(); actions.userSettings("profile"); } } }, t("edit_profile"))
+            : h("button", { class: "btn primary", type: "button", on: { click: () => { closePopover(); actions.messageUser(user.user_id); } } }, t("message_button")),
+          me && member && can("CHANGE_NICKNAME") ? h("button", { class: "btn", type: "button", on: { click: () => { closePopover(); actions.changeNickname(user.user_id); } } }, t("nickname_button")) : null,
           !me ? modButton(user, actions, member) : null)));
     repositionPopover();
   };
   if (cached) draw(cached);
-  else add(body, h("p", { class: "muted pad" }, "Loading…"));
+  else add(body, h("p", { class: "muted pad" }, t("loading")));
   openPopover(anchor, body, { placement, cls: "profile-pop" });
   actions.req(T.USER_PROFILE, { user_id: userId }).then(({ user }) => {
     if (!body.isConnected) return;
@@ -76,14 +79,14 @@ function rolesSection(member, actions) {
     r.name,
     editable.some((e) => e.role_id === r.role_id)
       ? h("button", {
-        class: "role-x", type: "button", title: `Remove ${r.name}`, "aria-label": `Remove ${r.name}`,
+        class: "role-x", type: "button", title: t("remove_role_title", { role: r.name }), "aria-label": t("remove_role_title", { role: r.name }),
         on: { click: () => actions.setMemberRoles(member.user.user_id, member.role_ids.filter((id) => id !== r.role_id)) },
       }, "×")
       : null));
   const addable = editable.filter((r) => !member.role_ids.includes(r.role_id));
   const add = addable.length
     ? h("button", {
-      class: "role-chip add", type: "button", title: "Add role", "aria-label": "Add role",
+      class: "role-chip add", type: "button", title: t("add_role_title"), "aria-label": t("add_role_title"),
       on: {
         click: (e) => openMenu(e.currentTarget, addable.map((r) => ({
           label: r.name,
@@ -94,20 +97,20 @@ function rolesSection(member, actions) {
     }, "+")
     : null;
   if (!chips.length && !add) return null;
-  return section(roles.length ? "Roles" : "No roles", h("div", { class: "role-chips" }, chips, add));
+  return section(roles.length ? t("roles_heading") : t("no_roles_heading"), h("div", { class: "role-chips" }, chips, add));
 }
 
 function modButton(user, actions, member) {
   const guildItems = member ? actions.moderationItems(user.user_id) : [];
   const staff = actions.staffItems(user.user_id);
-  const items = [...guildItems, ...(staff.length ? [guildItems.length ? "-" : null, { heading: "Server staff" }, ...staff] : [])];
+  const items = [...guildItems, ...(staff.length ? [guildItems.length ? "-" : null, { heading: t("server_staff_heading") }, ...staff] : [])];
   if (!guildItems.length && !staff.length) return null;
   return h("button", {
     class: "btn", type: "button", "aria-haspopup": "menu",
     on: { click: (e) => openMenu(e.currentTarget, items, { placement: "top" }) },
-  }, "Moderate ▾");
+  }, t("moderate_button"));
 }
 
-export function copyText(text, what = "Copied") {
-  navigator.clipboard?.writeText(text).then(() => toast(what), () => toast("Couldn't copy", { error: true }));
+export function copyText(text, what = t("copied")) {
+  navigator.clipboard?.writeText(text).then(() => toast(what), () => toast(t("copy_failed"), { error: true }));
 }

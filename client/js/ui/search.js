@@ -6,6 +6,9 @@ import { currentChannel, currentGuild, isDm, nameOf, state, userById } from "../
 import { add, avatar, clear, fmtDateTime, h, iconBtn } from "./dom.js";
 import { mdContext } from "./chat.js";
 import { render as renderMarkdown } from "./markdown.js";
+import { scopedT } from "../strings.js";
+
+const t = scopedT("ui/search");
 
 let panel = null;
 
@@ -42,10 +45,10 @@ export function openSearch(actions, initial = "") {
   const guild = currentGuild();
   if (!guild && !channel) return;
   closeSearch();
-  const input = h("input", { type: "search", placeholder: guild ? `Search ${guild.name}` : "Search this conversation", "aria-label": "Search messages", value: initial, spellcheck: "false" });
-  const hint = h("p", { class: "muted small search-hint" }, "Filters: ", h("code", {}, "from:user"), " ", guild ? h("code", {}, "in:channel") : null, " ", h("code", {}, "has:image"), " ", h("code", {}, "has:file"), " ", h("code", {}, "has:link"), " ", h("code", {}, "pinned:true"));
+  const input = h("input", { type: "search", placeholder: guild ? t("search_guild_placeholder", { guild: guild.name }) : t("search_conversation_placeholder"), "aria-label": t("search_aria"), value: initial, spellcheck: "false" });
+  const hint = h("p", { class: "muted small search-hint" }, t("filters_label"), h("code", {}, "from:user"), " ", guild ? h("code", {}, "in:channel") : null, " ", h("code", {}, "has:image"), " ", h("code", {}, "has:file"), " ", h("code", {}, "has:link"), " ", h("code", {}, "pinned:true"));
   const results = h("div", { class: "search-results scroll" });
-  const more = h("button", { class: "btn block", type: "button", hidden: true }, "More results");
+  const more = h("button", { class: "btn block", type: "button", hidden: true }, t("more_results"));
   let offset = 0;
   let last = null;
   const run = async (append = false) => {
@@ -56,12 +59,12 @@ export function openSearch(actions, initial = "") {
     if (q.words.length) payload.query = q.words.join(" ");
     if (q.from) {
       const u = resolveUser(q.from);
-      if (!u) { clear(results, h("p", { class: "muted pad" }, `Nobody here is called “${q.from}”.`)); more.hidden = true; return; }
+      if (!u) { clear(results, h("p", { class: "muted pad" }, t("no_user_named", { name: q.from }))); more.hidden = true; return; }
       payload.author_id = u.user_id;
     }
     if (q.in && guild) {
       const ch = state.channels.find((c) => c.kind === "text" && c.name.toLowerCase() === q.in.toLowerCase());
-      if (!ch) { clear(results, h("p", { class: "muted pad" }, `No channel called #${q.in}.`)); more.hidden = true; return; }
+      if (!ch) { clear(results, h("p", { class: "muted pad" }, t("no_channel_named", { name: q.in }))); more.hidden = true; return; }
       delete payload.guild_id;
       payload.channel_id = ch.channel_id;
     }
@@ -76,12 +79,12 @@ export function openSearch(actions, initial = "") {
     payload.offset = offset;
     const key = JSON.stringify(payload);
     last = key;
-    if (!append) clear(results, h("p", { class: "muted pad" }, "Searching…"));
+    if (!append) clear(results, h("p", { class: "muted pad" }, t("searching")));
     try {
       const res = await actions.req(T.MESSAGE_SEARCH, payload);
       if (last !== key) return;
-      if (!append) clear(results, h("div", { class: "search-count muted small" }, `${res.total} result${res.total === 1 ? "" : "s"}`));
-      if (!res.total) add(results, h("div", { class: "empty-pins" }, h("div", { class: "big", "aria-hidden": "true" }, "🔍"), h("p", {}, "No results. Try fewer words.")));
+      if (!append) clear(results, h("div", { class: "search-count muted small" }, t("result_count", { count: res.total })));
+      if (!res.total) add(results, h("div", { class: "empty-pins" }, h("div", { class: "big", "aria-hidden": "true" }, "🔍"), h("p", {}, t("no_results"))));
       for (const m of res.messages) add(results, resultRow(m, actions));
       offset += res.messages.length;
       more.hidden = offset >= res.total;
@@ -96,8 +99,8 @@ export function openSearch(actions, initial = "") {
     if (e.key === "Escape") { e.stopPropagation(); closeSearch(); }
   });
   more.addEventListener("click", () => run(true));
-  panel = h("aside", { class: "side-panel search-panel", "aria-label": "Search" },
-    h("div", { class: "side-head" }, h("span", { class: "search-icon", "aria-hidden": "true" }, "🔍"), input, iconBtn("✕", "Close search", closeSearch)),
+  panel = h("aside", { class: "side-panel search-panel", "aria-label": t("search_aside_aria") },
+    h("div", { class: "side-head" }, h("span", { class: "search-icon", "aria-hidden": "true" }, "🔍"), input, iconBtn("✕", t("close_search"), closeSearch)),
     hint, results, more);
   document.body.append(panel);
   input.focus();
@@ -109,7 +112,7 @@ function resultRow(m, actions) {
   const author = userById(m.author?.user_id) || m.author;
   const ch = m.guild_id ? state.channels.find((c) => c.channel_id === m.channel_id) : null;
   return h("div", {
-    class: "search-hit", role: "button", tabindex: "0", title: "Jump to message",
+    class: "search-hit", role: "button", tabindex: "0", title: t("jump_to_message"),
     on: {
       click: () => actions.jumpTo(m.message_id, m.channel_id, m.guild_id),
       keydown: (e) => { if (e.key === "Enter") actions.jumpTo(m.message_id, m.channel_id, m.guild_id); },
@@ -121,7 +124,7 @@ function resultRow(m, actions) {
     h("div", { class: "hit-body" },
       h("div", { class: "pin-head" }, h("strong", {}, nameOf(author)), h("span", { class: "muted small" }, fmtDateTime(m.sent_at)), m.pinned ? h("span", { class: "muted small" }, "📌") : null),
       h("div", { class: "pin-body" }, renderMarkdown(m.content, mdContext(state, actions)),
-        m.attachments?.length ? h("div", { class: "muted small" }, `📎 ${m.attachments.map((a) => a.filename).join(", ")}`) : null))));
+        m.attachments?.length ? h("div", { class: "muted small" }, t("attachment_list", { names: m.attachments.map((a) => a.filename).join(", ") })) : null))));
 }
 
 export const searchOpen = () => !!panel;

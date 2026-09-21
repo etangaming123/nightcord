@@ -5,6 +5,10 @@
 import { mediaLoaded } from "./chat.js";
 import { add, clear, fmtBytes, h, serverUrl } from "./dom.js";
 import { openModal, toast } from "./modals.js";
+import { scopedT } from "../strings.js";
+
+const t = scopedT("ui/attachments");
+const tc = scopedT("common");
 
 const TEXT_PREVIEW_BYTES = 256 * 1024;
 const MAX_INLINE_W = 400;
@@ -43,7 +47,7 @@ function card(a, url, { onOpen } = {}) {
         ? h("button", { class: "file-name btn link", type: "button", on: { click: onOpen } }, a.filename)
         : h("a", { class: "file-name", href: url, download: a.filename, target: "_blank", rel: "noopener" }, a.filename),
       h("span", { class: "file-size" }, fmtBytes(a.size))),
-    h("a", { class: "icon-btn", href: url, download: a.filename, target: "_blank", rel: "noopener", title: "Download", "aria-label": `Download ${a.filename}` }, "⤓"));
+    h("a", { class: "icon-btn", href: url, download: a.filename, target: "_blank", rel: "noopener", title: t("download"), "aria-label": t("download_aria", { name: a.filename }) }, "⤓"));
 }
 
 export function renderAttachments(message) {
@@ -58,7 +62,7 @@ export function renderAttachments(message) {
       case "image":
         return h("button", {
           class: "att-image", type: "button", title: a.filename, style: images.length > 1 ? null : fitted(a),
-          "aria-label": `Open image ${a.filename}`,
+          "aria-label": t("open_image_aria", { name: a.filename }),
           on: { click: () => openLightbox(images, images.indexOf(a)) },
         }, h("img", { src: url, alt: a.filename, loading: "lazy", decoding: "async", draggable: "false", on: { load: mediaLoaded } }));
       case "video":
@@ -85,15 +89,15 @@ export function openLightbox(images, index = 0) {
     img.alt = a.filename;
     clear(caption,
       h("span", {}, a.filename, images.length > 1 ? ` (${i + 1}/${images.length})` : ""),
-      h("a", { href: serverUrl(a.url), target: "_blank", rel: "noopener", class: "btn link" }, "Open original"));
+      h("a", { href: serverUrl(a.url), target: "_blank", rel: "noopener", class: "btn link" }, t("open_original")));
   };
   const step = (d) => { i = (i + d + images.length) % images.length; draw(); };
   const modal = openModal({
-    title: "Image",
+    title: t("image_modal_title"),
     content: h("div", { class: "lightbox" },
-      images.length > 1 ? h("button", { class: "icon-btn lb-prev", type: "button", "aria-label": "Previous image", on: { click: () => step(-1) } }, "‹") : null,
+      images.length > 1 ? h("button", { class: "icon-btn lb-prev", type: "button", "aria-label": t("previous_image"), on: { click: () => step(-1) } }, "‹") : null,
       img,
-      images.length > 1 ? h("button", { class: "icon-btn lb-next", type: "button", "aria-label": "Next image", on: { click: () => step(1) } }, "›") : null,
+      images.length > 1 ? h("button", { class: "icon-btn lb-next", type: "button", "aria-label": t("next_image"), on: { click: () => step(1) } }, "›") : null,
       caption),
     cls: "lightbox-modal",
   });
@@ -107,23 +111,23 @@ export function openLightbox(images, index = 0) {
 }
 
 async function openTextViewer(a, url) {
-  const pre = h("pre", { class: "text-viewer" }, "Loading…");
+  const pre = h("pre", { class: "text-viewer" }, tc("loading"));
   openModal({
     title: a.filename,
     subtitle: fmtBytes(a.size),
     wide: true,
     content: pre,
-    actions: [h("a", { class: "btn", href: url, download: a.filename, target: "_blank", rel: "noopener" }, "Download")],
+    actions: [h("a", { class: "btn", href: url, download: a.filename, target: "_blank", rel: "noopener" }, t("download"))],
     cls: "text-modal",
   });
   try {
     const res = await fetch(url, { headers: { Range: `bytes=0-${TEXT_PREVIEW_BYTES - 1}` } });
-    if (!res.ok) throw new Error(res.status === 403 ? "This link has expired; reload the channel." : `HTTP ${res.status}`);
+    if (!res.ok) throw new Error(res.status === 403 ? t("link_expired") : t("http_error", { status: res.status }));
     const text = new TextDecoder("utf-8", { fatal: false }).decode(await res.arrayBuffer());
     const lines = text.split("\n");
     const truncated = a.size > TEXT_PREVIEW_BYTES;
     clear(pre, lines.map((line, n) => h("span", { class: "tv-line" }, h("span", { class: "tv-no", "aria-hidden": "true" }, String(n + 1)), line, "\n")));
-    if (truncated) add(pre, h("span", { class: "muted" }, "\n… (download to see the rest)"));
+    if (truncated) add(pre, h("span", { class: "muted" }, t("truncated_note")));
   } catch (e) {
     clear(pre, e.message);
     toast(e.message, { error: true });

@@ -7,9 +7,12 @@ import {
 } from "../state.js";
 import { guildCan } from "../perks.js";
 import { $, add, avatar, clear, displayName, h, iconBtn, imageEl, initials, mayAnimate } from "./dom.js";
+import { scopedT } from "../strings.js";
+
+const t = scopedT("ui/sidebar");
 
 function badge(n) {
-  return n ? h("span", { class: "badge", "aria-label": `${n} mentions` }, n > 99 ? "99+" : String(n)) : null;
+  return n ? h("span", { class: "badge", "aria-label": t("mentions_count", { count: n }) }, n > 99 ? "99+" : String(n)) : null;
 }
 
 export function renderRail(state, actions) {
@@ -19,7 +22,7 @@ export function renderRail(state, actions) {
   add(rail,
     h("button", {
       class: `guild-icon home ${homeActive ? "active" : ""}`, type: "button",
-      title: "Direct Messages", "aria-label": "Direct Messages", "aria-current": homeActive ? "page" : null,
+      title: t("rail_dm_label"), "aria-label": t("rail_dm_label"), "aria-current": homeActive ? "page" : null,
       on: { click: actions.openHome },
     }, h("span", { class: "brand-mark", "aria-hidden": "true" }), badge(home)),
     h("div", { class: "rail-sep", role: "separator" }),
@@ -29,8 +32,9 @@ export function renderRail(state, actions) {
     const { unread, mentions } = guildBadge(g.guild_id);
     add(rail, h("button", {
       class: `guild-icon ${active ? "active" : ""} ${unread ? "unread" : ""}`, type: "button",
-      title: g.ghost ? `${g.name} (ghost view)` : g.name,
-      "aria-label": `${g.name}${mentions ? `, ${mentions} mentions` : unread ? ", unread" : ""}`,
+      title: g.ghost ? t("rail_guild_ghost_title", { name: g.name }) : g.name,
+      "aria-label": mentions ? t("guild_aria_mentions", { name: g.name, mentions: t("mentions_count", { count: mentions }) })
+        : unread ? t("guild_aria_unread", { name: g.name }) : g.name,
       "aria-current": active ? "page" : null,
       on: {
         click: () => actions.openGuild(g.guild_id),
@@ -40,15 +44,15 @@ export function renderRail(state, actions) {
     g.ghost ? h("span", { class: "ghost-badge", "aria-hidden": "true" }, "👻") : null, badge(mentions)));
   }
   add(rail, h("button", {
-    class: "guild-icon add", type: "button", title: "Create or join a guild", "aria-label": "Create or join a guild",
+    class: "guild-icon add", type: "button", title: t("rail_add_guild"), "aria-label": t("rail_add_guild"),
     on: { click: actions.addGuild },
   }, "+"));
-  const serverName = state.info?.server_name || "Server";
+  const serverName = state.info?.server_name || t("rail_server_fallback");
   add(rail,
     h("div", { class: "rail-spacer" }),
     h("button", {
       class: "guild-icon server", type: "button",
-      title: `${serverName} — switch server`, "aria-label": `Switch server (connected to ${serverName})`,
+      title: t("rail_switch_server_title", { server: serverName }), "aria-label": t("rail_switch_server_aria", { server: serverName }),
       on: { click: actions.switchServer },
     }, "⇄"),
   );
@@ -69,7 +73,7 @@ function renderGuild(state, actions) {
   if (banner) add(header, h("div", { class: "guild-banner", "aria-hidden": "true" }, imageEl(guild.banner_id, { animate: guildCan("animated_media", guild), lazy: false })));
   if (!guild) {
     add(header, h("span", { class: "title muted" }, state.info?.server_name || ""));
-    if (state.user) add(list, h("p", { class: "muted small pad" }, "Pick a guild on the left, or press + to create or join one."));
+    if (state.user) add(list, h("p", { class: "muted small pad" }, t("guild_pick_prompt")));
     return;
   }
   add(header, h("button", {
@@ -84,7 +88,7 @@ function renderGuild(state, actions) {
   const visible = (c) => showVoice || c.kind !== "voice";
   for (const c of tree.loose.filter(visible)) add(list, channelRow(c, state, actions, drag));
   if (!tree.categories.length && manage) {
-    add(list, h("div", { class: "section-label" }, h("span", {}, "Channels"), iconBtn("+", "Create channel", () => actions.createChannel())));
+    add(list, h("div", { class: "section-label" }, h("span", {}, t("channels_section_label")), iconBtn("+", t("create_channel"), () => actions.createChannel())));
   }
   for (const { cat, channels } of tree.categories) {
     const collapsed = actions.isCollapsed(cat.channel_id);
@@ -101,7 +105,7 @@ function renderGuild(state, actions) {
     },
     h("span", { class: "cat-chev", "aria-hidden": "true" }, "▾"),
     h("span", { class: "cat-name" }, cat.name),
-    can("MANAGE_CHANNELS", cat) ? iconBtn("+", `Create channel in ${cat.name}`, () => actions.createChannel({ parentId: cat.channel_id }), { cls: "cat-add" }) : null));
+    can("MANAGE_CHANNELS", cat) ? iconBtn("+", t("create_channel_in", { category: cat.name }), () => actions.createChannel({ parentId: cat.channel_id }), { cls: "cat-add" }) : null));
     for (const c of kids) {
       // Collapsed categories still show the open channel and unread ones, like Discord.
       if (collapsed && c.channel_id !== state.channelId && !(isUnread(c.channel_id) && !isMuted(c.channel_id, c.guild_id)) && !voiceIn(c.channel_id).length) continue;
@@ -109,10 +113,10 @@ function renderGuild(state, actions) {
     }
   }
   if (!state.channels.length && state.members.length) {
-    add(list, h("p", { class: "muted small pad" }, "No channels you can see yet."));
+    add(list, h("p", { class: "muted small pad" }, t("no_channels_visible")));
   }
   if (manage && state.channels.length) {
-    add(list, h("button", { class: "btn link add-channel", type: "button", on: { click: () => actions.createChannel() } }, "＋ Add a channel"));
+    add(list, h("button", { class: "btn link add-channel", type: "button", on: { click: () => actions.createChannel() } }, t("add_channel_button")));
   }
 }
 
@@ -133,12 +137,12 @@ function channelRow(c, state, actions, drag) {
       contextmenu: (e) => { e.preventDefault(); actions.channelMenu(c, { x: e.clientX, y: e.clientY }); },
     },
   },
-  h("span", { class: "hash", "aria-hidden": "true", title: isPrivate(c) ? "Private channel" : null }, isPrivate(c) ? "🔒" : "#"),
+  h("span", { class: "hash", "aria-hidden": "true", title: isPrivate(c) ? t("private_channel_title") : null }, isPrivate(c) ? "🔒" : "#"),
   h("span", { class: "name" }, c.name),
   badge(active ? 0 : mentionCount(c.channel_id)),
   h("span", { class: "actions" },
-    can("CREATE_INVITE") && !state.guilds.get(state.guildId)?.ghost ? iconBtn("✉", "Invite people", () => actions.openInviteDialog()) : null,
-    can("MANAGE_CHANNELS", c) ? iconBtn("⚙", "Edit channel", () => actions.channelSettings(c)) : null));
+    can("CREATE_INVITE") && !state.guilds.get(state.guildId)?.ghost ? iconBtn("✉", t("invite_people"), () => actions.openInviteDialog()) : null,
+    can("MANAGE_CHANNELS", c) ? iconBtn("⚙", t("edit_channel"), () => actions.channelSettings(c)) : null));
 }
 
 function voiceRow(c, state, actions, drag) {
@@ -148,7 +152,7 @@ function voiceRow(c, state, actions, drag) {
   return h("div", { class: "voice-block" },
     h("div", {
       class: `channel voice ${mine ? "active" : ""} ${c.parent_id ? "nested" : ""} ${canJoin ? "" : "locked"}`,
-      role: "button", tabindex: "0", title: canJoin ? `Join ${c.name}` : "You can't join this channel",
+      role: "button", tabindex: "0", title: canJoin ? t("join_channel_title", { name: c.name }) : t("cant_join_channel_title"),
       ...drag.attrs(c),
       on: {
         ...drag.handlers(c),
@@ -159,14 +163,14 @@ function voiceRow(c, state, actions, drag) {
     },
     h("span", { class: "hash", "aria-hidden": "true" }, isPrivate(c) ? "🔒" : "🔊"),
     h("span", { class: "name" }, c.name),
-    h("span", { class: "actions" }, can("MANAGE_CHANNELS", c) ? iconBtn("⚙", "Edit channel", () => actions.channelSettings(c)) : null)),
+    h("span", { class: "actions" }, can("MANAGE_CHANNELS", c) ? iconBtn("⚙", t("edit_channel"), () => actions.channelSettings(c)) : null)),
     here.length ? h("div", { class: "voice-users" }, here.map((v) => {
       const u = userById(v.user_id) || memberById(v.user_id)?.user || { username: "…", user_id: v.user_id };
       return h("button", {
         class: "voice-user", type: "button",
         on: { click: (e) => actions.openProfile(v.user_id, e.currentTarget) },
       }, avatar(u, { size: "xs" }), h("span", { class: "name" }, nameOf(u)),
-      v.self_deaf ? h("span", { class: "vflag", title: "Deafened" }, "🔕") : v.self_mute ? h("span", { class: "vflag", title: "Muted" }, "🔇") : null);
+      v.self_deaf ? h("span", { class: "vflag", title: t("deafened_title") }, "🔕") : v.self_mute ? h("span", { class: "vflag", title: t("muted_title") }, "🔇") : null);
     })) : null);
 }
 
@@ -234,14 +238,14 @@ function dragController(state, actions, enabled) {
 }
 
 function renderHome(state, actions) {
-  clear($("#guild-header"), h("span", { class: "title" }, "Direct Messages"));
+  clear($("#guild-header"), h("span", { class: "title" }, t("rail_dm_label")));
   const list = clear($("#channel-list"));
   add(list, h("div", { class: "section-label" },
-    h("span", {}, "Direct messages"),
-    iconBtn("+", "New message", actions.newDm)));
+    h("span", {}, t("dm_section_label")),
+    iconBtn("+", t("new_message"), actions.newDm)));
   const dms = sortDms([...state.dms.values()]);
   if (!dms.length) {
-    add(list, h("p", { class: "muted small pad" }, "No conversations yet. Press + to message someone on this server."));
+    add(list, h("p", { class: "muted small pad" }, t("no_conversations")));
   }
   for (const ch of dms) {
     const active = ch.channel_id === state.channelId;
@@ -251,7 +255,7 @@ function renderHome(state, actions) {
     const icon = other
       ? avatar(other, { status: statusOf(other.user_id) })
       : h("div", { class: "avatar group", "aria-hidden": "true" }, "👥");
-    const sub = other ? (other.custom_status || "") : `${ch.recipients.length} members`;
+    const sub = other ? (other.custom_status || "") : t("group_members_count", { count: ch.recipients.length });
     const open = () => actions.openDm(ch.channel_id);
     add(list, h("div", {
       class: `channel dm ${active ? "active" : ""} ${unread ? "unread" : ""}`, role: "link", tabindex: "0",
@@ -267,7 +271,7 @@ function renderHome(state, actions) {
       h("span", { class: "name" }, dmTitle(ch)),
       sub ? h("span", { class: "sub" }, sub) : null),
     badge(active || !unread ? 0 : Math.max(1, mentionCount(ch.channel_id))),
-    h("span", { class: "actions" }, iconBtn("✕", ch.kind === "dm" ? "Close conversation" : "Leave group", () => actions.leaveDm(ch)))));
+    h("span", { class: "actions" }, iconBtn("✕", ch.kind === "dm" ? t("close_conversation") : t("leave_group"), () => actions.leaveDm(ch)))));
   }
 }
 
@@ -279,15 +283,15 @@ function renderUserPanel(state, actions) {
   const pending = isStaff(1) && state.pendingAccounts;
   clear(panel, voicePanel(state, actions),
     h("button", {
-      class: "me", type: "button", title: "Set status", "aria-haspopup": "menu",
+      class: "me", type: "button", title: t("set_status_title"), "aria-haspopup": "menu",
       on: { click: (e) => actions.statusMenu(e.currentTarget) },
     },
     avatar(me, { status: me.presence === "invisible" && state.connected ? "invisible" : status }),
     h("span", { class: "who" },
       h("span", { class: "name" }, nameOf(me)),
-      h("span", { class: "sub" }, me.custom_status || (me.presence === "invisible" ? "Invisible" : me.username)))),
+      h("span", { class: "sub" }, me.custom_status || (me.presence === "invisible" ? t("invisible_label") : me.username)))),
     h("button", {
-      class: "icon-btn gear", type: "button", title: "User settings", "aria-label": "User settings",
+      class: "icon-btn gear", type: "button", title: t("user_settings"), "aria-label": t("user_settings"),
       on: { click: () => actions.userSettings() },
     }, "⚙", pending ? h("span", { class: "badge small" }, String(pending)) : null),
   );
@@ -302,20 +306,20 @@ function voicePanel(state, actions) {
   return h("div", { class: "voice-panel" },
     h("div", { class: "vp-top" },
       h("span", { class: "vp-meta" },
-        h("span", { class: "vp-status" }, "Voice connected"),
+        h("span", { class: "vp-status" }, t("voice_connected")),
         h("button", {
           class: "vp-where btn link", type: "button",
           on: { click: () => actions.openGuild(v.guild_id) },
-        }, `${ch ? ch.name : "voice"} / ${guild?.name || ""}`)),
-      iconBtn("✆", "Disconnect", () => actions.leaveVoice(), { cls: "vp-leave" })),
-    h("div", { class: "vp-note muted small" }, "Audio isn't available yet — others can see you're here."),
+        }, t("voice_where", { channel: ch ? ch.name : t("voice_fallback_name"), guild: guild?.name || "" }))),
+      iconBtn("✆", t("disconnect"), () => actions.leaveVoice(), { cls: "vp-leave" })),
+    h("div", { class: "vp-note muted small" }, t("voice_audio_note")),
     h("div", { class: "vp-buttons" },
       h("button", {
         class: `btn small-btn ${v.self_mute ? "on" : ""}`, type: "button", "aria-pressed": String(!!v.self_mute),
         on: { click: () => actions.setVoiceFlags({ self_mute: !v.self_mute }) },
-      }, v.self_mute ? "🔇 Unmute" : "🎙 Mute"),
+      }, v.self_mute ? t("unmute_button") : t("mute_button")),
       h("button", {
         class: `btn small-btn ${v.self_deaf ? "on" : ""}`, type: "button", "aria-pressed": String(!!v.self_deaf),
         on: { click: () => actions.setVoiceFlags({ self_deaf: !v.self_deaf }) },
-      }, v.self_deaf ? "🔕 Undeafen" : "🎧 Deafen")));
+      }, v.self_deaf ? t("undeafen_button") : t("deafen_button"))));
 }

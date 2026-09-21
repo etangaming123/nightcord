@@ -3,38 +3,47 @@
 // server's customisation settings decide whether they apply.
 
 import { userCan } from "./perks.js";
+import { scopedT } from "./strings.js";
+
+const t = scopedT("themes");
 
 export const MAX_THEME_COLORS = 5;
 
-// Each preset sets the palette tokens from styles.css :root.
-export const PRESETS = [
-  { id: "default", name: "Default", swatch: ["#1a1b26", "#7aa2f7"] },
+// Each preset sets the palette tokens from styles.css :root. `name` is a
+// lazy getter (not a literal) so it isn't resolved until strings are loaded.
+const PRESET_DATA = [
+  { id: "default", nameKey: "preset_default", swatch: ["#1a1b26", "#7aa2f7"] },
   {
-    id: "midnight", name: "Midnight", base: "dark", swatch: ["#000000", "#8a8fff"],
+    id: "midnight", nameKey: "preset_midnight", base: "dark", swatch: ["#000000", "#8a8fff"],
     vars: { "--bg-0": "#000000", "--bg-1": "#060608", "--bg-2": "#0b0b10", "--bg-3": "#17171f", "--bg-4": "#22222d", "--panel": "#030305", "--line": "#1b1b24", "--accent": "#8a8fff", "--code-bg": "#050507" },
   },
   {
-    id: "ash", name: "Ash", base: "dark", swatch: ["#2b2d31", "#949cf7"],
+    id: "ash", nameKey: "preset_ash", base: "dark", swatch: ["#2b2d31", "#949cf7"],
     vars: { "--bg-0": "#1e1f22", "--bg-1": "#2b2d31", "--bg-2": "#313338", "--bg-3": "#3a3c42", "--bg-4": "#44474e", "--panel": "#232428", "--line": "#3f4147", "--text": "#dbdee1", "--text-2": "#b5bac1", "--muted": "#80848e", "--accent": "#949cf7", "--code-bg": "#2b2d31" },
   },
   {
-    id: "forest", name: "Forest", base: "dark", swatch: ["#142019", "#7fd49a"],
+    id: "forest", nameKey: "preset_forest", base: "dark", swatch: ["#142019", "#7fd49a"],
     vars: { "--bg-0": "#0d1510", "--bg-1": "#132019", "--bg-2": "#18271f", "--bg-3": "#22362b", "--bg-4": "#2b4436", "--panel": "#101b14", "--line": "#23372b", "--text": "#dbeee0", "--text-2": "#a9c8b2", "--muted": "#6f8f79", "--accent": "#7fd49a", "--code-bg": "#0f1912" },
   },
   {
-    id: "ocean", name: "Ocean", base: "dark", swatch: ["#0f1d2e", "#4cc9f0"],
+    id: "ocean", nameKey: "preset_ocean", base: "dark", swatch: ["#0f1d2e", "#4cc9f0"],
     vars: { "--bg-0": "#0a1522", "--bg-1": "#0f1d2e", "--bg-2": "#132438", "--bg-3": "#1c3350", "--bg-4": "#244060", "--panel": "#0c1827", "--line": "#1d3452", "--text": "#dbe9f7", "--text-2": "#a6bfd9", "--muted": "#6d88a6", "--accent": "#4cc9f0", "--code-bg": "#0b1623" },
   },
   {
-    id: "sunset", name: "Sunset", base: "dark", swatch: ["#2a1627", "#ff8a5b"],
+    id: "sunset", nameKey: "preset_sunset", base: "dark", swatch: ["#2a1627", "#ff8a5b"],
     vars: { "--bg-0": "#1b0f1a", "--bg-1": "#241422", "--bg-2": "#2b1828", "--bg-3": "#3a2237", "--bg-4": "#472a43", "--panel": "#1f111d", "--line": "#3d2539", "--text": "#f6e3ec", "--text-2": "#d6b3c3", "--muted": "#a07f90", "--accent": "#ff8a5b", "--code-bg": "#1e101c" },
   },
   {
-    id: "sakura", name: "Sakura", base: "light", swatch: ["#fff0f5", "#e2558c"],
+    id: "sakura", nameKey: "preset_sakura", base: "light", swatch: ["#fff0f5", "#e2558c"],
     vars: { "--bg-0": "#f7dce7", "--bg-1": "#fcebf1", "--bg-2": "#fff7fa", "--bg-3": "#f7e1ea", "--bg-4": "#f0cddb", "--panel": "#f9e3ec", "--line": "#efd3de", "--text": "#3a2130", "--text-2": "#6b4a5b", "--muted": "#9a7a8a", "--accent": "#e2558c", "--code-bg": "#fbeef3" },
   },
-  { id: "custom", name: "Custom gradient", swatch: null },
+  { id: "custom", nameKey: "preset_custom", swatch: null },
 ];
+
+// Each preset's `name` is resolved on access (via a getter), never eagerly,
+// so this module-level array never calls t() at load time.
+export const PRESETS = PRESET_DATA.map(({ nameKey, ...rest }) =>
+  Object.defineProperty(rest, "name", { get: () => t(nameKey), enumerable: true }));
 
 export const DEFAULT_CUSTOM = { colors: ["#6d28d9", "#db2777", "#f59e0b"], angle: 135, strength: 55, base: "dark", accent: null };
 

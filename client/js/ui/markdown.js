@@ -9,6 +9,10 @@
 // never innerHTML — so message content can't inject markup.
 
 import { h, mediaUrl } from "./dom.js";
+import { scopedT } from "../strings.js";
+
+// Named `ts`, not `t`: this file uses `t` as the token-object parameter name everywhere.
+const ts = scopedT("ui/markdown");
 
 const MAX_DEPTH = 6;
 
@@ -144,7 +148,7 @@ function renderToken(t, ctx) {
       return h("blockquote", { class: "md-quote" }, renderTokens(t.children, ctx));
     case "spoiler": {
       const el = h("span", {
-        class: "md-spoiler", role: "button", tabindex: "0", title: "Spoiler — click to reveal",
+        class: "md-spoiler", role: "button", tabindex: "0", title: ts("spoiler_hint"),
         on: {
           click: (e) => { e.stopPropagation(); el.classList.add("shown"); },
           keydown: (e) => { if (e.key === "Enter") el.classList.add("shown"); },
@@ -154,7 +158,7 @@ function renderToken(t, ctx) {
     }
     case "mention": {
       const user = ctx.user?.(t.id);
-      const label = user ? `@${user.display_name || user.username}` : "@unknown-user";
+      const label = user ? `@${user.display_name || user.username}` : ts("unknown_user_mention");
       const el = h("span", {
         class: `mention ${ctx.meId === t.id ? "me" : ""}`, role: "button", tabindex: "0",
         on: { click: (e) => { e.stopPropagation(); ctx.onMention?.(t.id, el); } },
@@ -205,7 +209,7 @@ export function plainText(content, ctx = {}) {
       case "emoji": return `:${t.name}:`;
       case "mention": {
         const u = ctx.user?.(t.id);
-        return u ? `@${u.display_name || u.username}` : "@unknown-user";
+        return u ? `@${u.display_name || u.username}` : ts("unknown_user_mention");
       }
       case "spoiler": return "▒▒▒";
       default: return walk(t.children || []);

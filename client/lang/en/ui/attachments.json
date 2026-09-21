@@ -1,0 +1,12 @@
+{
+  "download": "Download",
+  "download_aria": "Download {name}",
+  "open_image_aria": "Open image {name}",
+  "image_modal_title": "Image",
+  "previous_image": "Previous image",
+  "next_image": "Next image",
+  "open_original": "Open original",
+  "link_expired": "This link has expired; reload the channel.",
+  "http_error": "HTTP {status}",
+  "truncated_note": "\n… (download to see the rest)"
+}

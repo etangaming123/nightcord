@@ -6,6 +6,9 @@ import { getPrefs } from "./prefs.js";
 import { channelTitle, isMuted, mentionsMe, notifyLevel, state, userById } from "./state.js";
 import { displayName, avatarUrl } from "./ui/dom.js";
 import { plainText } from "./ui/markdown.js";
+import { scopedT } from "./strings.js";
+
+const t = scopedT("notify");
 
 let audio = null;
 
@@ -50,7 +53,7 @@ export function notifyMessage(message, channel, onClick) {
   if (!document.hidden && document.hasFocus()) return; // the in-app badge is enough
   const author = userById(message.author?.user_id) || message.author;
   const guild = channel.guild_id ? state.guilds.get(channel.guild_id) : null;
-  const title = guild ? `${displayName(author)} (${channelTitle(channel)}, ${guild.name})` : displayName(author);
+  const title = guild ? t("notif_title_guild", { author: displayName(author), channel: channelTitle(channel), guild: guild.name }) : displayName(author);
   try {
     const n = new Notification(title, {
       body: plainText(message.content, { user: userById }).slice(0, 200),

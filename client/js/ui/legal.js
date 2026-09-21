@@ -4,8 +4,15 @@
 import { add, clear, h } from "./dom.js";
 import { renderDocument } from "./markdown.js";
 import { openModal } from "./modals.js";
+import { scopedT } from "../strings.js";
 
-export const DOC_NAMES = { terms: "Terms of Service", privacy: "Privacy Policy" };
+const t = scopedT("ui/legal");
+
+const DOC_KEY = { terms: "doc_terms", privacy: "doc_privacy" };
+export const DOC_NAMES = {};
+for (const [k, key] of Object.entries(DOC_KEY)) {
+  Object.defineProperty(DOC_NAMES, k, { get: () => t(key), enumerable: true });
+}
 
 // Tabs + the rendered document into `tabs` / `body`. Returns the shown names.
 export function renderLegalTabs(docs, tabs, body) {
@@ -17,7 +24,7 @@ export function renderLegalTabs(docs, tabs, body) {
       on: { click: () => { current = k; draw(); } },
     }, DOC_NAMES[k])) : null);
     tabs.hidden = names.length < 2;
-    clear(body, current ? renderDocument(docs[current]) : h("p", { class: "muted" }, "This server has no documents."));
+    clear(body, current ? renderDocument(docs[current]) : h("p", { class: "muted" }, t("no_documents")));
     body.scrollTop = 0;
   };
   draw();
@@ -30,7 +37,7 @@ export function showLegalModal(docs, which = null) {
   const body = h("div", { class: "legal-doc scroll", tabindex: "0" });
   const ordered = which ? { [which]: docs[which], ...docs } : docs;
   renderLegalTabs(ordered, tabs, body);
-  openModal({ title: "Server rules", content: [tabs, body], wide: true, cls: "legal-modal" });
+  openModal({ title: t("server_rules_title"), content: [tabs, body], wide: true, cls: "legal-modal" });
 }
 
 // Blocking prompt after the documents changed: accept or log out.
@@ -47,12 +54,12 @@ export function legalUpdateModal(docs, { onAccept, onLogout }) {
         try { await onAccept(); } catch (e) { error.textContent = e.message; error.hidden = false; accept.disabled = false; }
       },
     },
-  }, "I agree");
+  }, t("agree"));
   openModal({
-    title: "This server updated its rules",
-    subtitle: "Read the new version to keep using the server.",
+    title: t("updated_title"),
+    subtitle: t("updated_subtitle"),
     content: [tabs, body, error],
-    actions: [h("button", { class: "btn", type: "button", on: { click: onLogout } }, "Log out"), accept],
+    actions: [h("button", { class: "btn", type: "button", on: { click: onLogout } }, t("log_out")), accept],
     wide: true,
     dismissable: false,
     cls: "legal-modal",

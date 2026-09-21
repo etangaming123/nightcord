@@ -1,0 +1,8 @@
+{
+  "unknown_user": "Unknown user",
+  "deleted_user": "Deleted User",
+  "just_you": "Just you",
+  "staff_owner": "Server owner",
+  "staff_admin": "Server admin",
+  "staff_moderator": "Server moderator"
+}

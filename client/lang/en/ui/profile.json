@@ -1,0 +1,22 @@
+{
+  "deleted_user_name": "Deleted User",
+  "deleted_user_note": "This account was deleted. Its messages are kept.",
+  "loading": "Loading…",
+  "unknown_date_placeholder": "…",
+  "about_me": "About me",
+  "member_since_heading": "Member since",
+  "nightcord_since": "Nightcord: {date}",
+  "this_guild_since": "This guild: {date}",
+  "roles_heading": "Roles",
+  "no_roles_heading": "No roles",
+  "remove_role_title": "Remove {role}",
+  "add_role_title": "Add role",
+  "timed_out_note": "⏳ Timed out until {until}",
+  "edit_profile": "Edit profile",
+  "message_button": "Message",
+  "nickname_button": "Nickname",
+  "moderate_button": "Moderate ▾",
+  "server_staff_heading": "Server staff",
+  "copied": "Copied",
+  "copy_failed": "Couldn't copy"
+}

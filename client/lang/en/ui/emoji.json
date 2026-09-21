@@ -1,0 +1,18 @@
+{
+  "group_smileys": "Smileys",
+  "group_people": "People",
+  "group_hearts": "Hearts",
+  "group_nature": "Nature",
+  "group_food": "Food",
+  "group_activities": "Activities",
+  "group_objects": "Objects",
+  "group_symbols": "Symbols",
+  "search_placeholder": "Search emoji",
+  "search_aria": "Search emoji",
+  "emoji_categories_aria": "Emoji categories",
+  "pick_an_emoji": "Pick an emoji",
+  "no_emoji_found": "No emoji found",
+  "frequently_used": "Frequently used",
+  "custom_emoji_from": ":{name}: from {guild}",
+  "custom_emoji_hover": ":{name}: — {guild}"
+}

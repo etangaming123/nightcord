@@ -15,6 +15,9 @@ import {
 import { renderTyping } from "./ui/chat.js";
 import { idGt } from "./ui/dom.js";
 import { fullscreenOpen, refreshFullscreen, toast } from "./ui/modals.js";
+import { scopedT } from "./strings.js";
+
+const t = scopedT("events");
 
 const TYPING_MS = 8000;
 
@@ -32,7 +35,7 @@ function permissionsChanged(guildId) {
         state.channels = sortChannels(channels);
         state.voice = new Map((voice || []).map((v) => [v.user_id, v]));
         if (state.channelId && !channels.some((c) => c.channel_id === state.channelId)) {
-          toast("You no longer have access to that channel.");
+          toast(t("channel_access_removed"));
           await openGuild(guildId);
           return;
         }
@@ -137,7 +140,7 @@ export function wireEvents(conn) {
       state.user = { ...state.user, ...u };
       if ("perks" in u && u.perks !== perksBefore) applyPrefs();
       if ("muted_until" in u && u.muted_until !== wasMuted) {
-        toast(u.muted_until ? "You've been muted on this server by its staff." : "You're no longer muted.", { error: !!u.muted_until });
+        toast(u.muted_until ? t("user_muted") : t("user_unmuted"), { error: !!u.muted_until });
       }
     }
     rememberUser(u);
@@ -183,8 +186,12 @@ export function wireEvents(conn) {
   on(T.GUILD_REMOVED, ({ guild_id, reason }) => {
     const g = state.guilds.get(guild_id);
     if (!g) return;
-    const msg = { kicked: `You were kicked from ${g.name}.`, banned: `You were banned from ${g.name}.`, deleted: `${g.name} was deleted.` }[reason];
-    toast(msg || `You left ${g.name}.`, { error: reason !== "deleted" });
+    const msg = {
+      kicked: t("guild_kicked", { name: g.name }),
+      banned: t("guild_banned", { name: g.name }),
+      deleted: t("guild_deleted", { name: g.name }),
+    }[reason];
+    toast(msg || t("guild_left", { name: g.name }), { error: reason !== "deleted" });
     if (state.myVoice?.guild_id === guild_id) state.myVoice = null;
     forgetGuild(guild_id);
   });
@@ -248,7 +255,7 @@ export function wireEvents(conn) {
     if (guild_id === state.guildId) {
       state.channels = state.channels.filter((c) => c.channel_id !== channel_id);
       if (state.channelId === channel_id) {
-        toast("This channel is gone or hidden from you now.");
+        toast(t("channel_gone"));
         openGuild(guild_id);
       }
     }
@@ -274,7 +281,7 @@ export function wireEvents(conn) {
   // --- admin ---
   on(T.ADMIN_ACCOUNT_REQUESTED, ({ user }) => {
     state.pendingAccounts += 1;
-    toast(`${user.username} is asking for an account — see User settings → Accounts.`);
+    toast(t("account_request_pending", { username: user.username }));
     invalidate("sidebar");
   });
 }

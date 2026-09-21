@@ -6,6 +6,9 @@
 
 import { memberById, state, userById } from "./state.js";
 import { mediaUrl, setAnimatePolicy } from "./ui/dom.js";
+import { scopedT } from "./strings.js";
+
+const t = scopedT("perks");
 
 const GUILD_FEATURES = new Set(["guild_banner", "gradient_roles", "role_icons"]);
 
@@ -118,7 +121,7 @@ export function roleDisplay(userId) {
 // Why a personal feature isn't available to me, or null if it is.
 export function lockedReason(feature) {
   if (userCan(feature)) return null;
-  if (state.info?.customization_features?.[feature] === false) return "The server owner has turned this off.";
-  if (state.info?.customization_mode === "off") return "Customisation is turned off on this server.";
-  return "On this server, only people with perks can use this — ask a server admin.";
+  if (state.info?.customization_features?.[feature] === false) return t("locked_feature_disabled");
+  if (state.info?.customization_mode === "off") return t("locked_customization_off");
+  return t("locked_needs_perks");
 }

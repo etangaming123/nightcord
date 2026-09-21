@@ -1,0 +1,16 @@
+{
+  "search_guild_placeholder": "Search {guild}",
+  "search_conversation_placeholder": "Search this conversation",
+  "search_aria": "Search messages",
+  "filters_label": "Filters: ",
+  "close_search": "Close search",
+  "search_aside_aria": "Search",
+  "no_user_named": "Nobody here is called “{name}”.",
+  "no_channel_named": "No channel called #{name}.",
+  "searching": "Searching…",
+  "result_count": { "one": "{count} result", "other": "{count} results" },
+  "no_results": "No results. Try fewer words.",
+  "more_results": "More results",
+  "jump_to_message": "Jump to message",
+  "attachment_list": "📎 {names}"
+}

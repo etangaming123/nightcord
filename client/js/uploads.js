@@ -7,6 +7,9 @@ import { state } from "./state.js";
 import * as store from "./storage.js";
 import { fmtBytes, serverUrl } from "./ui/dom.js";
 import { toast } from "./ui/modals.js";
+import { scopedT } from "./strings.js";
+
+const t = scopedT("uploads");
 
 let seq = 0;
 
@@ -55,10 +58,10 @@ function upload(item, channelId) {
       let body = {};
       try { body = JSON.parse(xhr.responseText); } catch { /* not JSON */ }
       if (xhr.status === 200 && body.attachment) resolve(body.attachment);
-      else reject(new Error(body.error?.message || `Upload failed (HTTP ${xhr.status})`));
+      else reject(new Error(body.error?.message || t("upload_failed_http", { status: xhr.status })));
     };
-    xhr.onerror = () => reject(new Error("Upload failed — check your connection"));
-    xhr.onabort = () => reject(new Error("Cancelled"));
+    xhr.onerror = () => reject(new Error(t("upload_failed_connection")));
+    xhr.onabort = () => reject(new Error(t("cancelled")));
     xhr.send(item.file);
   });
 }
@@ -69,14 +72,14 @@ export function addFiles(files) {
   const limit = state.info?.max_upload_bytes || Infinity;
   for (const file of files) {
     if (state.pending.length >= LIMITS.MAX_ATTACHMENTS) {
-      toast(`You can attach at most ${LIMITS.MAX_ATTACHMENTS} files to a message.`, { error: true });
+      toast(t("too_many_attachments", { max: LIMITS.MAX_ATTACHMENTS }), { error: true });
       break;
     }
     if (file.size > limit) {
-      toast(`${file.name} is too large — this server allows files up to ${fmtBytes(limit)}.`, { error: true, ms: 6000 });
+      toast(t("file_too_large", { name: file.name, max: fmtBytes(limit) }), { error: true, ms: 6000 });
       continue;
     }
-    if (!file.size) { toast(`${file.name} is empty.`, { error: true }); continue; }
+    if (!file.size) { toast(t("file_empty", { name: file.name }), { error: true }); continue; }
     const item = {
       id: ++seq, file, channelId, name: file.name || "pasted-image.png", size: file.size, type: file.type,
       progress: 0, attachment: null, error: null,
@@ -91,7 +94,7 @@ export function addFiles(files) {
       item.progress = 1;
     }, (e) => {
       item.error = e.message;
-      if (e.message !== "Cancelled") toast(`${item.name}: ${e.message}`, { error: true, ms: 6000 });
+      if (e.message !== t("cancelled")) toast(t("item_upload_failed", { name: item.name, message: e.message }), { error: true, ms: 6000 });
     }).finally(() => invalidate("composer"));
   }
   invalidate("composer");
@@ -118,7 +121,7 @@ export function clearPending() {
 export async function readyAttachments() {
   await Promise.all(state.pending.map((p) => p.done));
   const failed = state.pending.filter((p) => p.error);
-  if (failed.length) throw new Error(`Remove the failed upload${failed.length > 1 ? "s" : ""} first.`);
+  if (failed.length) throw new Error(t("remove_failed_upload_first", { count: failed.length }));
   return state.pending.map((p) => p.attachment.attachment_id);
 }
 
@@ -130,7 +133,7 @@ export const uploading = () => state.pending.some((p) => !p.attachment && !p.err
 export async function uploadMedia(kind, blob) {
   const cap = LIMITS.MEDIA_KINDS[kind];
   if (cap && blob.size > cap.maxBytes) {
-    throw new Error(`That image is too large — at most ${fmtBytes(cap.maxBytes)} here.`);
+    throw new Error(t("media_too_large", { max: fmtBytes(cap.maxBytes) }));
   }
   let res;
   try {
@@ -138,10 +141,10 @@ export async function uploadMedia(kind, blob) {
       method: "POST", body: blob, headers: { Authorization: `Bearer ${store.getToken(state.url)}` },
     });
   } catch {
-    throw new Error("Upload failed — check your connection");
+    throw new Error(t("upload_failed_connection"));
   }
   let body = {};
   try { body = await res.json(); } catch { /* not JSON */ }
-  if (!res.ok || !body.media) throw new Error(body.error?.message || `Upload failed (HTTP ${res.status})`);
+  if (!res.ok || !body.media) throw new Error(body.error?.message || t("upload_failed_http", { status: res.status }));
   return body.media;
 }

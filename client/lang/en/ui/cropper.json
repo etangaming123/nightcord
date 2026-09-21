@@ -1,0 +1,10 @@
+{
+  "drag_to_move": "Drag to move",
+  "zoom_aria": "Zoom",
+  "apply": "Apply",
+  "keep_animation_title": "Upload the whole image without cropping",
+  "keep_animation": "Keep animation",
+  "crop_image_title": "Crop image",
+  "crop_subtitle_with_keep": "Drag to move, scroll or use the slider to zoom. Cropping keeps the first frame only.",
+  "crop_subtitle": "Drag to move, scroll or use the slider to zoom."
+}

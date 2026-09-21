@@ -3,6 +3,9 @@
 
 import { PERMS } from "./protocol.js";
 import { idGt } from "./ui/dom.js";
+import { scopedT } from "./strings.js";
+
+const t = scopedT("state");
 
 export const state = {
   url: null, // canonical ws(s)://…/ws of the connected server
@@ -77,13 +80,13 @@ export const userById = (id) => state.users.get(id) || (state.user?.user_id === 
 
 // Name shown for a user in the current guild: nickname > display name > username.
 export function nameOf(user, guildId = state.view === "guild" ? state.guildId : null) {
-  if (!user) return "Unknown user";
-  if (user.deleted) return "Deleted User";
+  if (!user) return t("unknown_user");
+  if (user.deleted) return t("deleted_user");
   if (guildId && guildId === state.guildId) {
     const nick = state.members.find((m) => m.user.user_id === user.user_id)?.nickname;
     if (nick) return nick;
   }
-  return user.display_name || user.username || "Unknown user";
+  return user.display_name || user.username || t("unknown_user");
 }
 
 // --- server staff (PROTOCOL.md §8c) -------------------------------------------
@@ -91,7 +94,13 @@ export function nameOf(user, guildId = state.view === "guild" ? state.guildId : 
 const STAFF = { none: 0, moderator: 1, admin: 2, owner: 3 };
 export const staffLevel = (u = state.user) => STAFF[u?.server_role || (u?.is_server_owner ? "owner" : "none")] || 0;
 export const isStaff = (min = 1) => staffLevel() >= min;
-export const STAFF_LABEL = { owner: "Server owner", admin: "Server admin", moderator: "Server moderator" };
+
+// A lazy-lookup object: consumers do STAFF_LABEL[role] and get the
+// translated string on access, never at module load.
+const STAFF_LABEL_KEYS = { owner: "staff_owner", admin: "staff_admin", moderator: "staff_moderator" };
+export const STAFF_LABEL = new Proxy({}, {
+  get: (_, prop) => (STAFF_LABEL_KEYS[prop] ? t(STAFF_LABEL_KEYS[prop]) : undefined),
+});
 
 export function mutedUntil() {
   const until = state.user?.muted_until;
@@ -178,7 +187,7 @@ export const voiceIn = (channelId) => [...state.voice.values()].filter((v) => v.
 export function dmTitle(ch) {
   if (ch.name) return ch.name;
   const others = ch.recipients.filter((u) => u.user_id !== state.user?.user_id);
-  if (!others.length) return "Just you";
+  if (!others.length) return t("just_you");
   return others.map((u) => nameOf(userById(u.user_id) || u, null)).join(", ");
 }
 

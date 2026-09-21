@@ -1,0 +1,8 @@
+{
+  "search_placeholder": "Where would you like to go?",
+  "search_aria_label": "Search channels, people and guilds",
+  "group_label": "Group",
+  "nothing_matches": "Nothing matches.",
+  "modal_title": "Quick switcher",
+  "tip": "Tip: start with # for channels, @ for people, * for guilds."
+}

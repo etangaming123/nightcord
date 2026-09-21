@@ -1,0 +1,9 @@
+{
+  "sticker_deleted_title": "This sticker was deleted",
+  "deleted_sticker": "Deleted sticker",
+  "search_placeholder": "Search stickers",
+  "search_aria": "Search stickers",
+  "sticker_title_with_description": "{name} — {description}",
+  "no_stickers_manager_note": "No stickers yet. Guild managers can add some in Server Settings → Stickers.",
+  "no_stickers_found": "No stickers found"
+}
