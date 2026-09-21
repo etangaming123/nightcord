@@ -74,15 +74,11 @@ function connectError(url, err) {
   return parts;
 }
 
-// The address field shows the scheme the client will use: https:// (wss)
-// normally, http:// (ws) for a local server while the client itself is on http.
+// The address field shows the scheme the client will use: https:// (wss) by
+// default, including for localhost, unless the user types a scheme explicitly.
 function updateScheme() {
   const value = $("#connect-form").address.value.trim();
-  let scheme = "https://";
-  try {
-    if (value && !/^[a-z]+:\/\//i.test(value) && normalizeServerUrl(value).startsWith("ws:")) scheme = "https://";
-  } catch { /* invalid so far; keep the default */ }
-  if (/^[a-z]+:\/\//i.test(value)) scheme = "";
+  const scheme = /^[a-z]+:\/\//i.test(value) ? "" : "https://";
   $("#connect-scheme").textContent = scheme;
   $("#connect-scheme").hidden = !scheme;
 }

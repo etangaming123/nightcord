@@ -25,11 +25,9 @@ export function normalizeServerUrl(input) {
   if (!s) throw new Error(t("enter_server_address"));
   if (/^https?:\/\//i.test(s)) s = s.replace(/^http/i, "ws");
   if (!/^wss?:\/\//i.test(s)) {
-    const host = s.split("/")[0].split(":")[0];
-    const local = host === "localhost" || host === "127.0.0.1" || host === "[::1]";
-    // Plain ws:// only for local dev served over http; everything else is wss.
-    const secure = !(local && location.protocol === "http:");
-    s = `${secure ? "wss" : "ws"}://${s}`;
+    // No scheme given: default to wss (https), even for localhost. Plain ws
+    // requires an explicit ws:// or http:// prefix.
+    s = `wss://${s}`;
   }
   const url = new URL(s);
   url.pathname = "/ws";
