@@ -18,19 +18,43 @@
   <section id="screen-connect" class="screen" hidden>
     <div class="card">
       <h1 class="brand"><img class="brand-mark" src="assets/logo.png" alt=""><span data-i18n="brand">Nightcord</span></h1>
-      <p class="muted" data-i18n="connect_tagline">Connect to a Nightcord server.</p>
-      <ul id="saved-servers" class="saved-servers"></ul>
-      <form id="connect-form" class="stack" autocomplete="on">
-        <label for="connect-address" data-i18n="server_address_label">Server address</label>
-        <div class="url-field">
-          <span id="connect-scheme" class="url-prefix" aria-hidden="true">https://</span>
-          <input id="connect-address" name="address" data-i18n-placeholder="server_address_placeholder" placeholder="chat.example.com:8765" required spellcheck="false" autocapitalize="off" autocomplete="url" inputmode="url">
+      <p class="muted">
+        <span data-i18n="connect_tagline">Connect to a Nightcord server.</span>
+        <button type="button" class="whats-this" id="whats-this" data-i18n="whats_this_label" data-i18n-title="whats_this_body" title="What's this?">What's this?</button>
+      </p>
+
+      <div class="tabs inline" id="connect-tabs" role="tablist">
+        <button type="button" class="tab" id="tab-btn-new" role="tab" aria-selected="false" aria-controls="tab-new" data-i18n="tab_new_server">New server</button>
+        <button type="button" class="tab" id="tab-btn-saved" role="tab" aria-selected="false" aria-controls="tab-saved" data-i18n="tab_join_saved">Join saved</button>
+      </div>
+
+      <div id="tab-saved" role="tabpanel" aria-labelledby="tab-btn-saved" hidden>
+        <ul id="saved-servers" class="saved-servers"></ul>
+        <div id="saved-empty" class="saved-empty" hidden>
+          <p class="muted small" data-i18n="no_saved_servers">You haven't saved any servers yet.</p>
+          <button type="button" class="btn block" id="saved-empty-cta" data-i18n="no_saved_servers_cta">Connect to a new server</button>
         </div>
-        <div class="chips">
-          <button type="button" class="chip" id="connect-localhost" data-i18n-title="localhost_title" title="Fill in a server running on this computer">localhost:8765</button>
-        </div>
-        <button type="submit" class="btn primary" data-i18n="connect_submit">Connect</button>
-      </form>
+      </div>
+
+      <div id="tab-new" role="tabpanel" aria-labelledby="tab-btn-new" hidden>
+        <form id="connect-form" class="stack" autocomplete="on">
+          <label for="connect-address" data-i18n="server_address_label">Server address</label>
+          <div class="url-field">
+            <span id="connect-scheme" class="url-prefix" aria-hidden="true">https://</span>
+            <input id="connect-address" name="address" data-i18n-placeholder="server_address_placeholder" placeholder="chat.example.com:8765" required spellcheck="false" autocapitalize="off" autocomplete="url" inputmode="url">
+          </div>
+          <div class="chips">
+            <button type="button" class="chip" id="connect-localhost" data-i18n-title="localhost_title" title="Fill in a server running on this computer">localhost:8765</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="connect-actions">
+        <button type="submit" form="connect-form" class="btn primary" id="connect-submit" data-i18n="connect_submit">Connect</button>
+        <span id="connect-status" class="muted small" hidden></span>
+        <button type="button" class="btn" id="connect-cancel" data-i18n="connect_cancel" hidden>Cancel</button>
+      </div>
+      <p id="connect-hint" class="muted small" hidden data-i18n="still_trying">Still trying…</p>
       <div id="connect-error" class="error-box" hidden></div>
     </div>
   </section>

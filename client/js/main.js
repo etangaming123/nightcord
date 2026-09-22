@@ -41,8 +41,9 @@ function showScreen(which) {
 
 function showConnect({ error = null, prefill = "" } = {}) {
   showScreen("connect");
+  const servers = store.getServers();
   const list = clear($("#saved-servers"));
-  for (const s of store.getServers()) {
+  servers.forEach((s, i) => {
     const remove = h("button", {
       class: "icon-btn", type: "button", title: t("forget_server"), "aria-label": t("forget_server_aria", { label: s.label }),
       on: { click: (e) => { e.stopPropagation(); store.removeServer(s.url); showConnect(); } },
@@ -53,15 +54,30 @@ function showConnect({ error = null, prefill = "" } = {}) {
         click: () => connectTo(s.url),
         keydown: (e) => { if (e.key === "Enter") connectTo(s.url); },
       },
-    }, h("div", { class: "meta" }, h("div", { class: "name" }, s.label), h("div", { class: "url" }, s.url,
-      store.getAccounts(s.url).length ? ` · ${t("account_count", { count: store.getAccounts(s.url).length })}` : "")), remove));
-  }
+    }, h("div", { class: "meta" },
+      h("div", { class: "name" }, s.label, i === 0 && servers.length > 1 ? h("span", { class: "pill" }, t("last_used_badge")) : ""),
+      h("div", { class: "url" }, s.url,
+        store.getAccounts(s.url).length ? ` · ${t("account_count", { count: store.getAccounts(s.url).length })}` : "")), remove));
+  });
+  $("#saved-empty").hidden = servers.length > 0;
   const form = $("#connect-form");
   if (prefill) form.address.value = prefill.replace(/^(https?|wss?):\/\//i, "");
   updateScheme();
   const box = $("#connect-error");
   box.hidden = !error;
   if (error) clear(box, error);
+  setConnectTab(prefill || servers.length === 0 ? "new" : "saved");
+}
+
+function setConnectTab(which) {
+  const isNew = which === "new";
+  $("#tab-btn-new").setAttribute("aria-selected", String(isNew));
+  $("#tab-btn-saved").setAttribute("aria-selected", String(!isNew));
+  $("#tab-new").hidden = !isNew;
+  $("#tab-saved").hidden = isNew;
+  $("#connect-submit").hidden = !isNew;
+  if (isNew) $("#connect-address").focus();
+  else $("#saved-servers").querySelector(".saved-server")?.focus();
 }
 
 function connectError(url, err) {
@@ -123,12 +139,22 @@ async function connectTo(input, { addAccount = false } = {}) {
   }
   store.setTrusted(url);
   disconnect();
-  const button = $("#connect-form button[type=submit]");
-  button.disabled = true;
-  button.textContent = t("connecting");
+  const button = $("#connect-submit");
+  const status = $("#connect-status");
+  const cancelBtn = $("#connect-cancel");
+  const hint = $("#connect-hint");
   const conn = new Connection(url);
   let banned = null;
+  let cancelled = false;
+  const onCancel = () => { cancelled = true; conn.close(); };
   conn.on(T.ERROR, (p) => { if (p.code === ERR.IP_BANNED) banned = p.message; });
+  button.disabled = true;
+  button.textContent = t("connecting");
+  status.hidden = !button.hidden; // only show the status text when the Connect button itself is on the other tab
+  status.textContent = t("connecting");
+  cancelBtn.hidden = false;
+  cancelBtn.addEventListener("click", onCancel);
+  const hintTimer = setTimeout(() => { hint.hidden = false; }, 6000);
   try {
     await conn.open();
     state.conn = conn;
@@ -137,11 +163,17 @@ async function connectTo(input, { addAccount = false } = {}) {
   } catch (e) {
     conn.close();
     state.conn = null;
-    showConnect({ error: banned ? banned : connectError(url, e), prefill: input });
+    if (cancelled) showConnect({ prefill: input });
+    else showConnect({ error: banned ? banned : connectError(url, e), prefill: input });
     return;
   } finally {
     button.disabled = false;
     button.textContent = t("connect");
+    status.hidden = true;
+    cancelBtn.hidden = true;
+    cancelBtn.removeEventListener("click", onCancel);
+    clearTimeout(hintTimer);
+    hint.hidden = true;
   }
   if (state.info.protocol_version && state.info.protocol_version !== PROTOCOL_VERSION) {
     toast(t("protocol_mismatch", { server: state.info.protocol_version, client: PROTOCOL_VERSION }), { error: true, ms: 8000 });
@@ -551,6 +583,9 @@ async function boot() {
     connectTo(e.currentTarget.address.value);
   });
   $("#connect-form").address.addEventListener("input", updateScheme);
+  $("#tab-btn-new").addEventListener("click", () => setConnectTab("new"));
+  $("#tab-btn-saved").addEventListener("click", () => setConnectTab("saved"));
+  $("#saved-empty-cta").addEventListener("click", () => setConnectTab("new"));
   $("#connect-localhost").addEventListener("click", () => {
     const input = $("#connect-form").address;
     input.value = "localhost:8765";

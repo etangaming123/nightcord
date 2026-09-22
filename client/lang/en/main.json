@@ -6,6 +6,7 @@
   "self_signed_after": " once, accept the certificate warning, then try again.",
   "connecting": "Connecting…",
   "connect": "Connect",
+  "last_used_badge": "Last used",
   "protocol_mismatch": "Server speaks protocol {server}; this client expects {client}. Some things may not work.",
   "trust_title": "Only join servers you trust",
   "trust_body_before": "Nightcord servers are run by people, not by Nightcord. The owner of this server and its staff can see your ",
