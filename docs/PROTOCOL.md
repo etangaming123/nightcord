@@ -1,6 +1,6 @@
 # Nightcord Protocol
 
-Version: `0.8`
+Version: `0.9`
 
 This document is the single source of truth for the wire format between the
 Nightcord client (GitHub Pages, vanilla JS) and a Nightcord server (Python).
@@ -21,6 +21,7 @@ Each protocol version arrived with one commit on `main`, named in the middle col
 | 0.6 | Friends, blocking and message requests | Friends and friend requests, one-sided blocking, per-user DM privacy with message requests, group DMs limited to friends, and user search as a server setting (off by default). |
 | 0.7 | Announcements inbox | A server-wide announcements inbox with per-account read state, and automatic entries when the Terms or Privacy Policy change. |
 | 0.8 | Account switcher | `max_accounts_per_client`, an advisory server setting for clients that keep several accounts. |
+| 0.9 | Link embeds | The server fetches pages people link to and stores a preview on the message (`embeds`), with an SSRF-guarded fetcher, an image proxy so viewers' addresses never reach third parties, `message.embeds.suppress`, and a `link_embeds` server setting. |
 
 ---
 
@@ -119,6 +120,13 @@ Besides `/ws`, the server answers:
   after an hour. Uploading needs no customisation perks; using an image
   may (§8d).
 - `GET /media/{media_id}` — a stored image. Public and immutable.
+- `GET /proxy/{signature}/{url}` — one image from a link preview (§4
+  Embed). `url` is the remote image's URL, base64url-encoded; `signature`
+  is HMAC-SHA256 over it with a per-server secret, so this can't be used as
+  an open proxy. The server fetches it with the same guards as a preview
+  (public addresses only, `image/*` only, 8 MB cap) and keeps the bytes for
+  a week. No authentication: an embed's images are as public as the message
+  they're on.
 
 ---
 
@@ -232,7 +240,8 @@ Password is never sent to the client; the server stores only a bcrypt hash.
   },
   "user_search": "off | staff | on",
   "announcements_admins": false,
-  "max_accounts_per_client": 0
+  "max_accounts_per_client": 0,
+  "link_embeds": true
 }
 ```
 Defaults: `guild_creation: "on"`, `account_creation: "on"`,
@@ -249,7 +258,10 @@ username either way. `announcements_admins` (default false) lets server
 admins post announcements as well as the owner. `max_accounts_per_client`
 (default 0 = no limit, up to 20) is advisory: clients with an account
 switcher stop offering "Add account" for this server once they hold that
-many; the server doesn't enforce it.
+many; the server doesn't enforce it. `link_embeds` (default true) decides
+whether the server fetches pages people link to and builds previews (§4
+Embed); with it off the server makes no outbound requests for messages at
+all, and `/proxy` stops serving anything new.
 
 ### Guild
 ```json
@@ -377,6 +389,8 @@ only ever sent to users who have `VIEW_CHANNEL` in it.
   "reactions": [{ "emoji": "string", "user_ids": ["string"] }],
   "type": "default | member_join | member_leave | pin",
   "pinned": false,
+  "embeds": ["Embed"],
+  "embeds_suppressed": false,
   "attachments": ["Attachment"],
   "stickers": [{ "sticker_id": "string", "name": "string", "animated": false, "guild_id": "string" }]
 }
@@ -407,6 +421,43 @@ to and deleted with `MANAGE_MESSAGES`.
 `url` is relative to the server's https origin (§2 HTTP). Clients show
 `image/*` inline, play `video/*` and `audio/*` inline, open `text/plain`
 in a viewer, and offer everything else as a download.
+
+### Embed
+```json
+{
+  "kind": "link | image | video",
+  "url": "https://…",
+  "title": "string | null",
+  "description": "string | null",
+  "site_name": "string | null",
+  "author": "string | null",
+  "color": "#rrggbb | null",
+  "image": "/proxy/… | null",
+  "thumbnail": "/proxy/… | null"
+}
+```
+A preview the server built for a link somebody posted. The server reads at
+most 5 links per message — skipping code spans, spoilers and the `<url>`
+"no preview" forms of §4 Message — fetches each page and keeps `og:*`,
+`twitter:*`, `<title>`, `<meta name="description">` and `theme-color`.
+
+A URL that answers with an image is a `kind: "image"` embed; a YouTube
+watch, `youtu.be` or shorts link is a `kind: "video"` card with the video's
+thumbnail. Nothing is ever embedded as an iframe.
+
+`image` and `thumbnail` are **always** paths on this server
+(`/proxy/{signature}/{url}`, §2 HTTP), never third-party URLs: a link in a
+message must not be usable to collect every reader's IP address. The server
+fetches the real image once and caches it.
+
+Previews arrive after the message: `message.new` carries `embeds: []`, and
+a `message.updated` follows with them filled in. That update does **not**
+set `edited_at`, so it isn't shown as an edit. Editing a message clears its
+previews and looks again.
+
+`message.embeds.suppress` hides them (author, or `MANAGE_MESSAGES` in a
+guild); `embeds_suppressed` then stays true and `embeds` reads empty.
+Embeds are off entirely when the server's `link_embeds` setting is false.
 
 ### Media
 ```json
@@ -458,7 +509,7 @@ lists with one level of nesting (two or more leading spaces).
 
 Links: a bare `https://…` URL, `[label](https://…)` for a masked one, and
 `<https://…>` or `[label](<https://…>)` for a link the server should not
-build a preview for. A trailing `)` counts as part of a bare URL
+build a preview for (§4 Embed). A trailing `)` counts as part of a bare URL
 only when the URL opened one itself.
 
 References: mentions `<@user_id>` and `@everyone`, channels `<#channel_id>`,
@@ -923,6 +974,8 @@ the Terms or Privacy Policy. Read state is one `last_read_id` per account.
 | `message.pin.result` | S→C | `{}` |
 | `message.unpin` | C→S | `{ message_id }` — same permission; sends `message.updated` |
 | `message.unpin.result` | S→C | `{}` |
+| `message.embeds.suppress` | C→S | `{ message_id, suppressed?: bool }` — hide or restore a message's link previews (§4 Embed). The author, or `MANAGE_MESSAGES` in a guild. Defaults to hiding |
+| `message.embeds.suppress.result` | S→C | `{ message }` |
 | `message.search` | C→S | `{ guild_id \| channel_id, query?, author_id?, has?: "file"\|"image"\|"video"\|"link", pinned?, before?, after?, offset? }` — at least one filter. Searches text channels where you have `READ_HISTORY` (or one channel / DM); words match as prefixes, newest first, 25 per page |
 | `message.search.result` | S→C | `{ messages: [Message + guild_id], total }` |
 | `message.new` | S→C | `Message` + `guild_id` — to everyone who can view the channel (including the sender) |
@@ -1201,7 +1254,8 @@ server-side failure; safe to retry), `setup_required`,
 `blocked` (one of you blocked the other), `dm_not_allowed` (their DM
 privacy doesn't let you message them), `request_pending` (your message
 request hasn't been accepted yet), `already_friends`, `not_friends` (group
-DMs only take your friends).
+DMs only take your friends), `embeds_disabled` (this server doesn't build
+link previews).
 This list will grow — append here rather than inventing undocumented codes.
 
 ---
@@ -1210,7 +1264,6 @@ This list will grow — append here rather than inventing undocumented codes.
 
 Documented so the schema leaves room, without being built yet:
 
-- Link embeds / previews
 - Per-member channel overwrites
 - Voice/video audio (voice channels are placeholders, §5 Voice)
 - Server-wide emoji packs (emoji belong to guilds)

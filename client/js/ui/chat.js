@@ -7,6 +7,7 @@ import {
   nameOf, statusOf, userById,
 } from "../state.js";
 import { renderAttachments } from "./attachments.js";
+import { renderEmbeds } from "./embeds.js";
 import { $, add, avatar, clear, h, iconBtn, idGt } from "./dom.js";
 import { renderFriendsHeader, renderFriendsPage } from "./friends.js";
 import { QUICK_REACTIONS, customOf, emojiGlyph } from "./emoji.js";
@@ -274,6 +275,7 @@ function messageNodes(m, prev, state, actions) {
       m.edited_at ? h("span", { class: "edited", title: `Edited ${fullFmt.format(new Date(m.edited_at))}` }, " (edited)") : null);
   const files = editing ? null : [
     renderAttachments(m),
+    renderEmbeds(m, actions),
     m.stickers?.length ? h("div", { class: "msg-stickers" }, m.stickers.map((st) => stickerImg(st))) : null,
   ];
   const cls = `msg ${mentionsMe(m) ? "mentioned" : ""} ${editing ? "editing" : ""} ${m.pinned ? "pinned" : ""}`;

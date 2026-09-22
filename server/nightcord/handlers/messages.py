@@ -2,16 +2,22 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import json
+import logging
 import math
 import re
 
+from .. import embeds as E
 from .. import permissions as perm
 from .. import protocol as P
 from ..protocol import ProtocolError
 from . import handles
 from ._access import check_muted, check_timeout, get_channel, require_channel_perm, require_member
+from .proxy import proxy_embed
+
+log = logging.getLogger("nightcord.messages")
 
 MENTION_RE = re.compile(r"<@(\d{1,20})>")
 EVERYONE_RE = re.compile(r"(?<![\w`])@everyone\b")
@@ -77,6 +83,46 @@ async def post_system(ctx, channel: dict, user_id: str, type_: str, *, reply_to_
     message["guild_id"] = channel["guild_id"]
     await ctx.hub.send_to_channel_viewers(channel, P.frame(P.MESSAGE_NEW, message))
     return message
+
+
+# Link previews are filled in after the message is already delivered: a slow
+# site must never hold up sending. The follow-up is a message.updated that
+# leaves edited_at alone, so nothing reads as "(edited)" (PROTOCOL.md §4 Embed).
+_embed_tasks: set[asyncio.Task] = set()
+
+
+def spawn_embeds(ctx, channel: dict, message: dict) -> None:
+    if not ctx.db.get_server_config()["link_embeds"] or ctx.http is None:
+        return
+    if message.get("embeds_suppressed") or not E.extract_urls(message["content"] or ""):
+        return
+    task = asyncio.create_task(_fill_embeds(ctx, channel, int(message["message_id"])))
+    _embed_tasks.add(task)
+    task.add_done_callback(_embed_tasks.discard)
+
+
+async def _fill_embeds(ctx, channel: dict, message_id: int) -> None:
+    try:
+        row = ctx.db.message_row(message_id)
+        if row is None:
+            return
+        found = await E.build_embeds(ctx.http, row["content"] or "")
+        # The message may have been edited or deleted while we were fetching.
+        fresh = ctx.db.message_row(message_id)
+        if fresh is None or fresh["content"] != row["content"] or fresh["embeds_suppressed"]:
+            return
+        stored = [proxy_embed(ctx.db.file_secret(), e) for e in found]
+        if not stored and not json.loads(fresh["embeds"] or "[]"):
+            return
+        message = ctx.db.set_embeds(message_id, stored)
+        if message is None:
+            return
+        message["guild_id"] = channel["guild_id"]
+        await ctx.hub.send_to_channel_viewers(channel, P.frame(P.MESSAGE_UPDATED, message))
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        log.exception("filling embeds for message %s failed", message_id)
 
 
 def _parse_iso(s: str) -> dt.datetime:
@@ -154,6 +200,7 @@ async def send(ctx, conn, payload):
     ctx.db.bump_mentions(channel["channel_id"], pinged)
     message["guild_id"] = channel["guild_id"]
     await ctx.hub.send_to_channel_viewers(channel, P.frame(P.MESSAGE_NEW, message))
+    spawn_embeds(ctx, channel, message)
     return {"message_id": message["message_id"], "message": message}
 
 
@@ -179,6 +226,10 @@ async def edit(ctx, conn, payload):
     message = ctx.db.edit_message(row["message_id"], content, mentions, everyone)
     message["guild_id"] = channel["guild_id"]
     await ctx.hub.send_to_channel_viewers(channel, P.frame(P.MESSAGE_UPDATED, message))
+    if content != row["content"]:
+        # Links may have changed; drop the old previews and look again.
+        ctx.db.set_embeds(row["message_id"], [])
+        spawn_embeds(ctx, channel, message)
     return {"message": message}
 
 
@@ -200,6 +251,25 @@ async def delete(ctx, conn, payload):
         )
     await broadcast_deleted(ctx, channel, str(row["message_id"]))
     return {}
+
+
+@handles(P.MESSAGE_EMBEDS_SUPPRESS)
+async def embeds_suppress(ctx, conn, payload):
+    """Hide (or bring back) a message's link previews. Author or Manage Messages."""
+    row, channel, perms = _require_message(ctx, conn, payload)
+    own = row["author_user_id"] == conn.user_id
+    if not own and not (channel["guild_id"] is not None and perms & perm.MANAGE_MESSAGES):
+        raise ProtocolError(P.FORBIDDEN, "You can only hide previews on your own messages")
+    suppressed = P.opt_bool(payload, "suppressed")
+    suppressed = True if suppressed is None else suppressed
+    if bool(row["embeds_suppressed"]) == suppressed:
+        return {"message": ctx.db.get_message(row["message_id"])}
+    message = ctx.db.suppress_embeds(row["message_id"], suppressed)
+    message["guild_id"] = channel["guild_id"]
+    await ctx.hub.send_to_channel_viewers(channel, P.frame(P.MESSAGE_UPDATED, message))
+    if not suppressed:
+        spawn_embeds(ctx, channel, message)
+    return {"message": message}
 
 
 async def _reaction_event(ctx, channel: dict, type_: str, row, emoji: str, user_id: str) -> None:

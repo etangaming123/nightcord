@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-PROTOCOL_VERSION = "0.8"
+PROTOCOL_VERSION = "0.9"
 
 # --- Message types -----------------------------------------------------------
 
@@ -246,6 +246,8 @@ MESSAGE_UNPIN = "message.unpin"
 MESSAGE_UNPIN_RESULT = "message.unpin.result"
 MESSAGE_SEARCH = "message.search"
 MESSAGE_SEARCH_RESULT = "message.search.result"
+MESSAGE_EMBEDS_SUPPRESS = "message.embeds.suppress"
+MESSAGE_EMBEDS_SUPPRESS_RESULT = "message.embeds.suppress.result"
 MESSAGE_NEW = "message.new"
 MESSAGE_UPDATED = "message.updated"
 MESSAGE_DELETED = "message.deleted"
@@ -380,6 +382,7 @@ DM_NOT_ALLOWED = "dm_not_allowed"
 REQUEST_PENDING = "request_pending"
 ALREADY_FRIENDS = "already_friends"
 NOT_FRIENDS = "not_friends"
+EMBEDS_DISABLED = "embeds_disabled"
 
 ERROR_CODES = frozenset(
     {
@@ -393,7 +396,7 @@ ERROR_CODES = frozenset(
         INVALID_CURRENT_PASSWORD, FILE_TOO_LARGE, MUTED, IP_BANNED, DEVICE_BANNED,
         SLOWMODE, INVITE_EXPIRED, LEGAL_REQUIRED, VOICE_DISABLED, PIN_LIMIT,
         FEATURE_DISABLED, MEDIA_INVALID, BLOCKED, DM_NOT_ALLOWED, REQUEST_PENDING, ALREADY_FRIENDS,
-        NOT_FRIENDS,
+        NOT_FRIENDS, EMBEDS_DISABLED,
     }
 )
 
@@ -507,6 +510,13 @@ NOTIFY_LEVELS = ("all", "mentions", "none")
 DM_PRIVACY = ("everyone", "requests", "friends")
 USER_SEARCH_MODES = ("off", "staff", "on")
 ANNOUNCEMENT_MAX_CHARS = 4000
+# Link embeds (§4 Embed): the server fetches pages people post.
+MAX_EMBEDS_PER_MESSAGE = 5
+EMBED_FETCH_TIMEOUT = 5
+EMBED_PAGE_MAX_BYTES = 1024 * 1024
+EMBED_IMAGE_MAX_BYTES = 8 * 1024 * 1024
+EMBED_CACHE_SECONDS = 3600
+PROXY_CACHE_DAYS = 7
 MAX_ACCOUNTS_PER_CLIENT = 20
 
 

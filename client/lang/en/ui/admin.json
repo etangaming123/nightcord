@@ -231,5 +231,7 @@
   "unban_ip_title": "Lift the ban on {cidr}?",
   "unban_ip_body": "Connections from that address will be accepted again.",
   "unban_device_title": "Lift this device ban?",
-  "unban_device_body": "That device will be able to log in again."
+  "unban_device_body": "That device will be able to log in again.",
+  "link_embeds_label": "Link previews",
+  "link_embeds_hint": "The server fetches pages people link to and shows a preview. Sites see this server's IP address, never the readers'. Turn it off and the server makes no outbound requests for messages."
 }

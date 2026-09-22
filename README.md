@@ -11,6 +11,10 @@ A web-based messaging app, built for selfhosting. A parody of Discord.
 > [!WARNING]
 > **Whoever runs a server can see your IP address and read everything on it.** Only join servers run by people you
 > trust. The client warns about this before it connects anywhere new.
+>
+> **Link previews are fetched by the server, not by you.** When someone posts a link, the server requests that page
+> and proxies its preview image, so the site sees the *server's* address and never the readers'. Server owners who'd
+> rather not make outbound requests at all can turn it off with `link_embeds`.
 
 > [!NOTE]
 > Nightcord is built for **personal use**: a few friends, a big friend group at most. It's one small Python process
@@ -20,7 +24,10 @@ A web-based messaging app, built for selfhosting. A parody of Discord.
 
 ### Chat
 - Guilds with text channels, categories, topics, slowmode and (placeholder) voice channels
-- Markdown, replies, reactions, pins, edits, @mentions, typing indicators, unread badges synced across devices
+- Markdown (headings, lists, subtext, masked links, `<t:…>` timestamps, `#channel` chips), replies, reactions,
+  pins, edits, @mentions, typing indicators, unread badges synced across devices
+- **Link previews** built by the server, with an image proxy so reading a channel never tells the linked site who
+  you are. A leaving-site dialog names the real host before any link opens.
 - Search with `from:`, `in:`, `has:` and `pinned:` filters; Ctrl/Cmd+K quick switcher
 - File uploads with inline images and video
 - Custom emoji and stickers per guild, usable **everywhere by everyone**. No Nitro required, or even possible.
@@ -160,6 +167,7 @@ Settings you can `config set`:
 | `customization_mode` | `on`, `allowlist`, `off` |
 | `user_search` | `off` (default: add friends by exact username), `staff`, `on` |
 | `announcements_admins` | `true`, `false` (the owner can always post) |
+| `link_embeds` | `true`, `false`. Fetch pages people link to and show a preview. Off means the server makes no outbound requests for messages. |
 | `max_accounts_per_client` | 0 (no limit) to 20. A courtesy limit for the account switcher, not enforced. |
 
 ## Backups

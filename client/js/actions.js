@@ -568,6 +568,21 @@ function pinAction(m, skipConfirm, { type, title, body, confirmLabel, done }) {
   });
 }
 
+// Link previews (PROTOCOL.md §4 Embed): the author, or anyone who can
+// manage messages here, may hide them.
+export function canSuppressEmbeds(m) {
+  if (!m.embeds?.length || !state.connected) return false;
+  const channel = currentChannel();
+  if (!channel) return false;
+  return m.author?.user_id === state.user?.user_id || (!isDm(channel) && can("MANAGE_MESSAGES", channel));
+}
+
+export function suppressEmbeds(m) {
+  req(T.MESSAGE_EMBEDS_SUPPRESS, { message_id: m.message_id, suppressed: true })
+    .then((res) => { if (updateMessage(res.message)) invalidate("chat"); })
+    .catch(fail);
+}
+
 // A <#channel_id> chip: switch to that channel wherever it lives.
 export async function openChannelById(channelId) {
   closePopover();
@@ -1318,7 +1333,7 @@ export const actions = {
   openGuild, openHome, openDm, openChannel, loadOlder, loadNewer, jumpToPresent, seenBottom,
   sendMessage, typing, reply, cancelReply, rerenderComposer, startEdit, cancelEdit, saveEdit, deleteMessage,
   react, unreact, pickReaction, jumpTo, showTopic, pinMessage, unpinMessage, showPins, showSearch, showSwitcher,
-  openChannelById,
+  openChannelById, canSuppressEmbeds, suppressEmbeds,
   inviteLink, openInviteDialog, openInvite, createInvite, setGuildIcon, setGuildIconMedia,
   reorderChannels, sidebarOrder, toggleCategory, isCollapsed, joinVoice, leaveVoice, setVoiceFlags,
   changeNickname, staffItems, nameOf,

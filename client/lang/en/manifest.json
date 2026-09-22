@@ -38,5 +38,6 @@
   "ui/legal",
   "ui/images",
   "ui/markdown",
-  "ui/links"
+  "ui/links",
+  "ui/embeds"
 ]

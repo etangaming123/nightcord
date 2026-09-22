@@ -47,6 +47,9 @@ DEFAULT_SERVER_CONFIG = {
     "announcements_admins": False,
     # Advisory: how many accounts one client should keep for this server (0 = no limit).
     "max_accounts_per_client": 0,
+    # Fetch pages people link to and show a preview (PROTOCOL.md §4 Embed).
+    # Off means the server never makes outbound requests for messages.
+    "link_embeds": True,
 }
 
 STAFF_LEVELS = {"none": 0, "moderator": 1, "admin": 2, "owner": 3}
@@ -278,6 +281,11 @@ MIGRATIONS: list[str] = [
         created_at       TEXT NOT NULL,
         edited_at        TEXT
     )
+    """,
+    # 6 — link embeds (PROTOCOL.md §4 Embed).
+    """
+    ALTER TABLE messages ADD COLUMN embeds TEXT NOT NULL DEFAULT '[]';
+    ALTER TABLE messages ADD COLUMN embeds_suppressed INTEGER NOT NULL DEFAULT 0
     """,
 ]
 
@@ -1584,6 +1592,8 @@ class Database:
                 "reactions": reactions.get(r["message_id"], []),
                 "type": r["type"],
                 "pinned": r["pinned_at"] is not None,
+                "embeds": [] if r["embeds_suppressed"] else json.loads(r["embeds"] or "[]"),
+                "embeds_suppressed": bool(r["embeds_suppressed"]),
                 "attachments": attachments.get(r["message_id"], []),
                 "stickers": [
                     stickers.get(sid) or {"sticker_id": sid, "deleted": True} for sid in sticker_ids[r["message_id"]]
@@ -1702,6 +1712,17 @@ class Database:
             "UPDATE messages SET content = ?, edited_at = ?, mentions = ?, mention_everyone = ? "
             "WHERE message_id = ?",
             content, now_iso(), json.dumps(mentions), int(mention_everyone), message_id,
+        )
+        return self.get_message(message_id)
+
+    def set_embeds(self, message_id: int, embeds: list[dict]) -> dict | None:
+        """Fills in link previews without touching edited_at (PROTOCOL.md §4 Embed)."""
+        self._exec("UPDATE messages SET embeds = ? WHERE message_id = ?", json.dumps(embeds), message_id)
+        return self.get_message(message_id)
+
+    def suppress_embeds(self, message_id: int, suppressed: bool) -> dict | None:
+        self._exec(
+            "UPDATE messages SET embeds_suppressed = ? WHERE message_id = ?", int(suppressed), message_id
         )
         return self.get_message(message_id)
 

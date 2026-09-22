@@ -108,6 +108,8 @@ function serverSection(el, actions) {
     ]), h("span", { class: "muted small block" }, t("user_search_hint"))),
     h("label", { class: "check" }, h("input", { type: "checkbox", name: "announcements_admins", checked: !!info.announcements_admins }),
       h("span", {}, t("announcements_admins_label"), h("span", { class: "muted small block" }, t("announcements_admins_hint")))),
+    h("label", { class: "check" }, h("input", { type: "checkbox", name: "link_embeds", checked: info.link_embeds !== false }),
+      h("span", {}, t("link_embeds_label"), h("span", { class: "muted small block" }, t("link_embeds_hint")))),
     h("label", {}, t("max_accounts_label"),
       h("input", { name: "max_accounts_per_client", type: "number", min: 0, max: LIMITS.MAX_ACCOUNTS_PER_CLIENT, required: true, value: info.max_accounts_per_client || 0 }),
       h("span", { class: "muted small block" }, t("max_accounts_hint"))),
@@ -122,6 +124,7 @@ function serverSection(el, actions) {
       voice_enabled: fd.get("voice_enabled") === "on",
       user_search: fd.get("user_search"),
       announcements_admins: fd.get("announcements_admins") === "on",
+      link_embeds: fd.get("link_embeds") === "on",
       max_accounts_per_client: Math.max(0, Math.min(LIMITS.MAX_ACCOUNTS_PER_CLIENT, Math.floor(Number(fd.get("max_accounts_per_client")) || 0))),
     });
     actions.setServerInfo(res.config);
