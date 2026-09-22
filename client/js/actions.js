@@ -27,6 +27,7 @@ import { inviteDialog, invitePreview } from "./ui/invites.js";
 import { openAccountSwitcher } from "./ui/accounts.js";
 import { openPins } from "./ui/pins.js";
 import { openSaved } from "./ui/saved.js";
+import { forwardDialog, messageLink, messageMenu } from "./ui/messageMenu.js";
 import { copyText, openProfile } from "./ui/profile.js";
 import { openSearch } from "./ui/search.js";
 import { userSettings } from "./ui/settings.js";
@@ -333,7 +334,9 @@ export function markChannelRead(channelId) {
   if (!rs?.last_message_id) return;
   markRead(channelId, rs.last_message_id);
   req(T.CHANNEL_ACK, { channel_id: channelId, message_id: rs.last_message_id }).catch(() => {});
-  invalidate("rail", "sidebar", "title");
+  // Marking read on purpose takes the NEW divider and the bar with it.
+  if (state.channelId === channelId) state.unreadMarker = null;
+  invalidate("rail", "sidebar", "title", "chat");
 }
 
 // --- messages --------------------------------------------------------------------
@@ -574,6 +577,35 @@ function pinAction(m, skipConfirm, { type, title, body, confirmLabel, done }) {
       onConfirm: () => run().then(() => resolve(true)),
     });
   });
+}
+
+// --- message tools (PROTOCOL.md §4 Forward, §5 read_state.ack) -------------------
+
+export const showMessageMenu = (m, anchor) => messageMenu(m, anchor, actions);
+export const forwardMessage = (m) => forwardDialog(m, actions, { formModal });
+export const linkToMessage = (m) => messageLink(m, serverParam);
+export const toastText = (text) => toast(text);
+
+export async function sendForward(m, channelId, note) {
+  const res = await req(T.MESSAGE_FORWARD, { message_id: m.message_id, channel_id: channelId, content: note || undefined });
+  if (state.channelId === channelId && addMessage(res.message)) {
+    state.scrollTo = "bottom";
+    invalidate("chat");
+  }
+  return res.message_id;
+}
+
+// Mark this message, and everything after it, unread.
+export function markUnreadFrom(m) {
+  const channelId = m.channel_id || state.channelId;
+  req(T.CHANNEL_ACK, { channel_id: channelId, message_id: m.message_id, unread: true })
+    .then(({ read_state: rs }) => {
+      state.readStates.set(channelId, rs);
+      if (state.channelId === channelId) state.unreadMarker = rs.last_read_id;
+      invalidate("rail", "sidebar", "title", "chat");
+      toast(t("marked_unread"));
+    })
+    .catch(fail);
 }
 
 // --- saved messages and private notes (PROTOCOL.md §4) ---------------------------
@@ -865,10 +897,18 @@ export async function updateGuild(patch) {
 
 export const createInvite = async (opts = {}) => (await req(T.GUILD_INVITE_CREATE, { guild_id: state.guildId, ...opts })).invite;
 
+// The ?server= value for a shareable link. Plain ws:// keeps its scheme —
+// without it the client would try wss:// and fail (connection.js defaults to
+// https); wss:// is the default, so it's left off.
+export function serverParam() {
+  if (!state.url) return "";
+  const url = new URL(state.url);
+  return url.protocol === "ws:" ? `ws://${url.host}` : url.host;
+}
+
 // A link that opens this client, connects to this server and shows the invite.
 export function inviteLink(code) {
-  const server = new URL(state.url).host;
-  return `${location.origin}${location.pathname}?server=${encodeURIComponent(server)}&invite=${encodeURIComponent(code)}`;
+  return `${location.origin}${location.pathname}?server=${encodeURIComponent(serverParam())}&invite=${encodeURIComponent(code)}`;
 }
 
 export const openInviteDialog = () => inviteDialog(actions);
@@ -1470,6 +1510,8 @@ export const actions = {
   react, unreact, pickReaction, jumpTo, showTopic, pinMessage, unpinMessage, showPins, showSearch, showSwitcher,
   openChannelById, canSuppressEmbeds, suppressEmbeds, votePoll, endPoll, composePoll, runCommand,
   isSaved, saveMessage, unsaveMessage, toggleSaved, showSaved, setUserNote, userNote, applyUserNote,
+  showMessageMenu, forwardMessage, sendForward, markUnreadFrom, linkToMessage, copyText, toastText,
+  markChannelRead, markGuildRead,
   inviteLink, openInviteDialog, openInvite, createInvite, setGuildIcon, setGuildIconMedia,
   reorderChannels, sidebarOrder, toggleCategory, isCollapsed, joinVoice, leaveVoice, setVoiceFlags,
   changeNickname, staffItems, nameOf,

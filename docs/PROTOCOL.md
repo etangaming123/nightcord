@@ -1,6 +1,6 @@
 # Nightcord Protocol
 
-Version: `0.11`
+Version: `0.12`
 
 This document is the single source of truth for the wire format between the
 Nightcord client (GitHub Pages, vanilla JS) and a Nightcord server (Python).
@@ -21,6 +21,7 @@ Each protocol version arrived with one commit on `main`, named in the middle col
 | 0.6 | Friends, blocking and message requests | Friends and friend requests, one-sided blocking, per-user DM privacy with message requests, group DMs limited to friends, and user search as a server setting (off by default). |
 | 0.7 | Announcements inbox | A server-wide announcements inbox with per-account read state, and automatic entries when the Terms or Privacy Policy change. |
 | 0.8 | Account switcher | `max_accounts_per_client`, an advisory server setting for clients that keep several accounts. |
+| 0.12 | Message tools | `message.forward` (a snapshot, not a reference), and `read_state.ack` learning to move backwards so a message can be marked unread. |
 | 0.11 | Saved messages and private notes | A private bookmark list (`saved.*`) filtered by live permissions, and a note you can keep on someone that only you can read (`user.note.set`). |
 | 0.10 | Polls and slash commands | Polls with per-answer counts, `poll.vote`, `poll.end` and a sweeper that closes expired ones; server-rolled `/roll`, `/8ball`, `/coinflip` and `/choose` stored on the message so results can't be faked. |
 | 0.9 | Link embeds | The server fetches pages people link to and stores a preview on the message (`embeds`), with an SSRF-guarded fetcher, an image proxy so viewers' addresses never reach third parties, `message.embeds.suppress`, and a `link_embeds` server setting. |
@@ -395,6 +396,7 @@ only ever sent to users who have `VIEW_CHANNEL` in it.
   "embeds_suppressed": false,
   "command": "Command | null",
   "poll": "Poll | null",
+  "forward": "Forward | null",
   "attachments": ["Attachment"],
   "stickers": [{ "sticker_id": "string", "name": "string", "animated": false, "guild_id": "string" }]
 }
@@ -456,6 +458,31 @@ public: `user_ids` lists who picked each answer, in the order they voted.
 
 A poll closes when `expires_at` passes (the server sweeps for this) or when
 `poll.end` is called; `ended_at` is set either way and voting stops.
+
+### Forward
+```json
+{
+  "message_id": "string",
+  "channel_id": "string",
+  "guild_id": "string | null",
+  "source": "#general · My Guild",
+  "author": "PublicUser",
+  "sent_at": "ISO8601",
+  "content": "string",
+  "attachments": [{ "filename": "string", "content_type": "string", "size": 0 }]
+}
+```
+A copy of another message, carried along with the one that forwarded it.
+It is a **snapshot**: editing or deleting the original leaves the forward
+exactly as it was, and the attachments are listed by name only — no
+download URLs, because whoever reads the forward may not be allowed the
+files. `message_id` and `channel_id` are there so a client can offer to
+jump, which will simply fail for a reader who can't see the source.
+
+`message.forward` needs `VIEW_CHANNEL` on the source and `SEND_MESSAGES`
+on the target; the DM rules of §5 Message requests apply to the target
+like any other message. The forwarding message may carry `content` of its
+own as a note.
 
 ### Saved message
 A message you bookmarked. Saving is private: nobody is told, and the
@@ -950,7 +977,7 @@ A banned user can't rejoin by invite or public list (`banned`).
 | `channel.pins.result` | S→C | `{ messages: [Message] }` — most recently pinned first |
 | `channel.delete` | C→S | `{ channel_id }` — needs `MANAGE_CHANNELS`; deletes its messages too. Deleting a category moves its channels to the top level (synced ones keep the category's overwrites) |
 | `channel.delete.result` | S→C | `{}` |
-| `channel.ack` | C→S | `{ channel_id, message_id }` — mark read up to `message_id` and clear mentions |
+| `channel.ack` | C→S | `{ channel_id, message_id, unread?: bool }` — mark read up to `message_id` and clear mentions. `unread: true` does the opposite: the marker is put just *before* `message_id`, so it and everything after it are new again. That's the only way the marker ever moves backwards, and it leaves the mention count alone |
 | `channel.ack.result` | S→C | `{ read_state: ReadState }` |
 | `channel.created` | S→C | `Channel` — event to users who can view it |
 | `channel.updated` | S→C | `Channel` — event to users who can view it |
@@ -1053,6 +1080,8 @@ the Terms or Privacy Policy. Read state is one `last_read_id` per account.
 | `poll.end` | C→S | `{ message_id }` — close a poll early. Its author, or `MANAGE_MESSAGES` in a guild |
 | `poll.end.result` | S→C | `{ poll }` |
 | `poll.updated` | S→C | `{ message_id, channel_id, guild_id, poll }` — to everyone who can see the channel, after a vote or a close |
+| `message.forward` | C→S | `{ message_id, channel_id, content? }` — copy a message you can see into a channel you can send in (§4 Forward) |
+| `message.forward.result` | S→C | `{ message_id, message }` |
 | `saved.list` | C→S | `{ before?: cursor, limit?: 1-50 }` — your saved messages, newest saved first (§4 Saved message). `before` is the previous page's `next` |
 | `saved.list.result` | S→C | `{ messages, has_more, next, count }` |
 | `saved.add` | C→S | `{ message_id }` — bookmark a message you can see. At most 500 |

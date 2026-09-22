@@ -61,6 +61,31 @@ export function leavingDialog(href, label) {
     ],
   });
 }
+// A Nightcord message link: <client base>/?server=<host>&jump=<where>/<channel>/<message>
+// where <where> is a guild id or "@me". Returns null for anything else.
+export function parseMessageLink(href) {
+  let url;
+  try {
+    url = new URL(href, location.href);
+  } catch {
+    return null;
+  }
+  const jump = url.searchParams.get("jump");
+  if (!jump) return null;
+  const [where, channelId, messageId] = jump.split("/");
+  if (!channelId || !messageId || !/^\d{1,20}$/.test(channelId) || !/^\d{1,20}$/.test(messageId)) return null;
+  return {
+    server: url.searchParams.get("server") || null,
+    guildId: where && where !== "@me" && /^\d{1,20}$/.test(where) ? where : null,
+    channelId,
+    messageId,
+  };
+}
+
+// Set by main.js so ui/links.js doesn't have to import the whole app.
+let onMessageLink = null;
+export const setMessageLinkHandler = (fn) => { onMessageLink = fn; };
+
 export function setupLinkGuard() {
   document.addEventListener("click", (e) => {
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
@@ -68,6 +93,9 @@ export function setupLinkGuard() {
     if (!a) return;
     const href = a.href;
     if (!/^https?:$/.test(new URL(href, location.href).protocol)) return;
+    // A link to a message on this server opens in place: no dialog, no tab.
+    const jump = parseMessageLink(href);
+    if (jump && onMessageLink?.(jump)) { e.preventDefault(); e.stopPropagation(); return; }
     if (isTrustedHost(hostOf(href))) return;
     e.preventDefault();
     e.stopPropagation();

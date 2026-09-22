@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-PROTOCOL_VERSION = "0.11"
+PROTOCOL_VERSION = "0.12"
 
 # --- Message types -----------------------------------------------------------
 
@@ -246,6 +246,8 @@ MESSAGE_UNPIN = "message.unpin"
 MESSAGE_UNPIN_RESULT = "message.unpin.result"
 MESSAGE_SEARCH = "message.search"
 MESSAGE_SEARCH_RESULT = "message.search.result"
+MESSAGE_FORWARD = "message.forward"
+MESSAGE_FORWARD_RESULT = "message.forward.result"
 MESSAGE_EMBEDS_SUPPRESS = "message.embeds.suppress"
 MESSAGE_EMBEDS_SUPPRESS_RESULT = "message.embeds.suppress.result"
 MESSAGE_NEW = "message.new"
@@ -557,6 +559,10 @@ POLL_DURATIONS = {"1h": 3600, "4h": 4 * 3600, "8h": 8 * 3600, "1d": 86400, "3d":
 SAVED_PAGE = 50
 MAX_SAVED = 500
 USER_NOTE_MAX = 256
+
+# Forwards (§4 Forward): how much of the original travels with the copy.
+FORWARD_CONTENT_MAX = 2000
+FORWARD_ATTACHMENTS_MAX = 10
 MAX_ACCOUNTS_PER_CLIENT = 20
 
 

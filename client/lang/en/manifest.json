@@ -42,5 +42,7 @@
   "ui/embeds",
   "ui/commands",
   "ui/polls",
-  "ui/saved"
+  "ui/saved",
+  "ui/messageMenu",
+  "ui/quote"
 ]

@@ -332,6 +332,10 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX user_notes_by_target ON user_notes(target_id)
     """,
+    # 9 — forwarded messages (PROTOCOL.md §4 Forward).
+    """
+    ALTER TABLE messages ADD COLUMN forward TEXT
+    """,
 ]
 
 MIGRATION_2 = """
@@ -1649,6 +1653,7 @@ class Database:
                 "embeds": [] if r["embeds_suppressed"] else json.loads(r["embeds"] or "[]"),
                 "embeds_suppressed": bool(r["embeds_suppressed"]),
                 "command": json.loads(r["command"]) if r["command"] else None,
+                "forward": json.loads(r["forward"]) if r["forward"] else None,
                 "poll": polls.get(r["message_id"]),
                 "attachments": attachments.get(r["message_id"], []),
                 "stickers": [
@@ -1706,6 +1711,10 @@ class Database:
             for r in self._all("SELECT attachment_id FROM attachments WHERE message_id = ?", message_id)
         ]
 
+    def message_attachments(self, message_id: int) -> list[dict]:
+        rows = self._all("SELECT * FROM attachments WHERE message_id = ? ORDER BY attachment_id", message_id)
+        return [self._attachment(a) for a in rows]
+
     def stale_attachment_ids(self, older_than_iso: str) -> list[str]:
         rows = self._all(
             "SELECT attachment_id FROM attachments WHERE message_id IS NULL AND created_at < ?", older_than_iso
@@ -1738,15 +1747,17 @@ class Database:
         sticker_ids: list[str] | None = None,
         command: dict | None = None,
         poll: dict | None = None,
+        forward: dict | None = None,
     ) -> dict:
         message_id = int(new_id())
         with self._tx():
             self._exec(
                 "INSERT INTO messages(message_id, channel_id, author_user_id, content, sent_at, "
-                "reply_to_id, mentions, mention_everyone, type, sticker_ids, command) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "reply_to_id, mentions, mention_everyone, type, sticker_ids, command, forward) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 message_id, channel_id, author_user_id, content, now_iso(),
                 reply_to_id, json.dumps(mentions or []), int(mention_everyone), type_, json.dumps(sticker_ids or []),
-                json.dumps(command) if command else None,
+                json.dumps(command) if command else None, json.dumps(forward) if forward else None,
             )
             if poll:
                 self._exec(
@@ -2087,13 +2098,22 @@ class Database:
 
     # --- read state ----------------------------------------------------------
 
-    def ack(self, user_id: str, channel_id: str, message_id: int) -> dict:
-        self._exec(
-            "INSERT INTO read_states(user_id, channel_id, last_read_id, mention_count) VALUES (?,?,?,0) "
-            "ON CONFLICT(user_id, channel_id) DO UPDATE SET "
-            "last_read_id = MAX(last_read_id, excluded.last_read_id), mention_count = 0",
-            user_id, channel_id, message_id,
-        )
+    def ack(self, user_id: str, channel_id: str, message_id: int, *, backward: bool = False) -> dict:
+        """Marks read up to message_id. `backward` is "mark unread": it lets the
+        marker move back down the channel, which a normal ack never does."""
+        if backward:
+            self._exec(
+                "INSERT INTO read_states(user_id, channel_id, last_read_id, mention_count) VALUES (?,?,?,0) "
+                "ON CONFLICT(user_id, channel_id) DO UPDATE SET last_read_id = excluded.last_read_id",
+                user_id, channel_id, message_id,
+            )
+        else:
+            self._exec(
+                "INSERT INTO read_states(user_id, channel_id, last_read_id, mention_count) VALUES (?,?,?,0) "
+                "ON CONFLICT(user_id, channel_id) DO UPDATE SET "
+                "last_read_id = MAX(last_read_id, excluded.last_read_id), mention_count = 0",
+                user_id, channel_id, message_id,
+            )
         return self.read_state(user_id, channel_id)
 
     def bump_mentions(self, channel_id: str, user_ids: Iterable[str]) -> None:

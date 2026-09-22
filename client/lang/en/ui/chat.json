@@ -76,5 +76,11 @@
   "unpin_with_hint": "Unpin (shift-click to skip the question)",
   "saved_messages": "Saved messages",
   "save": "Save",
-  "unsave": "Remove from Saved"
+  "unsave": "Remove from Saved",
+  "more_actions": "More",
+  "new_since": {
+    "one": "1 new message since {time}",
+    "other": "{count} new messages since {time}"
+  },
+  "mark_as_read": "Mark as read"
 }

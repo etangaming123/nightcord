@@ -433,6 +433,38 @@ textarea { resize: vertical; }
   font-family: var(--mono); font-size: .86em; background: var(--code-bg); border: 1px solid var(--line);
   padding: 8px 10px; border-radius: 6px; margin: 4px 0; white-space: pre-wrap; overflow-x: auto; max-width: 100%;
 }
+/* ---------- forwards, quote cards and the chat bars ---------- */
+.forward {
+  display: grid; gap: 4px; margin: 4px 0 2px; padding: 8px 12px; border-radius: 6px;
+  background: var(--bg-1); border-left: 4px solid var(--bg-4); max-width: 520px;
+}
+.forward-head { display: flex; align-items: center; gap: 5px; }
+.forward-body { display: grid; gap: 2px; }
+.forward-author { font-weight: 600; }
+.forward-content { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-2); }
+.forward .btn.link { justify-self: start; font-size: 12px; }
+
+.quote-card {
+  display: flex; align-items: center; gap: 8px; margin: 3px 0; padding: 6px 10px; border-radius: 6px;
+  background: var(--bg-1); border-left: 3px solid var(--accent); max-width: 460px;
+}
+.quote-card.loading { color: var(--muted); }
+.quote-main { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.quote-head { display: flex; align-items: baseline; gap: 6px; }
+.quote-body { font-size: 13px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quote-card .btn.link { flex: none; font-size: 12px; }
+
+.new-bar {
+  /* Just under the 52px chat header, over the message list. */
+  position: absolute; left: 0; right: 0; top: 52px; z-index: 4;
+  display: flex; align-items: center; gap: 10px; padding: 4px 16px;
+  background: var(--accent); color: var(--accent-ink); font-size: 12px; font-weight: 600;
+}
+.new-bar .btn.link { color: var(--accent-ink); font-size: 12px; }
+.forward-targets { max-height: 240px; overflow-y: auto; }
+.forward-target { width: 100%; border: 1px solid transparent; cursor: pointer; text-align: left; font: inherit; color: var(--text); }
+.forward-target.picked { border-color: var(--accent); background: var(--bg-3); }
+
 /* ---------- slash commands and polls ---------- */
 .cmd-head { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; }
 .cmd-slash {

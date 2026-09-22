@@ -2,7 +2,7 @@
 // server/nightcord/protocol.py — edit that file, then regenerate. Both follow
 // docs/PROTOCOL.md; server/tests/test_protocol_sync.py checks all three agree.
 
-export const PROTOCOL_VERSION = "0.11";
+export const PROTOCOL_VERSION = "0.12";
 
 export const T = Object.freeze({
   SETUP_CLAIM: "setup.claim",
@@ -212,6 +212,8 @@ export const T = Object.freeze({
   MESSAGE_UNPIN_RESULT: "message.unpin.result",
   MESSAGE_SEARCH: "message.search",
   MESSAGE_SEARCH_RESULT: "message.search.result",
+  MESSAGE_FORWARD: "message.forward",
+  MESSAGE_FORWARD_RESULT: "message.forward.result",
   MESSAGE_EMBEDS_SUPPRESS: "message.embeds.suppress",
   MESSAGE_EMBEDS_SUPPRESS_RESULT: "message.embeds.suppress.result",
   MESSAGE_NEW: "message.new",

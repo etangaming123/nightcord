@@ -17,7 +17,7 @@ import { clearPending } from "./uploads.js";
 import { setupDropZone } from "./ui/composer.js";
 import { legalLinks, legalUpdateModal, renderLegalTabs, showLegalModal } from "./ui/legal.js";
 import { closeSearch, searchOpen } from "./ui/search.js";
-import { setupLinkGuard } from "./ui/links.js";
+import { parseMessageLink, setMessageLinkHandler, setupLinkGuard } from "./ui/links.js";
 import { closeFullscreen, closeModal, closePopover, confirmAction, openModal, toast } from "./ui/modals.js";
 import { loadStrings, scopedT } from "./strings.js";
 
@@ -28,6 +28,7 @@ const IDLE_AFTER_MS = 10 * 60 * 1000;
 const BANNED_CLOSE = 4003;
 
 let pendingInvite = null; // ?invite=CODE, opened once logged in
+let pendingJump = null; // ?jump=…/…/…, a message link opened once logged in
 let addingAccount = false; // on the login screen to add another account (not replace one)
 
 setActions(actions);
@@ -453,6 +454,11 @@ async function enterApp({ session_token, user, legal_update_required }) {
     pendingInvite = null;
     openInvite(code);
   }
+  if (pendingJump) {
+    const jump = pendingJump;
+    pendingJump = null;
+    actions.jumpTo(jump.messageId, jump.channelId, jump.guildId);
+  }
 }
 
 async function promptLegalUpdate() {
@@ -686,13 +692,22 @@ async function boot() {
   });
   setupDropZone();
   setupLinkGuard();
+  // A message link pasted into a message opens in place, if it's this server.
+  setMessageLinkHandler((jump) => {
+    if (!state.user) return false;
+    if (jump.server && state.url && jump.server !== new URL(state.url).host) return false;
+    actions.jumpTo(jump.messageId, jump.channelId, jump.guildId);
+    return true;
+  });
 
   // ?server=host:port lets a server operator share a direct link;
-  // &invite=CODE opens that guild invite once logged in.
+  // &invite=CODE opens that guild invite once logged in;
+  // &jump=<guild|@me>/<channel>/<message> opens a message link.
   const params = new URLSearchParams(location.search);
   const param = params.get("server");
   pendingInvite = params.get("invite");
-  if (param || pendingInvite) history.replaceState(null, "", location.pathname);
+  pendingJump = parseMessageLink(location.href);
+  if (param || pendingInvite || pendingJump) history.replaceState(null, "", location.pathname);
   const last = store.getLastServer();
   showConnect();
   if (param) connectTo(param);

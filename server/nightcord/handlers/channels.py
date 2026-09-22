@@ -313,9 +313,14 @@ async def delete(ctx, conn, payload):
 
 @handles(P.CHANNEL_ACK)
 async def ack(ctx, conn, payload):
+    """Mark read up to message_id. `unread: true` is the other direction —
+    the marker is put *just before* that message, so it and everything after
+    it show as new again."""
     channel, _ = get_channel(ctx, conn, P.req_str(payload, "channel_id"))
-    message_id = P.req_id(payload, "message_id")
-    state = ctx.db.ack(conn.user_id, channel["channel_id"], int(message_id))
+    message_id = int(P.req_id(payload, "message_id"))
+    backward = P.opt_bool(payload, "unread") is True
+    state = ctx.db.ack(conn.user_id, channel["channel_id"], message_id - 1 if backward else message_id,
+                       backward=backward)
     await ctx.hub.send_to_user(conn.user_id, P.frame(P.READ_STATE_UPDATED, state), exclude=conn)
     return {"read_state": state}
 

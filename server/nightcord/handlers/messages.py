@@ -210,6 +210,73 @@ async def send(ctx, conn, payload):
     return {"message_id": message["message_id"], "message": message}
 
 
+def _forward_snapshot(ctx, row, channel: dict) -> dict:
+    """What travels with a forward: enough to show it, never a live link.
+    Editing or deleting the original leaves the copy exactly as it was."""
+    author = ctx.db.public_user(row["author_user_id"])
+    if channel["guild_id"] is not None:
+        guild = ctx.db.get_guild(channel["guild_id"])
+        source = f"#{channel['name']}" + (f" · {guild['name']}" if guild else "")
+    else:
+        source = channel.get("name") or "DM"
+    attachments = ctx.db.message_attachments(row["message_id"])[: P.FORWARD_ATTACHMENTS_MAX]
+    return {
+        "message_id": str(row["message_id"]),
+        "channel_id": channel["channel_id"],
+        "guild_id": channel["guild_id"],
+        "source": source,
+        "author": author,
+        "sent_at": row["sent_at"],
+        "content": (row["content"] or "")[: P.FORWARD_CONTENT_MAX],
+        "attachments": [
+            {"filename": a["filename"], "content_type": a["content_type"], "size": a["size"]} for a in attachments
+        ],
+    }
+
+
+@handles(P.MESSAGE_FORWARD)
+async def forward(ctx, conn, payload):
+    """Copy a message you can see into a channel you can send in. The copy is
+    a snapshot, not a reference (PROTOCOL.md §4 Forward)."""
+    row, source, _ = _require_message(ctx, conn, payload)
+    if source["kind"] not in ("text", "dm", "group_dm"):
+        raise ProtocolError(P.BAD_REQUEST, "That message can't be forwarded")
+    target, perms = require_channel_perm(ctx, conn, P.req_str(payload, "channel_id"), perm.SEND_MESSAGES)
+    if target["kind"] not in ("text", "dm", "group_dm"):
+        raise ProtocolError(P.BAD_REQUEST, "You can't send messages in that channel")
+    check_muted(ctx, conn)
+    _check_slowmode(ctx, target, perms, conn.user_id)
+    if not conn.allow_message():
+        raise ProtocolError(P.RATE_LIMITED, "You're sending messages too fast")
+    note = P.validate_content(payload.get("content"), allow_empty=True)
+    if target["kind"] == "dm":
+        from .dms import dm_gate
+
+        other = next(u["user_id"] for u in target["recipients"] if u["user_id"] != conn.user_id)
+        request_state = dm_gate(ctx, conn.user_id, other, target)
+        if request_state is not None:
+            from_user = conn.user_id if request_state == "pending" else target["request"]["from_user_id"]
+            ctx.db.set_dm_request(target["channel_id"], from_user, request_state)
+            target = ctx.db.get_channel(target["channel_id"])
+            from .dms import announce_dm
+
+            await announce_dm(ctx, target, exclude_hidden=True)
+    if target["guild_id"] is None:
+        await _reveal_dm(ctx, target)
+    mentions, everyone = parse_mentions(ctx, target, note, perms)
+    message = ctx.db.create_message(
+        target["channel_id"], conn.user_id, note, mentions=mentions, mention_everyone=everyone,
+        forward=_forward_snapshot(ctx, row, source),
+    )
+    pinged = set(_audience_ids(ctx, target)) if everyone else set(mentions)
+    pinged.discard(conn.user_id)
+    ctx.db.bump_mentions(target["channel_id"], pinged)
+    message["guild_id"] = target["guild_id"]
+    await ctx.hub.send_to_channel_viewers(target, P.frame(P.MESSAGE_NEW, message))
+    spawn_embeds(ctx, target, message)
+    return {"message_id": message["message_id"], "message": message}
+
+
 @handles(P.MESSAGE_EDIT)
 async def edit(ctx, conn, payload):
     row, channel, perms = _require_message(ctx, conn, payload)
