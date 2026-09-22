@@ -127,5 +127,8 @@
   "reminders_heading": "Reminders",
   "reminders_note": "Set with /remind, kept on this device for this account. They only fire while Nightcord is open.",
   "reminders_none": "Nothing set. Try /remind 20m take the bins out.",
-  "cancel_reminder": "Cancel"
+  "cancel_reminder": "Cancel",
+  "shortcuts_heading": "Keyboard shortcuts",
+  "shortcuts_note": "Ctrl+/ (⌘/ on a Mac) opens this list from anywhere.",
+  "shortcuts_button": "Show shortcuts"
 }

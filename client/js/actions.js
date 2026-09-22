@@ -7,8 +7,9 @@ import { addReminder, cancelReminder, listReminders, restoreReminders } from "./
 import { ERR, LIMITS, PERMS, T } from "./protocol.js";
 import { invalidate } from "./render.js";
 import {
-  can, channelTree, currentChannel, currentGuild, ensureReadState, isDm, isGuildOwner, isStaff, isUnread, markRead,
-  memberById, nameOf, pref, relationKind, rememberUser, resetMessages, sortChannels, staffLevel, state, userById,
+  can, channelTree, currentChannel, currentGuild, ensureReadState, isDm, isGuildOwner, isIncomingRequest, isStaff,
+  isUnread, markRead, memberById, nameOf, pref, relationKind, rememberUser, resetMessages, sortChannels, sortDms,
+  staffLevel, state, userById,
 } from "./state.js";
 import * as store from "./storage.js";
 import { clearPending, readyAttachments } from "./uploads.js";
@@ -33,6 +34,7 @@ import { copyText, openProfile } from "./ui/profile.js";
 import { openSearch } from "./ui/search.js";
 import { userSettings } from "./ui/settings.js";
 import { openSwitcher } from "./ui/switcher.js";
+import { shortcutSheet } from "./ui/shortcutSheet.js";
 import { scopedT } from "./strings.js";
 
 const t = scopedT("actions");
@@ -579,6 +581,63 @@ function pinAction(m, skipConfirm, { type, title, body, confirmLabel, done }) {
     });
   });
 }
+
+// --- keyboard navigation (client/js/shortcuts.js) -------------------------------
+
+// The channels you can actually open here, in sidebar order: a guild's text
+// channels, or your conversations on Home.
+function navigableChannels() {
+  if (state.view === "home") return sortDms([...state.dms.values()]).filter((c) => !isIncomingRequest(c));
+  const tree = channelTree();
+  return [...tree.loose, ...tree.categories.flatMap((c) => c.channels)].filter((c) => c.kind === "text");
+}
+
+function stepThrough(list, currentId, delta) {
+  if (!list.length) return null;
+  const i = list.findIndex((c) => c.channel_id === currentId);
+  if (i < 0) return list[delta > 0 ? 0 : list.length - 1];
+  return list[(i + delta + list.length) % list.length];
+}
+
+export function stepChannel(delta) {
+  const next = stepThrough(navigableChannels(), state.channelId, delta);
+  if (next) openChannel(next.channel_id);
+}
+
+export function stepUnread(delta) {
+  const unread = navigableChannels().filter((c) => isUnread(c.channel_id));
+  if (!unread.length) { toast(t("nothing_unread")); return; }
+  const next = stepThrough(unread, state.channelId, delta);
+  if (next) openChannel(next.channel_id);
+}
+
+// Home counts as the first stop, the way the rail reads.
+const railStops = () => [null, ...state.guilds.keys()];
+
+export function stepGuild(delta) {
+  const stops = railStops();
+  const here = state.view === "home" ? null : state.guildId;
+  const i = stops.indexOf(here);
+  const next = stops[((i < 0 ? 0 : i) + delta + stops.length) % stops.length];
+  if (next === null) openHome();
+  else openGuild(next);
+}
+
+export function openGuildAt(index) {
+  const id = [...state.guilds.keys()][index];
+  if (id) openGuild(id);
+}
+
+// Esc with nothing else open marks this channel read; Shift+Esc the guild.
+export function markCurrentRead({ guild = false } = {}) {
+  if (guild && state.guildId) { markGuildRead(state.guildId); return true; }
+  if (!guild && state.channelId && isUnread(state.channelId)) { markChannelRead(state.channelId); return true; }
+  return false;
+}
+
+export const openComposerEmoji = () => $("#composer .emoji-btn")?.click();
+export const openComposerUpload = () => $("#composer .attach-btn")?.click();
+export const showShortcuts = () => shortcutSheet();
 
 // --- message tools (PROTOCOL.md §4 Forward, §5 read_state.ack) -------------------
 
@@ -1510,6 +1569,8 @@ export const actions = {
   listReminders, cancelReminder,
   showMessageMenu, forwardMessage, sendForward, markUnreadFrom, linkToMessage, copyText, toastText,
   markChannelRead, markGuildRead,
+  stepChannel, stepUnread, stepGuild, openGuildAt, markCurrentRead, openComposerEmoji, openComposerUpload,
+  showShortcuts,
   inviteLink, openInviteDialog, openInvite, createInvite, setGuildIcon, setGuildIconMedia,
   reorderChannels, sidebarOrder, toggleCategory, isCollapsed, joinVoice, leaveVoice, setVoiceFlags,
   changeNickname, staffItems, nameOf,

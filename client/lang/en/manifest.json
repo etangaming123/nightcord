@@ -45,5 +45,6 @@
   "ui/saved",
   "ui/messageMenu",
   "ui/quote",
-  "ui/format"
+  "ui/format",
+  "ui/shortcuts"
 ]

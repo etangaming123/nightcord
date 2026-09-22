@@ -10,16 +10,17 @@ import { applyPrefs, getPrefs } from "./prefs.js";
 import { restoreReminders } from "./reminders.js";
 import { ERR, LIMITS, PROTOCOL_VERSION, T } from "./protocol.js";
 import { checkForUpdate } from "./update-check.js";
+import { handleShortcut, shouldFocusComposer } from "./shortcuts.js";
 import { flush, invalidate, setActions } from "./render.js";
 import { currentChannel, resetServerState, state } from "./state.js";
 import * as store from "./storage.js";
 import { $, add, clear, h, setAvatarBase } from "./ui/dom.js";
 import { clearPending } from "./uploads.js";
-import { setupDropZone } from "./ui/composer.js";
+import { focusComposer, setupDropZone } from "./ui/composer.js";
 import { legalLinks, legalUpdateModal, renderLegalTabs, showLegalModal } from "./ui/legal.js";
 import { closeSearch, searchOpen } from "./ui/search.js";
 import { parseMessageLink, setMessageLinkHandler, setupLinkGuard } from "./ui/links.js";
-import { closeFullscreen, closeModal, closePopover, confirmAction, modalOpen, openModal, toast } from "./ui/modals.js";
+import { closeFullscreen, closeModal, closePopover, confirmAction, fullscreenOpen, modalOpen, openModal, popoverOpen, toast } from "./ui/modals.js";
 import { loadStrings, scopedT } from "./strings.js";
 
 const t = scopedT("main");
@@ -717,16 +718,22 @@ async function boot() {
   setInterval(checkIdle, 30 * 1000);
   window.addEventListener("focus", () => { markActive(); ackCurrent(); });
   document.addEventListener("visibilitychange", () => { if (!document.hidden) ackCurrent(); });
-  // Escape closes the search panel / reply bar / inline edit even when focus is elsewhere.
+  // One handler for the whole shortcut table (client/js/shortcuts.js), plus
+  // the Escape ladder, which has to know what else is open.
   document.addEventListener("keydown", (e) => {
-    if (!state.user || $("#app").hidden) return;
-    const mod = e.ctrlKey || e.metaKey;
-    if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); actions.showSwitcher(); return; }
-    if (mod && e.key.toLowerCase() === "f" && !e.shiftKey && currentChannel()) { e.preventDefault(); actions.showSearch(); return; }
-    if (e.key !== "Escape" || e.defaultPrevented) return;
-    if (searchOpen()) closeSearch();
-    else if (state.editingId) actions.cancelEdit();
-    else if (state.replyTo) actions.cancelReply();
+    if (!state.user || $("#app").hidden || e.defaultPrevented) return;
+    if (e.key === "Escape") {
+      if (modalOpen() || popoverOpen() || fullscreenOpen()) return; // they close themselves
+      if (searchOpen()) { closeSearch(); return; }
+      if (state.editingId) { actions.cancelEdit(); return; }
+      if (state.replyTo) { actions.cancelReply(); return; }
+      // Nothing left to close: Esc marks read, Shift+Esc the whole guild.
+      if (actions.markCurrentRead({ guild: e.shiftKey })) e.preventDefault();
+      return;
+    }
+    if (handleShortcut(e, actions)) return;
+    // Start typing anywhere and the message box takes it.
+    if (shouldFocusComposer(e) && currentChannel()) focusComposer();
   });
   setupDropZone();
   setupLinkGuard();

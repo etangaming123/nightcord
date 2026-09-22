@@ -36,7 +36,7 @@ export function userSettings(actions, initial) {
       { id: "privacy", label: t("section_privacy"), render: (el) => privacy(el, actions) },
       { id: "devices", label: t("section_devices"), render: (el) => devices(el, actions) },
       { heading: t("heading_app_settings") },
-      { id: "appearance", label: t("section_appearance"), render: appearance },
+      { id: "appearance", label: t("section_appearance"), render: (el) => appearance(el, actions) },
       { id: "notifications", label: t("section_notifications"), render: (el) => notifications(el, actions) },
       globalThis.__NIGHTCORD_BUILD_VERSION__
         ? { id: "local-options", label: t("section_local_options"), render: localOptions }
@@ -422,7 +422,7 @@ async function devices(el, actions) {
 
 // --- Appearance & notifications (this device) -------------------------------
 
-function appearance(el) {
+function appearance(el, actions) {
   const p = getPrefs();
   const radio = (name, value, label, current, onChange) => h("label", { class: "radio-card" },
     h("input", { type: "radio", name, value, checked: current === value, on: { change: () => onChange(value) } }), label);
@@ -454,6 +454,11 @@ function appearance(el) {
     h("label", { class: "check" }, h("input", {
       type: "checkbox", checked: p.compact, on: { change: (e) => setPrefs({ compact: e.currentTarget.checked }) },
     }), t("compact_message_layout")),
+    h("h3", {}, t("shortcuts_heading")),
+    h("p", { class: "muted small" }, t("shortcuts_note")),
+    h("div", {}, h("button", {
+      class: "btn", type: "button", on: { click: () => actions.showShortcuts() },
+    }, t("shortcuts_button"))),
   );
 }
 
