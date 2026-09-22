@@ -9,8 +9,9 @@ __pycache__/
 *.pyc
 .pytest_cache/
 
-# Node (only used for tests)
+# Node (tests, standalone client build)
 node_modules/
+client/dist/
 
 # Server data: databases, uploads, TLS keys, backups, local config
 data/

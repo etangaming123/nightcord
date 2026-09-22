@@ -9,6 +9,7 @@ Example nightcord.toml:
     tls = true
     public_hostnames = ["chat.example.com", "203.0.113.7"]
     allowed_origins = ["https://you.github.io"]
+    allow_file_origin = true  # let the standalone single-file HTML client connect
 """
 
 from __future__ import annotations
@@ -39,6 +40,9 @@ class Config:
     # Behind a reverse proxy: take the client IP from X-Forwarded-For. Only
     # enable this when the proxy is the only way to reach the server.
     trust_proxy: bool = False
+    # Allow the standalone single-file HTML client, opened from disk as
+    # file://, which browsers send as Origin: null. Off by default.
+    allow_file_origin: bool = False
 
     @property
     def db_path(self) -> Path:
@@ -57,6 +61,8 @@ class Config:
             return True
         # Non-browser clients (tests, CLI tools) send no Origin header.
         if origin is None:
+            return True
+        if origin == "null" and self.allow_file_origin:
             return True
         return origin.rstrip("/") in {o.rstrip("/") for o in self.allowed_origins}
 

@@ -1,4 +1,10 @@
 {
   "private": true,
-  "type": "module"
+  "type": "module",
+  "scripts": {
+    "build:standalone": "node scripts/build-standalone.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
 }

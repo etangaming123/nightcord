@@ -54,6 +54,14 @@ address (`host:port`) and make an account. That's it.
 
 To **host** one, keep reading.
 
+### Standalone client
+
+Prefer not to depend on the hosted client being up? Grab `nightcord-standalone.html` from the
+[latest release](../../releases/latest) — one self-contained file with everything (JS, CSS, the
+logo, sounds and UI text) inlined. Double-click it to open it from disk and connect to any server,
+same as the hosted client. The server you connect to needs `allow_file_origin` turned on (see
+below), since a page opened from disk sends `Origin: null`, which servers reject by default.
+
 ## Selfhosting
 
 ### You will need
@@ -90,6 +98,11 @@ step.
 The server only accepts browsers from the origins in `allowed_origins`. Add wherever the client is hosted, e.g.
 `https://etangaming123.github.io`. Behind a reverse proxy, set `trust_proxy = true` so IP bans see real addresses.
 Leave it off otherwise, or anyone can fake theirs.
+
+To let people connect with the [standalone `.html` client](#standalone-client) instead, set
+`allow_file_origin = true` in `nightcord.toml` (or start with `--allow-local-client`). It's off by
+default: a page opened from disk sends `Origin: null`, which is otherwise indistinguishable from
+other things that send no useful origin, so only turn it on if you're fine with that file connecting.
 
 ### Hosting the client yourself
 Fork this repo, then go to *Settings → Pages → Source: GitHub Actions*. Every push to `main` publishes the homepage

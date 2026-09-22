@@ -326,6 +326,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-origin", action="append", default=None,
         help="browser Origin allowed to connect (repeatable; '*' for any)",
     )
+    p.add_argument(
+        "--allow-local-client", action="store_true",
+        help="allow the standalone single-file HTML client, opened from disk (Origin: null)",
+    )
     sub = p.add_subparsers(dest="command")
     sub.add_parser("run", help="run the server (default)")
     pend = sub.add_parser("pending", help="review account requests")
@@ -372,6 +376,8 @@ def main(argv: list[str] | None = None) -> int:
         cfg.tls = False
     if args.allow_origin:
         cfg.allowed_origins = [*cfg.allowed_origins, *args.allow_origin]
+    if args.allow_local_client:
+        cfg.allow_file_origin = True
 
     if args.command in (None, "run"):
         cmd_run(cfg)

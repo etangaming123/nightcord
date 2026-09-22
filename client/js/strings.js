@@ -20,6 +20,12 @@ function t(mod, key, vars) {
 }
 
 export async function loadStrings(lang = "en") {
+  // Standalone single-file builds embed every string ahead of time (fetch()
+  // of local files is blocked under file://) — see client/scripts/build-standalone.mjs.
+  if (globalThis.__NIGHTCORD_LANG__) {
+    cache = globalThis.__NIGHTCORD_LANG__[lang] ?? {};
+    return;
+  }
   cache = {};
   let manifest;
   try {
