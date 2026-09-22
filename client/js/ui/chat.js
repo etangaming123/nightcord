@@ -7,7 +7,9 @@ import {
   nameOf, statusOf, userById,
 } from "../state.js";
 import { renderAttachments } from "./attachments.js";
+import { commandHeader, commandResult } from "./commands.js";
 import { renderEmbeds } from "./embeds.js";
+import { renderPoll } from "./polls.js";
 import { $, add, avatar, clear, h, iconBtn, idGt } from "./dom.js";
 import { renderFriendsHeader, renderFriendsPage } from "./friends.js";
 import { QUICK_REACTIONS, customOf, emojiGlyph } from "./emoji.js";
@@ -274,6 +276,8 @@ function messageNodes(m, prev, state, actions) {
       m.content ? renderMarkdown(m.content, mdContext(state, actions)) : null,
       m.edited_at ? h("span", { class: "edited", title: `Edited ${fullFmt.format(new Date(m.edited_at))}` }, " (edited)") : null);
   const files = editing ? null : [
+    commandResult(m.command),
+    renderPoll(m, actions),
     renderAttachments(m),
     renderEmbeds(m, actions),
     m.stickers?.length ? h("div", { class: "msg-stickers" }, m.stickers.map((st) => stickerImg(st))) : null,
@@ -282,7 +286,8 @@ function messageNodes(m, prev, state, actions) {
   const profile = (e) => actions.openProfile(author.user_id, e.currentTarget);
   if (continued) {
     nodes.push(h("div", { class: `${cls} msg-line`, dataset: { id: m.message_id } },
-      stamp(d, { short: true }), body, files, reactionsRow(m, state, actions), editing ? null : toolbar(m, state, actions)));
+      stamp(d, { short: true }), commandHeader(m.command), body, files,
+      reactionsRow(m, state, actions), editing ? null : toolbar(m, state, actions)));
   } else {
     nodes.push(h("div", { class: `${cls} msg-group`, dataset: { id: m.message_id } },
       replyPreview(m, state, actions),
@@ -293,6 +298,7 @@ function messageNodes(m, prev, state, actions) {
         STAFF_LABEL[author?.server_role] ? h("span", { class: `tag staff ${author.server_role}`, title: STAFF_LABEL[author.server_role] },
           { owner: "OWNER", admin: "ADMIN", moderator: "MOD" }[author.server_role]) : null,
         stamp(d)),
+      commandHeader(m.command),
       body,
       files,
       reactionsRow(m, state, actions),

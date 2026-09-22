@@ -2,7 +2,7 @@
 // server/nightcord/protocol.py — edit that file, then regenerate. Both follow
 // docs/PROTOCOL.md; server/tests/test_protocol_sync.py checks all three agree.
 
-export const PROTOCOL_VERSION = "0.9";
+export const PROTOCOL_VERSION = "0.10";
 
 export const T = Object.freeze({
   SETUP_CLAIM: "setup.claim",
@@ -217,6 +217,11 @@ export const T = Object.freeze({
   MESSAGE_NEW: "message.new",
   MESSAGE_UPDATED: "message.updated",
   MESSAGE_DELETED: "message.deleted",
+  POLL_VOTE: "poll.vote",
+  POLL_VOTE_RESULT: "poll.vote.result",
+  POLL_END: "poll.end",
+  POLL_END_RESULT: "poll.end.result",
+  POLL_UPDATED: "poll.updated",
   REACTION_ADD: "reaction.add",
   REACTION_ADD_RESULT: "reaction.add.result",
   REACTION_REMOVE: "reaction.remove",
@@ -310,6 +315,7 @@ export const ERR = Object.freeze({
   NOT_FOUND: "not_found",
   NOT_FRIENDS: "not_friends",
   PIN_LIMIT: "pin_limit",
+  POLL_ENDED: "poll_ended",
   RATE_LIMITED: "rate_limited",
   REGISTRATION_CLOSED: "registration_closed",
   REGISTRATION_PENDING_APPROVAL: "registration_pending_approval",
@@ -399,5 +405,15 @@ export const LIMITS = Object.freeze({
   USER_SEARCH_MODES: Object.freeze(["off", "staff", "on"]),
   ANNOUNCEMENT_MAX_CHARS: 4000,
   MAX_EMBEDS_PER_MESSAGE: 5,
+  SERVER_COMMANDS: Object.freeze(["roll", "8ball", "coinflip", "choose"]),
+  COMMAND_ARGS_MAX: 200,
+  MAX_DICE: 20,
+  MAX_DIE_SIDES: 1000,
+  MAX_CHOICES: 20,
+  POLL_QUESTION_MAX: 300,
+  POLL_ANSWER_MAX: 55,
+  POLL_MIN_ANSWERS: 2,
+  POLL_MAX_ANSWERS: 10,
+  POLL_DURATIONS: Object.freeze(["1h", "4h", "8h", "1d", "3d", "1w"]),
   MAX_ACCOUNTS_PER_CLIENT: 20,
 });

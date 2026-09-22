@@ -14,14 +14,15 @@ import { clearPending, readyAttachments } from "./uploads.js";
 import { adminModeration } from "./ui/admin.js";
 import { channelSettings } from "./ui/channelSettings.js";
 import { flashMessage, isNearBottom, renderTyping } from "./ui/chat.js";
-import { clearDraft, focusComposer, fromWire, toWire } from "./ui/composer.js";
+import { clearDraft, focusComposer, fromWire, insertIntoComposer, toWire } from "./ui/composer.js";
 import * as dialogs from "./ui/dialogs.js";
 import { $, displayName, h, idGt } from "./ui/dom.js";
 import { openEmojiPicker } from "./ui/emoji.js";
 import { guildSettings } from "./ui/guildSettings.js";
 import { render as renderMarkdown } from "./ui/markdown.js";
+import { pollDialog } from "./ui/polls.js";
 import { uploadImage } from "./ui/images.js";
-import { closeFullscreen, closeModal, closePopover, confirmModal, fullscreenOpen, openMenu, openModal, openPopover, refreshFullscreen, toast } from "./ui/modals.js";
+import { closeFullscreen, closeModal, closePopover, confirmModal, formModal, fullscreenOpen, openMenu, openModal, openPopover, refreshFullscreen, toast } from "./ui/modals.js";
 import { inviteDialog, invitePreview } from "./ui/invites.js";
 import { openAccountSwitcher } from "./ui/accounts.js";
 import { openPins } from "./ui/pins.js";
@@ -374,10 +375,10 @@ function startSlowmode(channel, seconds) {
   invalidate("composer");
 }
 
-export async function sendMessage(content, reply) {
+export async function sendMessage(content, reply, extras = {}) {
   const channelId = state.channelId;
   const channel = currentChannel();
-  const payload = { channel_id: channelId, content };
+  const payload = { channel_id: channelId, content, ...extras };
   if (reply) {
     payload.reply_to_id = reply.message_id;
     payload.mention_reply = state.replyPing;
@@ -567,6 +568,93 @@ function pinAction(m, skipConfirm, { type, title, body, confirmLabel, done }) {
     });
   });
 }
+
+// --- polls (PROTOCOL.md §4 Poll) -------------------------------------------------
+
+export function votePoll(m, answerIds) {
+  req(T.POLL_VOTE, { message_id: m.message_id, answer_ids: answerIds })
+    .then(({ poll }) => { applyPoll(m.message_id, poll); })
+    .catch(fail);
+}
+
+export function endPoll(m) {
+  return req(T.POLL_END, { message_id: m.message_id })
+    .then(({ poll }) => { applyPoll(m.message_id, poll); })
+    .catch(fail);
+}
+
+export function applyPoll(messageId, poll) {
+  const m = state.messages.find((x) => x.message_id === messageId);
+  if (!m) return false;
+  m.poll = poll;
+  invalidate("chat");
+  return true;
+}
+
+// --- client-only slash commands (ui/commands.js) ---------------------------------
+
+// "20m", "2h30m", "90" (minutes) -> milliseconds, or null.
+export function parseDuration(text) {
+  const m = /^(?:(\d{1,3})\s*d)?\s*(?:(\d{1,3})\s*h)?\s*(?:(\d{1,4})\s*m(?:in)?)?\s*(?:(\d{1,4})\s*s)?$/i
+    .exec(String(text || "").trim());
+  if (!m || !m.slice(1).some(Boolean)) {
+    const bare = /^\d{1,4}$/.exec(String(text || "").trim());
+    return bare ? Number(bare[0]) * 60000 : null;
+  }
+  const ms = (Number(m[1] || 0) * 86400 + Number(m[2] || 0) * 3600 + Number(m[3] || 0) * 60 + Number(m[4] || 0)) * 1000;
+  return ms > 0 ? ms : null;
+}
+
+// Reminders live for this page load only until they are made to survive one.
+const reminders = [];
+
+function addReminder(args) {
+  const [when, ...rest] = String(args || "").split(/\s+/);
+  const ms = parseDuration(when);
+  const text = rest.join(" ").trim();
+  if (!ms || !text) { toast(t("remind_usage"), { error: true }); return; }
+  const id = setTimeout(() => {
+    toast(t("reminder", { text }), { ms: 8000 });
+    playSound("message");
+  }, ms);
+  reminders.push(id);
+  toast(t("remind_set", { text, when: new Date(Date.now() + ms).toLocaleTimeString() }));
+}
+
+// /time [HH:MM] -> a <t:unix:t> the reader sees in their own zone.
+function insertTimestamp(args) {
+  const now = new Date();
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(args || "").trim());
+  if (m) {
+    now.setHours(Number(m[1]), Number(m[2]), 0, 0);
+    if (now.getTime() < Date.now() - 12 * 3600 * 1000) now.setDate(now.getDate() + 1);
+  } else if (args.trim()) {
+    toast(t("time_usage"), { error: true });
+    return;
+  }
+  insertIntoComposer(`<t:${Math.floor(now.getTime() / 1000)}:t> `);
+}
+
+export function runCommand(action, args) {
+  if (action === "poll") { composePoll(); return; }
+  if (action === "remind") { addReminder(args); return; }
+  if (action === "time") { insertTimestamp(args); return; }
+  if (action === "nick") {
+    if (state.view !== "guild" || !memberById(state.user.user_id)) { toast(t("nick_needs_guild"), { error: true }); return; }
+    if (!can("CHANGE_NICKNAME")) { toast(t("nick_not_allowed"), { error: true }); return; }
+    const nickname = String(args || "").trim();
+    if (!nickname) { changeNickname(state.user.user_id); return; }
+    req(T.MEMBER_NICKNAME_SET, { guild_id: state.guildId, user_id: state.user.user_id, nickname })
+      .then((res) => { upsertMember(res.member); toast(t("nickname_set", { nickname })); })
+      .catch(fail);
+  }
+}
+
+// The /poll dialog, and sending what it collected.
+export const composePoll = () => pollDialog(
+  (poll) => sendMessage("", null, { poll }),
+  { formModal, openEmojiPicker },
+);
 
 // Link previews (PROTOCOL.md §4 Embed): the author, or anyone who can
 // manage messages here, may hide them.
@@ -1333,7 +1421,7 @@ export const actions = {
   openGuild, openHome, openDm, openChannel, loadOlder, loadNewer, jumpToPresent, seenBottom,
   sendMessage, typing, reply, cancelReply, rerenderComposer, startEdit, cancelEdit, saveEdit, deleteMessage,
   react, unreact, pickReaction, jumpTo, showTopic, pinMessage, unpinMessage, showPins, showSearch, showSwitcher,
-  openChannelById, canSuppressEmbeds, suppressEmbeds,
+  openChannelById, canSuppressEmbeds, suppressEmbeds, votePoll, endPoll, composePoll, runCommand,
   inviteLink, openInviteDialog, openInvite, createInvite, setGuildIcon, setGuildIconMedia,
   reorderChannels, sidebarOrder, toggleCategory, isCollapsed, joinVoice, leaveVoice, setVoiceFlags,
   changeNickname, staffItems, nameOf,

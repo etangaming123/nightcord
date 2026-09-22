@@ -287,6 +287,33 @@ MIGRATIONS: list[str] = [
     ALTER TABLE messages ADD COLUMN embeds TEXT NOT NULL DEFAULT '[]';
     ALTER TABLE messages ADD COLUMN embeds_suppressed INTEGER NOT NULL DEFAULT 0
     """,
+    # 7 — slash commands and polls (PROTOCOL.md §4 Message, Poll).
+    """
+    ALTER TABLE messages ADD COLUMN command TEXT;
+    CREATE TABLE polls (
+        message_id  INTEGER PRIMARY KEY REFERENCES messages(message_id) ON DELETE CASCADE,
+        question    TEXT NOT NULL,
+        multi       INTEGER NOT NULL DEFAULT 0,
+        expires_at  TEXT NOT NULL,
+        ended_at    TEXT
+    );
+    CREATE INDEX polls_open ON polls(expires_at) WHERE ended_at IS NULL;
+    CREATE TABLE poll_answers (
+        message_id  INTEGER NOT NULL REFERENCES polls(message_id) ON DELETE CASCADE,
+        answer_id   INTEGER NOT NULL,
+        text        TEXT NOT NULL,
+        emoji       TEXT,
+        PRIMARY KEY (message_id, answer_id)
+    );
+    CREATE TABLE poll_votes (
+        message_id  INTEGER NOT NULL REFERENCES polls(message_id) ON DELETE CASCADE,
+        answer_id   INTEGER NOT NULL,
+        user_id     TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        voted_at    TEXT NOT NULL,
+        PRIMARY KEY (message_id, answer_id, user_id)
+    );
+    CREATE INDEX poll_votes_by_user ON poll_votes(user_id)
+    """,
 ]
 
 MIGRATION_2 = """
@@ -717,6 +744,7 @@ class Database:
             self._exec("DELETE FROM notify_prefs WHERE user_id = ?", user_id)
             self._exec("DELETE FROM read_states WHERE user_id = ?", user_id)
             self._exec("DELETE FROM relationships WHERE user_id = ? OR other_id = ?", user_id, user_id)
+            self._exec("DELETE FROM poll_votes WHERE user_id = ?", user_id)
         return {"avatar_id": row["avatar_id"], "banner_id": row["banner_id"], "attachment_ids": attachment_ids}
 
     def search_users(self, query: str, *, exclude: str, limit: int = 20) -> list[dict]:
@@ -1571,6 +1599,7 @@ class Database:
             f"SELECT * FROM attachments WHERE message_id IN ({marks}) ORDER BY attachment_id", *ids
         ):
             attachments.setdefault(a["message_id"], []).append(self._attachment(a))
+        polls = self._polls(ids)
         out = []
         for r in rows:
             reply = replies.get(r["reply_to_id"]) if r["reply_to_id"] is not None else None
@@ -1594,6 +1623,8 @@ class Database:
                 "pinned": r["pinned_at"] is not None,
                 "embeds": [] if r["embeds_suppressed"] else json.loads(r["embeds"] or "[]"),
                 "embeds_suppressed": bool(r["embeds_suppressed"]),
+                "command": json.loads(r["command"]) if r["command"] else None,
+                "poll": polls.get(r["message_id"]),
                 "attachments": attachments.get(r["message_id"], []),
                 "stickers": [
                     stickers.get(sid) or {"sticker_id": sid, "deleted": True} for sid in sticker_ids[r["message_id"]]
@@ -1680,15 +1711,28 @@ class Database:
         type_: str = "default",
         attachment_ids: list[str] | None = None,
         sticker_ids: list[str] | None = None,
+        command: dict | None = None,
+        poll: dict | None = None,
     ) -> dict:
         message_id = int(new_id())
         with self._tx():
             self._exec(
                 "INSERT INTO messages(message_id, channel_id, author_user_id, content, sent_at, "
-                "reply_to_id, mentions, mention_everyone, type, sticker_ids) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "reply_to_id, mentions, mention_everyone, type, sticker_ids, command) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 message_id, channel_id, author_user_id, content, now_iso(),
                 reply_to_id, json.dumps(mentions or []), int(mention_everyone), type_, json.dumps(sticker_ids or []),
+                json.dumps(command) if command else None,
             )
+            if poll:
+                self._exec(
+                    "INSERT INTO polls(message_id, question, multi, expires_at) VALUES (?,?,?,?)",
+                    message_id, poll["question"], int(poll["multi"]), poll["expires_at"],
+                )
+                for i, answer in enumerate(poll["answers"], start=1):
+                    self._exec(
+                        "INSERT INTO poll_answers(message_id, answer_id, text, emoji) VALUES (?,?,?,?)",
+                        message_id, i, answer["text"], answer.get("emoji"),
+                    )
             for aid in attachment_ids or []:
                 self._exec("UPDATE attachments SET message_id = ? WHERE attachment_id = ?", message_id, aid)
             self._exec("UPDATE channels SET last_message_id = ? WHERE channel_id = ?", message_id, channel_id)
@@ -1714,6 +1758,77 @@ class Database:
             content, now_iso(), json.dumps(mentions), int(mention_everyone), message_id,
         )
         return self.get_message(message_id)
+
+    # --- polls (PROTOCOL.md §4 Poll) ---------------------------------------
+
+    def _polls(self, message_ids: list[int]) -> dict[int, dict]:
+        """{message_id: Poll} with per-answer counts and voter ids."""
+        if not message_ids:
+            return {}
+        marks = ",".join("?" * len(message_ids))
+        rows = self._all(f"SELECT * FROM polls WHERE message_id IN ({marks})", *message_ids)
+        if not rows:
+            return {}
+        ids = [r["message_id"] for r in rows]
+        pmarks = ",".join("?" * len(ids))
+        answers: dict[int, list[dict]] = {}
+        for a in self._all(
+            f"SELECT * FROM poll_answers WHERE message_id IN ({pmarks}) ORDER BY message_id, answer_id", *ids
+        ):
+            answers.setdefault(a["message_id"], []).append(
+                {"answer_id": a["answer_id"], "text": a["text"], "emoji": a["emoji"], "user_ids": []}
+            )
+        by_answer = {(m, a["answer_id"]): a for m, lst in answers.items() for a in lst}
+        for v in self._all(
+            f"SELECT message_id, answer_id, user_id FROM poll_votes WHERE message_id IN ({pmarks}) "
+            "ORDER BY voted_at, rowid",
+            *ids,
+        ):
+            target = by_answer.get((v["message_id"], v["answer_id"]))
+            if target is not None:
+                target["user_ids"].append(v["user_id"])
+        out = {}
+        for r in rows:
+            items = answers.get(r["message_id"], [])
+            out[r["message_id"]] = {
+                "question": r["question"],
+                "multi": bool(r["multi"]),
+                "expires_at": r["expires_at"],
+                "ended_at": r["ended_at"],
+                "total_votes": sum(len(a["user_ids"]) for a in items),
+                "answers": [{**a, "count": len(a["user_ids"])} for a in items],
+            }
+        return out
+
+    def get_poll(self, message_id: int) -> dict | None:
+        return self._polls([message_id]).get(message_id)
+
+    def poll_row(self, message_id: int) -> sqlite3.Row | None:
+        return self._one("SELECT * FROM polls WHERE message_id = ?", message_id)
+
+    def poll_answer_ids(self, message_id: int) -> list[int]:
+        return [r["answer_id"] for r in self._all(
+            "SELECT answer_id FROM poll_answers WHERE message_id = ? ORDER BY answer_id", message_id
+        )]
+
+    def set_poll_votes(self, message_id: int, user_id: str, answer_ids: list[int]) -> None:
+        """Replaces this user's votes; an empty list clears them."""
+        with self._tx():
+            self._exec("DELETE FROM poll_votes WHERE message_id = ? AND user_id = ?", message_id, user_id)
+            for answer_id in answer_ids:
+                self._exec(
+                    "INSERT INTO poll_votes(message_id, answer_id, user_id, voted_at) VALUES (?,?,?,?)",
+                    message_id, answer_id, user_id, now_iso(),
+                )
+
+    def end_poll(self, message_id: int) -> bool:
+        return self._exec(
+            "UPDATE polls SET ended_at = ? WHERE message_id = ? AND ended_at IS NULL", now_iso(), message_id
+        ).rowcount > 0
+
+    def expired_poll_ids(self) -> list[int]:
+        rows = self._all("SELECT message_id FROM polls WHERE ended_at IS NULL AND expires_at <= ?", now_iso())
+        return [r["message_id"] for r in rows]
 
     def set_embeds(self, message_id: int, embeds: list[dict]) -> dict | None:
         """Fills in link previews without touching edited_at (PROTOCOL.md §4 Embed)."""

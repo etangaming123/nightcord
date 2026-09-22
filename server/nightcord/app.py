@@ -21,6 +21,7 @@ from .dispatch import dispatch
 from .handlers import Ctx
 from .handlers import files as file_routes
 from .handlers import media as media_routes
+from .handlers import polls as poll_routes
 from .handlers import proxy as proxy_routes
 from .handlers.admin import ip_matches
 from .handlers.auth import LoginThrottle, hash_setup_code, setup_required
@@ -179,6 +180,7 @@ def create_app(config: Config, db: Database | None = None, *, setup_code: str | 
             asyncio.create_task(file_routes.sweeper(app)),
             asyncio.create_task(media_routes.sweeper(app)),
             asyncio.create_task(proxy_routes.sweeper(app)),
+            asyncio.create_task(poll_routes.sweeper(app)),
         ]
 
     async def on_shutdown(app: web.Application) -> None:

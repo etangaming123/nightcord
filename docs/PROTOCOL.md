@@ -1,6 +1,6 @@
 # Nightcord Protocol
 
-Version: `0.9`
+Version: `0.10`
 
 This document is the single source of truth for the wire format between the
 Nightcord client (GitHub Pages, vanilla JS) and a Nightcord server (Python).
@@ -21,6 +21,7 @@ Each protocol version arrived with one commit on `main`, named in the middle col
 | 0.6 | Friends, blocking and message requests | Friends and friend requests, one-sided blocking, per-user DM privacy with message requests, group DMs limited to friends, and user search as a server setting (off by default). |
 | 0.7 | Announcements inbox | A server-wide announcements inbox with per-account read state, and automatic entries when the Terms or Privacy Policy change. |
 | 0.8 | Account switcher | `max_accounts_per_client`, an advisory server setting for clients that keep several accounts. |
+| 0.10 | Polls and slash commands | Polls with per-answer counts, `poll.vote`, `poll.end` and a sweeper that closes expired ones; server-rolled `/roll`, `/8ball`, `/coinflip` and `/choose` stored on the message so results can't be faked. |
 | 0.9 | Link embeds | The server fetches pages people link to and stores a preview on the message (`embeds`), with an SSRF-guarded fetcher, an image proxy so viewers' addresses never reach third parties, `message.embeds.suppress`, and a `link_embeds` server setting. |
 
 ---
@@ -391,6 +392,8 @@ only ever sent to users who have `VIEW_CHANNEL` in it.
   "pinned": false,
   "embeds": ["Embed"],
   "embeds_suppressed": false,
+  "command": "Command | null",
+  "poll": "Poll | null",
   "attachments": ["Attachment"],
   "stickers": [{ "sticker_id": "string", "name": "string", "animated": false, "guild_id": "string" }]
 }
@@ -405,6 +408,53 @@ with empty `content`; `author` is the user they're about (who joined,
 left or pinned). A `pin` message's `reply_to_id` is the pinned message.
 System messages can't be edited, pinned or searched; they can be reacted
 to and deleted with `MANAGE_MESSAGES`.
+
+### Command
+```json
+{ "name": "roll | 8ball | coinflip | choose", "args": "2d6+3", "result": { } }
+```
+A slash command whose *result* the server produced, so nobody can type a
+lucky roll by hand. `message.send` takes `command: { name, args }` and the
+server fills in `result`; clients show it with a small "used /roll" header
+above the message. `content` may be empty when a command is attached.
+
+`result` by name:
+
+| name | `result` |
+|---|---|
+| `roll` | `{ notation: "2d6+3", rolls: [5, 1], modifier: 3, total: 9 }` — `NdM`, `dM` or `NdM±K`, at most 20 dice of 2–1000 sides |
+| `8ball` | `{ answer: "Reply hazy, try again." }` — `args` is the question |
+| `coinflip` | `{ side: "heads" \| "tails" }` |
+| `choose` | `{ options: ["a", "b"], picked: "b" }` — `args` is the options separated by `\|`, 2 to 20 of them |
+
+Everything else a client calls a slash command (`/shrug`, `/me`, `/spoiler`,
+`/nick`, `/poll`, …) is the client rewriting your own text or opening a
+dialog, and never reaches the server as a command.
+
+### Poll
+```json
+{
+  "question": "string",
+  "multi": false,
+  "expires_at": "ISO8601",
+  "ended_at": "ISO8601 | null",
+  "total_votes": 0,
+  "answers": [
+    { "answer_id": 1, "text": "string", "emoji": "string | null", "count": 0, "user_ids": ["string"] }
+  ]
+}
+```
+`message.send` takes `poll: { question, answers: [{ text, emoji? }], multi?,
+duration? }` — 2 to 10 answers, `duration` one of `1h`, `4h`, `8h`, `1d`
+(the default), `3d`, `1w`. `content` may be empty when a poll is attached.
+A message's poll can't be added, removed or edited afterwards.
+
+`answer_id` counts from 1 in the order the answers were given. Votes are
+public: `user_ids` lists who picked each answer, in the order they voted.
+`multi: false` polls take one answer per person.
+
+A poll closes when `expires_at` passes (the server sweeps for this) or when
+`poll.end` is called; `ended_at` is set either way and voting stops.
 
 ### Attachment
 ```json
@@ -976,6 +1026,11 @@ the Terms or Privacy Policy. Read state is one `last_read_id` per account.
 | `message.unpin.result` | S→C | `{}` |
 | `message.embeds.suppress` | C→S | `{ message_id, suppressed?: bool }` — hide or restore a message's link previews (§4 Embed). The author, or `MANAGE_MESSAGES` in a guild. Defaults to hiding |
 | `message.embeds.suppress.result` | S→C | `{ message }` |
+| `poll.vote` | C→S | `{ message_id, answer_ids: [int] }` — replaces your votes; `[]` takes them back. `poll_ended` once it's closed |
+| `poll.vote.result` | S→C | `{ poll }` |
+| `poll.end` | C→S | `{ message_id }` — close a poll early. Its author, or `MANAGE_MESSAGES` in a guild |
+| `poll.end.result` | S→C | `{ poll }` |
+| `poll.updated` | S→C | `{ message_id, channel_id, guild_id, poll }` — to everyone who can see the channel, after a vote or a close |
 | `message.search` | C→S | `{ guild_id \| channel_id, query?, author_id?, has?: "file"\|"image"\|"video"\|"link", pinned?, before?, after?, offset? }` — at least one filter. Searches text channels where you have `READ_HISTORY` (or one channel / DM); words match as prefixes, newest first, 25 per page |
 | `message.search.result` | S→C | `{ messages: [Message + guild_id], total }` |
 | `message.new` | S→C | `Message` + `guild_id` — to everyone who can view the channel (including the sender) |
@@ -1255,7 +1310,7 @@ server-side failure; safe to retry), `setup_required`,
 privacy doesn't let you message them), `request_pending` (your message
 request hasn't been accepted yet), `already_friends`, `not_friends` (group
 DMs only take your friends), `embeds_disabled` (this server doesn't build
-link previews).
+link previews), `poll_ended` (that poll has closed).
 This list will grow — append here rather than inventing undocumented codes.
 
 ---

@@ -1,0 +1,26 @@
+{
+  "desc_roll": "Roll dice — 2d6, d20, 3d10+2",
+  "desc_8ball": "Ask the magic 8-ball",
+  "desc_coinflip": "Heads or tails",
+  "desc_choose": "Pick one of your options",
+  "desc_shrug": "¯\\_(ツ)_/¯",
+  "desc_tableflip": "(╯°□°）╯︵ ┻━┻",
+  "desc_unflip": "┬─┬ノ( º _ ºノ)",
+  "desc_lenny": "( ͡° ͜ʖ ͡°)",
+  "desc_me": "Send as an action, in italics",
+  "desc_spoiler": "Send it hidden behind a spoiler",
+  "desc_nick": "Change your nickname in this guild",
+  "desc_poll": "Start a poll",
+  "desc_remind": "Remind yourself later",
+  "desc_time": "Insert a timestamp everyone sees in their own zone",
+  "args_too_long": "That's too long.",
+  "needs_text": "{usage} needs something after it.",
+  "used_command": "used /{name}",
+  "roll_detail": "{notation}: {rolls}{modifier}",
+  "heads": "Heads",
+  "tails": "Tails",
+  "chose_from": {
+    "one": "out of 1 option",
+    "other": "out of {count} options"
+  }
+}

@@ -9,11 +9,13 @@ import logging
 import math
 import re
 
+from .. import commands as C
 from .. import embeds as E
 from .. import permissions as perm
 from .. import protocol as P
 from ..protocol import ProtocolError
 from . import handles
+from . import polls as poll_lib
 from ._access import check_muted, check_timeout, get_channel, require_channel_perm, require_member
 from .proxy import proxy_embed
 
@@ -152,7 +154,11 @@ async def send(ctx, conn, payload):
     sticker_ids = (
         P.id_list(payload, "sticker_ids", max_len=P.MAX_STICKERS_PER_MESSAGE) if payload.get("sticker_ids") else []
     )
-    content = P.validate_content(payload.get("content"), allow_empty=bool(attachment_ids or sticker_ids))
+    command = C.validate(payload)
+    poll = poll_lib.validate(payload)
+    content = P.validate_content(
+        payload.get("content"), allow_empty=bool(attachment_ids or sticker_ids or command or poll)
+    )
     for sticker_id in sticker_ids:
         sticker = ctx.db.get_sticker(sticker_id)
         if sticker is None:
@@ -193,7 +199,7 @@ async def send(ctx, conn, payload):
     message = ctx.db.create_message(
         channel["channel_id"], conn.user_id, content,
         reply_to_id=int(reply_to) if reply_to else None, mentions=mentions, mention_everyone=everyone,
-        attachment_ids=attachment_ids, sticker_ids=sticker_ids,
+        attachment_ids=attachment_ids, sticker_ids=sticker_ids, command=command, poll=poll,
     )
     pinged = set(_audience_ids(ctx, channel)) if everyone else set(mentions)
     pinged.discard(conn.user_id)

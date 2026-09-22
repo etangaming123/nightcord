@@ -90,5 +90,12 @@
   "decline_request_title": "Decline this message request?",
   "decline_request_body": "{name} won't be told. The conversation disappears from your list.",
   "decline_request_confirm": "Decline",
-  "channel_not_here": "That channel isn't in this guild."
+  "channel_not_here": "That channel isn't in this guild.",
+  "remind_usage": "Try /remind 20m take the bins out",
+  "remind_set": "Reminder set for {when}: {text}",
+  "reminder": "⏰ {text}",
+  "time_usage": "Try /time or /time 19:30",
+  "nick_needs_guild": "Open a guild first.",
+  "nick_not_allowed": "You can't change your nickname here.",
+  "nickname_set": "Nickname set to {nickname}"
 }

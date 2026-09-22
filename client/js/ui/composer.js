@@ -10,6 +10,7 @@ import {
 } from "../state.js";
 import { addFiles, removePending, uploading } from "../uploads.js";
 import { $, add, avatar, clear, fmtBytes, h } from "./dom.js";
+import { COMMANDS, describe, matchCommands, planCommand, usageOf } from "./commands.js";
 import { UNICODE_EMOJI, customOf, emojiGlyph, openEmojiPicker, unicodeByName } from "./emoji.js";
 import { toast } from "./modals.js";
 import { openStickerPicker } from "./stickers.js";
@@ -74,6 +75,20 @@ export function clearDraft(channelId) {
 
 export function focusComposer() {
   $("#composer textarea")?.focus();
+}
+
+// Types `text` where the cursor is (the emoji picker, /time, the formatting
+// toolbar). Keeps the draft and the send button in step via an input event.
+export function insertIntoComposer(text) {
+  const input = $("#composer textarea");
+  if (!input) return;
+  const start = input.selectionStart ?? input.value.length;
+  const end = input.selectionEnd ?? start;
+  input.value = input.value.slice(0, start) + text + input.value.slice(end);
+  const pos = start + text.length;
+  input.setSelectionRange(pos, pos);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.focus();
 }
 
 let slowTimer = null;
@@ -218,7 +233,8 @@ export function renderComposer(state, actions) {
     const after = input.value.slice(input.selectionStart);
     const insert = ac.kind === "emoji" ? `${item.custom ? `:${item.name}:` : item.emoji} `
       : ac.kind === "channel" ? `#${item.name} `
-        : `@${item.username} `;
+        : ac.kind === "command" ? `/${item.name} `
+          : `@${item.username} `;
     input.value = before + insert + after;
     const pos = before.length + insert.length;
     input.setSelectionRange(pos, pos);
@@ -238,6 +254,16 @@ export function renderComposer(state, actions) {
       }, emojiGlyph(e.custom ? emojiToken(e) : e.emoji, { cls: "ac-emoji" }),
       h("span", { class: "ac-name" }, `:${e.name}:`),
       h("span", { class: "ac-sub" }, e.custom ? e.guildName : ""))));
+      return;
+    }
+    if (ac.kind === "command") {
+      add(popup, h("div", { class: "ac-title" }, t("commands_heading")));
+      ac.items.forEach((c, i) => add(popup, h("div", {
+        class: `ac-item ${i === ac.index ? "active" : ""}`, role: "option", "aria-selected": String(i === ac.index),
+        on: { mousedown: (ev) => { ev.preventDefault(); pickAc(c); } },
+      }, h("span", { class: "ac-emoji" }, "/"),
+      h("span", { class: "ac-name" }, usageOf(c)),
+      h("span", { class: "ac-sub" }, describe(c)))));
       return;
     }
     if (ac.kind === "channel") {
@@ -260,6 +286,14 @@ export function renderComposer(state, actions) {
   };
   const updateAc = () => {
     const pos = input.selectionStart;
+    // A command only counts at the very start of the box.
+    const cmd = /^\/(\w*)$/.exec(input.value.slice(0, pos));
+    if (cmd && pos === input.value.length) {
+      const items = matchCommands(cmd[1]);
+      ac = items.length ? { kind: "command", start: 0, items, index: 0 } : null;
+      drawAc();
+      return;
+    }
     const em = /(^|\s):([A-Za-z0-9_]{2,32})$/.exec(input.value.slice(0, pos));
     if (em) {
       const q = em[2].toLowerCase();
@@ -297,6 +331,32 @@ export function renderComposer(state, actions) {
     if ((!raw && !state.pending.length) || raw.length > LIMITS.CONTENT_MAX_CHARS || !state.connected) return;
     if (slowmodeLeft(channel) && slow) return;
     const reply = state.replyTo;
+    // Slash commands: some are sent for the server to roll, some just rewrite
+    // what you typed, some open a dialog instead of sending anything.
+    const plan = planCommand(raw);
+    if (plan) {
+      if (plan.error) { toast(plan.error, { error: true }); return; }
+      if (plan.action) {
+        input.value = "";
+        autosize();
+        closeAc();
+        actions.runCommand(plan.action, plan.args);
+        return;
+      }
+      input.value = "";
+      autosize();
+      closeAc();
+      try {
+        if (plan.send) await actions.sendMessage("", reply, { command: plan.send.command });
+        else await actions.sendMessage(toWire(plan.text), reply);
+      } catch (e) {
+        if (!input.value) input.value = raw;
+        autosize();
+        toast(e.message, { error: true });
+      }
+      input.focus();
+      return;
+    }
     input.value = "";
     autosize();
     closeAc();
@@ -335,7 +395,10 @@ export function renderComposer(state, actions) {
         drawAc();
         return;
       }
-      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+      // Enter on a command you've already typed in full sends it; Tab still
+      // completes, and Enter on anything else picks from the list.
+      const exact = ac.kind === "command" && COMMANDS.some((c) => `/${c.name}` === input.value.trim());
+      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey && !exact)) {
         e.preventDefault();
         pickAc(ac.items[ac.index]);
         return;
@@ -383,6 +446,12 @@ export function renderComposer(state, actions) {
     },
   }, "🗒") : null;
 
+  const pollBtn = h("button", {
+    class: "icon-btn poll-btn", type: "button", title: t("create_poll_title"), "aria-label": t("create_poll_aria"),
+    disabled: !state.connected,
+    on: { click: () => actions.composePoll() },
+  }, "📊");
+
   const fileInput = h("input", { type: "file", multiple: true, hidden: true });
   fileInput.addEventListener("change", () => { addFiles([...fileInput.files]); fileInput.value = ""; input.focus(); });
   const attachBtn = canAttach(channel) ? h("button", {
@@ -406,7 +475,7 @@ export function renderComposer(state, actions) {
   }
 
   const tray = uploadTray(state);
-  add(form, ...[popup, replyBar, tray, h("div", { class: `box ${replyBar || tray ? "with-reply" : ""}` }, attachBtn, fileInput, input, stickerBtn, emojiBtn, send), slowNote, count].filter(Boolean));
+  add(form, ...[popup, replyBar, tray, h("div", { class: `box ${replyBar || tray ? "with-reply" : ""}` }, attachBtn, fileInput, input, pollBtn, stickerBtn, emojiBtn, send), slowNote, count].filter(Boolean));
   autosize();
   if (state.connected && matchMedia("(pointer: fine)").matches && !state.editingId) input.focus();
 }

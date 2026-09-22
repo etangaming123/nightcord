@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-PROTOCOL_VERSION = "0.9"
+PROTOCOL_VERSION = "0.10"
 
 # --- Message types -----------------------------------------------------------
 
@@ -252,6 +252,13 @@ MESSAGE_NEW = "message.new"
 MESSAGE_UPDATED = "message.updated"
 MESSAGE_DELETED = "message.deleted"
 
+# Polls
+POLL_VOTE = "poll.vote"
+POLL_VOTE_RESULT = "poll.vote.result"
+POLL_END = "poll.end"
+POLL_END_RESULT = "poll.end.result"
+POLL_UPDATED = "poll.updated"
+
 # Reactions
 REACTION_ADD = "reaction.add"
 REACTION_ADD_RESULT = "reaction.add.result"
@@ -383,6 +390,7 @@ REQUEST_PENDING = "request_pending"
 ALREADY_FRIENDS = "already_friends"
 NOT_FRIENDS = "not_friends"
 EMBEDS_DISABLED = "embeds_disabled"
+POLL_ENDED = "poll_ended"
 
 ERROR_CODES = frozenset(
     {
@@ -396,7 +404,7 @@ ERROR_CODES = frozenset(
         INVALID_CURRENT_PASSWORD, FILE_TOO_LARGE, MUTED, IP_BANNED, DEVICE_BANNED,
         SLOWMODE, INVITE_EXPIRED, LEGAL_REQUIRED, VOICE_DISABLED, PIN_LIMIT,
         FEATURE_DISABLED, MEDIA_INVALID, BLOCKED, DM_NOT_ALLOWED, REQUEST_PENDING, ALREADY_FRIENDS,
-        NOT_FRIENDS, EMBEDS_DISABLED,
+        NOT_FRIENDS, EMBEDS_DISABLED, POLL_ENDED,
     }
 )
 
@@ -517,6 +525,21 @@ EMBED_PAGE_MAX_BYTES = 1024 * 1024
 EMBED_IMAGE_MAX_BYTES = 8 * 1024 * 1024
 EMBED_CACHE_SECONDS = 3600
 PROXY_CACHE_DAYS = 7
+
+# Slash commands the server rolls, so nobody can fake a result (§4 Message).
+SERVER_COMMANDS = ("roll", "8ball", "coinflip", "choose")
+COMMAND_ARGS_MAX = 200
+MAX_DICE = 20
+MAX_DIE_SIDES = 1000
+MAX_DICE_MODIFIER = 10000
+MAX_CHOICES = 20
+
+# Polls (§4 Poll)
+POLL_QUESTION_MAX = 300
+POLL_ANSWER_MAX = 55
+POLL_MIN_ANSWERS = 2
+POLL_MAX_ANSWERS = 10
+POLL_DURATIONS = {"1h": 3600, "4h": 4 * 3600, "8h": 8 * 3600, "1d": 86400, "3d": 3 * 86400, "1w": 7 * 86400}
 MAX_ACCOUNTS_PER_CLIENT = 20
 
 

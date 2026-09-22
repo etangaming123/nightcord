@@ -39,5 +39,7 @@
   "ui/images",
   "ui/markdown",
   "ui/links",
-  "ui/embeds"
+  "ui/embeds",
+  "ui/commands",
+  "ui/polls"
 ]

@@ -43,5 +43,8 @@
   "request_decline": "Decline",
   "request_block": "Block",
   "request_sent": "Message request sent. You can send more once {name} accepts.",
-  "channels_heading": "Channels"
+  "channels_heading": "Channels",
+  "commands_heading": "Commands",
+  "create_poll_title": "Create a poll",
+  "create_poll_aria": "Create a poll"
 }
