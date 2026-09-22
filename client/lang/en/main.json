@@ -43,5 +43,10 @@
     "other": "{count} accounts"
   },
   "adding_account": "Log in with another account. Your other accounts stay saved on this device.",
-  "whats_this_title": "What is Nightcord?"
+  "whats_this_title": "What is Nightcord?",
+  "grass_title": "Touch grass",
+  "grass_body": "You've been here {hours} hours straight. Outside is still there.",
+  "grass_note": "You can turn this off in Settings → Notifications.",
+  "grass_snooze": "Snooze 1 hour",
+  "grass_done": "I have touched grass"
 }

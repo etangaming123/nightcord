@@ -3,6 +3,7 @@
 
 import { req } from "./api.js";
 import { playSound } from "./notify.js";
+import { addReminder, cancelReminder, listReminders, restoreReminders } from "./reminders.js";
 import { ERR, LIMITS, PERMS, T } from "./protocol.js";
 import { invalidate } from "./render.js";
 import {
@@ -684,20 +685,13 @@ export function parseDuration(text) {
   return ms > 0 ? ms : null;
 }
 
-// Reminders live for this page load only until they are made to survive one.
-const reminders = [];
-
-function addReminder(args) {
+function setReminder(args) {
   const [when, ...rest] = String(args || "").split(/\s+/);
   const ms = parseDuration(when);
   const text = rest.join(" ").trim();
   if (!ms || !text) { toast(t("remind_usage"), { error: true }); return; }
-  const id = setTimeout(() => {
-    toast(t("reminder", { text }), { ms: 8000 });
-    playSound("message");
-  }, ms);
-  reminders.push(id);
-  toast(t("remind_set", { text, when: new Date(Date.now() + ms).toLocaleTimeString() }));
+  const reminder = addReminder(text, ms);
+  toast(t("remind_set", { text, when: new Date(reminder.at).toLocaleTimeString() }));
 }
 
 // /time [HH:MM] -> a <t:unix:t> the reader sees in their own zone.
@@ -716,7 +710,7 @@ function insertTimestamp(args) {
 
 export function runCommand(action, args) {
   if (action === "poll") { composePoll(); return; }
-  if (action === "remind") { addReminder(args); return; }
+  if (action === "remind") { setReminder(args); return; }
   if (action === "time") { insertTimestamp(args); return; }
   if (action === "nick") {
     if (state.view !== "guild" || !memberById(state.user.user_id)) { toast(t("nick_needs_guild"), { error: true }); return; }
@@ -1513,6 +1507,7 @@ export const actions = {
   react, unreact, pickReaction, jumpTo, showTopic, pinMessage, unpinMessage, showPins, showSearch, showSwitcher,
   openChannelById, canSuppressEmbeds, suppressEmbeds, votePoll, endPoll, composePoll, runCommand,
   isSaved, saveMessage, unsaveMessage, toggleSaved, showSaved, setUserNote, userNote, applyUserNote,
+  listReminders, cancelReminder,
   showMessageMenu, forwardMessage, sendForward, markUnreadFrom, linkToMessage, copyText, toastText,
   markChannelRead, markGuildRead,
   inviteLink, openInviteDialog, openInvite, createInvite, setGuildIcon, setGuildIconMedia,

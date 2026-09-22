@@ -102,5 +102,6 @@
     "one": "Saved — 1 message in your list",
     "other": "Saved — {count} messages in your list"
   },
-  "marked_unread": "Marked unread from here"
+  "marked_unread": "Marked unread from here",
+  "reminder_title": "Nightcord reminder"
 }

@@ -11,6 +11,7 @@ import {
 import { addFiles, removePending, uploading } from "../uploads.js";
 import { $, add, avatar, clear, fmtBytes, h } from "./dom.js";
 import { COMMANDS, describe, matchCommands, planCommand, usageOf } from "./commands.js";
+import { attachFormatBar, formatShortcut } from "./format.js";
 import { UNICODE_EMOJI, customOf, emojiGlyph, openEmojiPicker, unicodeByName } from "./emoji.js";
 import { toast } from "./modals.js";
 import { openStickerPicker } from "./stickers.js";
@@ -388,6 +389,7 @@ export function renderComposer(state, actions) {
   });
   input.addEventListener("blur", () => setTimeout(closeAc, 100));
   input.addEventListener("keydown", (e) => {
+    if (formatShortcut(e, input)) return;
     if (ac?.items.length) {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
@@ -475,6 +477,7 @@ export function renderComposer(state, actions) {
   }
 
   const tray = uploadTray(state);
+  attachFormatBar(form, input);
   add(form, ...[popup, replyBar, tray, h("div", { class: `box ${replyBar || tray ? "with-reply" : ""}` }, attachBtn, fileInput, input, pollBtn, stickerBtn, emojiBtn, send), slowNote, count].filter(Boolean));
   autosize();
   if (state.connected && matchMedia("(pointer: fine)").matches && !state.editingId) input.focus();

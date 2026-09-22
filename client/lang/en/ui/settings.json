@@ -121,5 +121,11 @@
   "log_out_all_body": {
     "one": "1 other session ends right away.",
     "other": "{count} other sessions end right away."
-  }
+  },
+  "touch_grass_label": "Touch grass reminder",
+  "touch_grass_hint": "After about three hours of unbroken use, suggest going outside. It's a parody app; it's also good advice.",
+  "reminders_heading": "Reminders",
+  "reminders_note": "Set with /remind, kept on this device for this account. They only fire while Nightcord is open.",
+  "reminders_none": "Nothing set. Try /remind 20m take the bins out.",
+  "cancel_reminder": "Cancel"
 }

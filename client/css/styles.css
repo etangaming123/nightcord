@@ -433,6 +433,19 @@ textarea { resize: vertical; }
   font-family: var(--mono); font-size: .86em; background: var(--code-bg); border: 1px solid var(--line);
   padding: 8px 10px; border-radius: 6px; margin: 4px 0; white-space: pre-wrap; overflow-x: auto; max-width: 100%;
 }
+.format-bar {
+  position: absolute; bottom: 100%; left: 12px; z-index: 5; display: flex; gap: 2px; padding: 3px;
+  margin-bottom: 4px; border-radius: 8px; background: var(--bg-4); box-shadow: var(--shadow);
+}
+.format-btn {
+  border: 0; background: none; color: var(--text-2); cursor: pointer; min-width: 28px; height: 26px;
+  border-radius: 5px; font-size: 13px; font-weight: 700;
+}
+.format-btn:hover { background: var(--bg-3); color: var(--text); }
+.format-btn.italic { font-style: italic; }
+.format-btn.strike { text-decoration: line-through; }
+#composer { position: relative; }
+
 /* ---------- forwards, quote cards and the chat bars ---------- */
 .forward {
   display: grid; gap: 4px; margin: 4px 0 2px; padding: 8px 12px; border-radius: 6px;

@@ -37,7 +37,7 @@ export function userSettings(actions, initial) {
       { id: "devices", label: t("section_devices"), render: (el) => devices(el, actions) },
       { heading: t("heading_app_settings") },
       { id: "appearance", label: t("section_appearance"), render: appearance },
-      { id: "notifications", label: t("section_notifications"), render: notifications },
+      { id: "notifications", label: t("section_notifications"), render: (el) => notifications(el, actions) },
       globalThis.__NIGHTCORD_BUILD_VERSION__
         ? { id: "local-options", label: t("section_local_options"), render: localOptions }
         : null,
@@ -502,7 +502,7 @@ function themeEditor() {
   return box;
 }
 
-function notifications(el) {
+function notifications(el, actions) {
   const p = getPrefs();
   const supported = "Notification" in window;
   const perm = supported ? Notification.permission : "unsupported";
@@ -528,7 +528,30 @@ function notifications(el) {
       type: "checkbox", checked: p.sound, on: { change: (e) => setPrefs({ sound: e.currentTarget.checked }) },
     }), t("play_sound_notifications")),
     h("p", { class: "muted small" }, t("dnd_note")),
+    h("label", { class: "check" }, h("input", {
+      type: "checkbox", checked: p.touchGrass, on: { change: (e) => setPrefs({ touchGrass: e.currentTarget.checked }) },
+    }), h("span", {}, t("touch_grass_label"), h("span", { class: "muted small block" }, t("touch_grass_hint")))),
+    reminderList(actions),
   );
+}
+
+// /remind, kept on this device for this account (client/js/reminders.js).
+function reminderList(actions) {
+  const reminders = actions.listReminders();
+  return h("div", {},
+    h("h3", {}, t("reminders_heading")),
+    h("p", { class: "muted small" }, t("reminders_note")),
+    reminders.length
+      ? h("div", { class: "list" }, reminders.map((r) => h("div", { class: "list-row" },
+        h("span", { class: "list-icon", "aria-hidden": "true" }, "⏰"),
+        h("span", { class: "meta" },
+          h("span", { class: "name" }, r.text),
+          h("span", { class: "sub" }, fmtDateTime(new Date(r.at).toISOString()))),
+        h("button", {
+          class: "btn small", type: "button",
+          on: { click: () => { actions.cancelReminder(r.id); refreshFullscreen(); } },
+        }, t("cancel_reminder")))))
+      : h("p", { class: "muted small" }, t("reminders_none")));
 }
 
 // --- Local Options (standalone build only) ------------------------------------

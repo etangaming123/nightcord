@@ -6,7 +6,8 @@ import { ackCurrent, actions, loadAll, openInvite, restoreView, setSessionHooks 
 import { req } from "./api.js";
 import { Connection, NightcordError, certTrustUrl, normalizeServerUrl } from "./connection.js";
 import { resync, wireEvents } from "./events.js";
-import { applyPrefs } from "./prefs.js";
+import { applyPrefs, getPrefs } from "./prefs.js";
+import { restoreReminders } from "./reminders.js";
 import { ERR, LIMITS, PROTOCOL_VERSION, T } from "./protocol.js";
 import { checkForUpdate } from "./update-check.js";
 import { flush, invalidate, setActions } from "./render.js";
@@ -18,13 +19,17 @@ import { setupDropZone } from "./ui/composer.js";
 import { legalLinks, legalUpdateModal, renderLegalTabs, showLegalModal } from "./ui/legal.js";
 import { closeSearch, searchOpen } from "./ui/search.js";
 import { parseMessageLink, setMessageLinkHandler, setupLinkGuard } from "./ui/links.js";
-import { closeFullscreen, closeModal, closePopover, confirmAction, openModal, toast } from "./ui/modals.js";
+import { closeFullscreen, closeModal, closePopover, confirmAction, modalOpen, openModal, toast } from "./ui/modals.js";
 import { loadStrings, scopedT } from "./strings.js";
 
 const t = scopedT("main");
 const tc = scopedT("common");
 
 const IDLE_AFTER_MS = 10 * 60 * 1000;
+// Three hours of use with no real break. It's a parody app; it can afford one
+// joke that's also good advice.
+const GRASS_AFTER_MS = 3 * 60 * 60 * 1000;
+const GRASS_SNOOZE_MS = 60 * 60 * 1000;
 const BANNED_CLOSE = 4003;
 
 let pendingInvite = null; // ?invite=CODE, opened once logged in
@@ -439,6 +444,7 @@ async function enterApp({ session_token, user, legal_update_required }) {
   state.users.set(user.user_id, user);
   state.connected = true;
   applyPrefs(); // themes depend on this server's customisation settings
+  restoreReminders(); // /remind survives a reload (client/js/reminders.js)
   showScreen("app");
   invalidate();
   flush();
@@ -590,6 +596,10 @@ function wireConnection(conn) {
 // --- auto-idle ---
 
 let lastInput = Date.now();
+// When the current unbroken stretch started. Going idle counts as a break.
+let activeSince = Date.now();
+let grassDue = Date.now() + GRASS_AFTER_MS;
+let grassOpen = false;
 
 function markActive() {
   lastInput = Date.now();
@@ -605,7 +615,35 @@ function checkIdle() {
     state.afk = true;
     req(T.PRESENCE_SET, { afk: true }).catch(() => {});
     invalidate("sidebar");
+    // A real break: the clock starts again when they come back.
+    activeSince = Date.now();
+    grassDue = Date.now() + GRASS_AFTER_MS;
   }
+  checkGrass();
+}
+
+function checkGrass() {
+  if (grassOpen || state.afk || !state.user || !getPrefs().touchGrass) return;
+  if (Date.now() < grassDue || modalOpen()) return;
+  grassOpen = true;
+  const hours = Math.max(1, Math.round((Date.now() - activeSince) / 3600000));
+  const close = (snooze) => {
+    grassOpen = false;
+    closeModal();
+    grassDue = Date.now() + snooze;
+    activeSince = Date.now();
+  };
+  openModal({
+    title: t("grass_title"),
+    content: h("div", { class: "stack" },
+      h("p", {}, t("grass_body", { hours })),
+      h("p", { class: "muted small" }, t("grass_note"))),
+    actions: [
+      h("button", { class: "btn", type: "button", on: { click: () => close(GRASS_SNOOZE_MS) } }, t("grass_snooze")),
+      h("button", { class: "btn primary", type: "button", on: { click: () => close(GRASS_AFTER_MS) } }, t("grass_done")),
+    ],
+    onClose: () => close(GRASS_SNOOZE_MS),
+  });
 }
 
 // ---------------------------------------------------------------------------

@@ -44,5 +44,6 @@
   "ui/polls",
   "ui/saved",
   "ui/messageMenu",
-  "ui/quote"
+  "ui/quote",
+  "ui/format"
 ]

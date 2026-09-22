@@ -1,0 +1,11 @@
+{
+  "toolbar_label": "Formatting",
+  "bold_title": "Bold (Ctrl+B)",
+  "italic_title": "Italic (Ctrl+I)",
+  "underline_title": "Underline (Ctrl+U)",
+  "strike_title": "Strikethrough",
+  "spoiler_title": "Spoiler",
+  "code_title": "Code",
+  "link_title": "Link",
+  "link_text": "text"
+}
