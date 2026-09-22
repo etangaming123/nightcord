@@ -853,9 +853,12 @@ export function statusMenu(anchor) {
     "-",
     {
       label: state.user.custom_status ? t("edit_custom_status") : t("set_custom_status"), icon: "💬",
-      onClick: () => dialogs.customStatusDialog(state.user.custom_status, async (text) => {
-        setSelf((await req(T.USER_UPDATE, { custom_status: text || null })).user);
-      }),
+      onClick: () => dialogs.customStatusDialog(state.user.custom_status, async (text, clearAfter) => {
+        setSelf((await req(T.USER_UPDATE, {
+          custom_status: text || null,
+          custom_status_clear_after: text ? clearAfter : undefined,
+        })).user);
+      }, { expiresAt: state.user.custom_status_expires_at }),
     },
     state.user.custom_status ? {
       label: t("clear_custom_status"), icon: "✕",

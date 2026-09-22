@@ -336,6 +336,12 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE messages ADD COLUMN forward TEXT
     """,
+    # 10 — custom statuses that clear themselves.
+    """
+    ALTER TABLE users ADD COLUMN custom_status_expires_at TEXT;
+    CREATE INDEX users_status_expiry ON users(custom_status_expires_at)
+        WHERE custom_status_expires_at IS NOT NULL
+    """,
 ]
 
 MIGRATION_2 = """
@@ -473,14 +479,26 @@ def staff_level(row: sqlite3.Row) -> int:
     return STAFF_LEVELS[staff_role(row)]
 
 
-def _public_user(row: sqlite3.Row) -> dict:
+def _visible_custom_status(row: sqlite3.Row, status_of) -> str | None:
+    """A custom status is part of being around: someone who is offline or
+    invisible doesn't broadcast one (PROTOCOL.md §4 User). `status_of` is the
+    Hub's view of who's here, or None outside a running server (the CLI, a
+    backup), where nothing is hidden."""
+    if not row["custom_status"]:
+        return None
+    if status_of is not None and status_of(row["user_id"]) == "offline":
+        return None
+    return row["custom_status"]
+
+
+def _public_user(row: sqlite3.Row, status_of=None) -> dict:
     return {
         "user_id": row["user_id"],
         "username": row["username"],
         "display_name": row["display_name"],
         "avatar_id": row["avatar_id"],
         "avatar_color": row["avatar_color"],
-        "custom_status": row["custom_status"],
+        "custom_status": _visible_custom_status(row, status_of),
         "is_server_owner": bool(row["is_server_owner"]),
         "server_role": staff_role(row),
         "deleted": row["deleted_at"] is not None,
@@ -493,6 +511,9 @@ def _public_user(row: sqlite3.Row) -> dict:
 def _self_user(row: sqlite3.Row) -> dict:
     return {
         **_public_user(row),
+        # You always see your own status, even while invisible.
+        "custom_status": row["custom_status"],
+        "custom_status_expires_at": row["custom_status_expires_at"],
         "bio": row["bio"],
         "created_at": row["created_at"],
         "presence": row["presence_pref"],
@@ -544,6 +565,7 @@ class Database:
         self.conn.execute("PRAGMA busy_timeout = 5000")
         self._migrate()
         self._file_secret: str | None = None
+        self._status_of = None
 
     def _migrate(self) -> None:
         version = self.conn.execute("PRAGMA user_version").fetchone()[0]
@@ -567,6 +589,14 @@ class Database:
                 self.conn.execute("ROLLBACK")
                 raise
         self.has_fts = self._one("SELECT 1 FROM sqlite_master WHERE name = 'messages_fts'") is not None
+
+    def set_status_source(self, fn) -> None:
+        """Tell the serializer who is online, so custom statuses can be hidden
+        from everyone else while someone is offline or invisible."""
+        self._status_of = fn
+
+    def _pub(self, row: sqlite3.Row) -> dict:
+        return _public_user(row, self._status_of)
 
     def close(self) -> None:
         self.conn.close()
@@ -633,7 +663,7 @@ class Database:
 
     def public_user(self, user_id: str) -> dict | None:
         row = self.get_user_row(user_id)
-        return _public_user(row) if row else None
+        return self._pub(row) if row else None
 
     def public_users(self, user_ids: Iterable[str]) -> dict[str, dict]:
         ids = list(set(user_ids))
@@ -642,14 +672,18 @@ class Database:
             chunk = ids[i : i + 500]
             marks = ",".join("?" * len(chunk))
             for row in self._all(f"SELECT * FROM users WHERE user_id IN ({marks})", *chunk):
-                out[row["user_id"]] = _public_user(row)
+                out[row["user_id"]] = self._pub(row)
         return out
 
-    def profile(self, user_id: str) -> dict | None:
+    def profile(self, user_id: str, viewer_id: str | None = None) -> dict | None:
         row = self.get_user_row(user_id)
         if row is None:
             return None
-        return {**_public_user(row), "bio": row["bio"], "created_at": row["created_at"]}
+        out = {**self._pub(row), "bio": row["bio"], "created_at": row["created_at"]}
+        # Looking at your own profile shows your own status, invisible or not.
+        if viewer_id == user_id:
+            out["custom_status"] = row["custom_status"]
+        return out
 
     def create_user(
         self,
@@ -673,6 +707,13 @@ class Database:
             return None
         return self.get_user(user_id)
 
+    def expired_status_user_ids(self) -> list[str]:
+        rows = self._all(
+            "SELECT user_id FROM users WHERE custom_status_expires_at IS NOT NULL AND custom_status_expires_at <= ?",
+            now_iso(),
+        )
+        return [r["user_id"] for r in rows]
+
     def set_password_hash(self, user_id: str, password_hash: str, *, keep_token: str | None = None) -> None:
         """Changes the password and revokes every session except keep_token's."""
         with self._tx():
@@ -684,8 +725,8 @@ class Database:
 
     def update_profile(self, user_id: str, fields: dict) -> dict:
         allowed = {
-            "display_name", "bio", "avatar_color", "custom_status", "avatar_id", "presence_pref",
-            "server_role", "muted_until", "legal_version", "perks", "banner_id", "profile_colors",
+            "display_name", "bio", "avatar_color", "custom_status", "custom_status_expires_at", "avatar_id",
+            "presence_pref", "server_role", "muted_until", "legal_version", "perks", "banner_id", "profile_colors",
             "dm_privacy",
         }
         with self._tx():
@@ -712,7 +753,7 @@ class Database:
             r["user_id"],
         )["n"]
         return {
-            **_public_user(r),
+            **self._pub(r),
             "status": r["status"],
             "created_at": r["created_at"],
             "note": r["note"],
@@ -761,7 +802,7 @@ class Database:
             self._exec(
                 "UPDATE users SET username = ?, username_lower = ?, password_hash = '!', status = 'deleted', "
                 "deleted_at = ?, display_name = NULL, bio = NULL, avatar_id = NULL, avatar_color = NULL, "
-                "custom_status = NULL, note = NULL, server_role = 'none', muted_until = NULL, perks = 0, banner_id = NULL, "
+                "custom_status = NULL, custom_status_expires_at = NULL, note = NULL, server_role = 'none', muted_until = NULL, perks = 0, banner_id = NULL, "
                 "profile_colors = NULL WHERE user_id = ?",
                 f"deleted-{user_id}", f"deleted-{user_id}", now_iso(), user_id,
             )
@@ -784,7 +825,7 @@ class Database:
             "ORDER BY username_lower LIMIT ?",
             exclude, like, like, limit,
         )
-        return [_public_user(r) for r in rows]
+        return [self._pub(r) for r in rows]
 
     def set_user_status(self, user_id: str, status: str) -> bool:
         cur = self._exec(
@@ -2517,7 +2558,7 @@ class Database:
         self._exec("DELETE FROM stickers WHERE sticker_id = ?", sticker_id)
 
     def perk_users(self) -> list[dict]:
-        return [_public_user(r) for r in self._all("SELECT * FROM users WHERE perks = 1 ORDER BY username_lower")]
+        return [self._pub(r) for r in self._all("SELECT * FROM users WHERE perks = 1 ORDER BY username_lower")]
 
     # --- audit log -----------------------------------------------------------
 

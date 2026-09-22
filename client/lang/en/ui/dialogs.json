@@ -10,16 +10,17 @@
   "invite_code_placeholder": "ABCD2345",
   "join_guild_button": "Join guild",
   "no_public_guilds": "No public guilds on this server.",
-  "member_count": { "one": "{count} member", "other": "{count} members" },
+  "member_count": {
+    "one": "{count} member",
+    "other": "{count} members"
+  },
   "joined_button": "Joined",
   "join_button": "Join",
   "add_guild_title": "Add a guild",
-
   "leave_guild_title": "Leave {name}?",
   "leave_guild_message_ghost": "You'll stop seeing this guild. Nobody is notified.",
   "leave_guild_message": "You'll need a new invite to come back.",
   "leave_guild_confirm": "Leave guild",
-
   "channel_name_placeholder_text": "new-channel",
   "channel_name_placeholder_voice": "Lounge",
   "channel_name_placeholder_category": "Text Channels",
@@ -44,43 +45,35 @@
   "create_submit": "Create",
   "channel_name_error": "Use letters, numbers, - or _ (up to 32).",
   "channel_title_error": "Names are 1–{max} characters.",
-
   "change_nickname_title": "Change nickname",
   "nickname_subtitle": "Only shown in this guild. {username}'s username stays the same.",
   "nickname_label": "Nickname",
-
   "delete_category_title": "Delete the {name} category?",
   "delete_voice_title": "Delete {name}?",
   "delete_text_title": "Delete #{name}?",
   "delete_category_message": "Its channels are kept and move out of the category.",
   "delete_channel_message": "All of its messages will be deleted too. This can't be undone.",
   "delete_channel_confirm": "Delete channel",
-
   "search_username_placeholder": "Search by username",
   "search_users_aria": "Search users",
   "remove_user_aria": "Remove {username}",
   "type_to_search": "Type a username to search.",
   "nobody_found": "Nobody found.",
   "max_people_toast": "At most {max} people",
-
   "new_message_title": "New message",
   "new_message_subtitle": "Pick one person for a direct message, or several for a group.",
   "start_conversation_button": "Start conversation",
   "pick_person_error": "Pick at least one person.",
-
   "add_to_group_title": "Add to group",
   "add_button": "Add",
   "pick_someone_error": "Pick someone to add.",
-
   "rename_group_title": "Rename group",
   "group_name_label": "Group name",
   "group_name_placeholder": "Leave empty to use member names",
-
   "kick_title": "Kick {name}?",
   "kick_message": "They can rejoin with a new invite.",
   "kick_confirm": "Kick",
   "reason_optional_audit_label": "Reason (optional, shown in the audit log)",
-
   "ban_title": "Ban {name}?",
   "ban_message": "They'll be removed and can't rejoin until unbanned.",
   "ban_confirm": "Ban",
@@ -90,7 +83,6 @@
   "delete_day_option": "Previous 24 hours",
   "delete_week_option": "Previous 7 days",
   "reason_optional_label": "Reason (optional)",
-
   "timeout_title": "Time out {name}",
   "timeout_message": "They can still read, but can't send messages, react or change anything.",
   "timeout_confirm": "Time out",
@@ -101,15 +93,21 @@
   "timeout_1h": "1 hour",
   "timeout_1d": "1 day",
   "timeout_1w": "1 week",
-
   "custom_status_title": "Set a custom status",
   "custom_status_label": "What's happening?",
   "custom_status_placeholder": "Support has arrived!",
-
   "search_friends_placeholder": "Search your friends",
   "new_message_subtitle_friends": "Pick a friend, or several for a group. To message someone else, add them as a friend first — or open their profile.",
   "new_message_subtitle_search": "Pick friends or search for anyone on the server. Groups only take your friends.",
   "no_friends_yet": "No friends to show. Add some from the Friends page.",
   "edit_announcement_title": "Edit announcement",
-  "announcement_label": "Announcement (Markdown)"
+  "announcement_label": "Announcement (Markdown)",
+  "clear_after_label": "Clear after",
+  "clear_after_30m": "30 minutes",
+  "clear_after_1h": "1 hour",
+  "clear_after_4h": "4 hours",
+  "clear_after_today": "Today (ends at midnight UTC)",
+  "clear_after_never": "Don't clear",
+  "clears_at": "Currently set to clear at {when}.",
+  "status_privacy_note": "Nobody sees your status while you're offline or invisible."
 }

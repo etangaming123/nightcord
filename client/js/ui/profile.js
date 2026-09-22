@@ -2,7 +2,7 @@
 // actions (message, edit profile, moderation) the viewer is allowed to use.
 
 import { LIMITS, T } from "../protocol.js";
-import { STAFF_LABEL, can, memberById, memberRoles, state, statusOf, userById } from "../state.js";
+import { STAFF_LABEL, can, customStatusOf, memberById, memberRoles, state, statusOf, userById } from "../state.js";
 import { add, avatar, clear, displayName, fmtDate, h, statusLabel } from "./dom.js";
 import { closePopover, confirmAction, openMenu, openPopover, repositionPopover, toast } from "./modals.js";
 import { renderInline } from "./markdown.js";
@@ -42,7 +42,7 @@ export function openProfile(userId, anchor, actions, { placement = "right" } = {
         h("div", member ? nameAttrs(user.user_id, "profile-name") : { class: "profile-name" }, member?.nickname || displayName(user)),
         h("div", { class: "profile-username" }, member?.nickname ? `${displayName(user)} · ${user.username}` : user.username,
           STAFF_LABEL[user.server_role] ? h("span", { class: `tag staff ${user.server_role}` }, STAFF_LABEL[user.server_role].toUpperCase()) : null),
-        user.custom_status ? h("div", { class: "profile-status" }, user.custom_status) : null,
+        customStatusOf(user) ? h("div", { class: "profile-status" }, customStatusOf(user)) : null,
         h("div", { class: "muted small" }, statusLabel(status)),
         extra.bio ? section(t("about_me"), h("p", { class: "profile-bio" },
           renderInline(extra.bio, { user: userById, meId: state.user?.user_id }))) : null,

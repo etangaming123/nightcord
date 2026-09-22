@@ -111,6 +111,8 @@ def main() -> None:
         f"  SAVED_PAGE: {P.SAVED_PAGE},",
         f"  MAX_SAVED: {P.MAX_SAVED},",
         f"  USER_NOTE_MAX: {P.USER_NOTE_MAX},",
+        "  CUSTOM_STATUS_DURATIONS: Object.freeze([" + ", ".join(
+            f'"{d}"' for d in P.CUSTOM_STATUS_DURATIONS) + "]),",
         f"  MAX_ACCOUNTS_PER_CLIENT: {P.MAX_ACCOUNTS_PER_CLIENT},",
         "});",
         "",

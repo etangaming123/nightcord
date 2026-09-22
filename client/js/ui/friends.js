@@ -4,7 +4,7 @@
 // announcements inbox, and the Add Friend box.
 
 import { LIMITS, T } from "../protocol.js";
-import { messageRequests, nameOf, relationsOf, state, statusOf, userById } from "../state.js";
+import { customStatusOf, messageRequests, nameOf, relationsOf, state, statusOf, userById } from "../state.js";
 import { invalidate } from "../render.js";
 import { getUpdateInfo, RELEASES_URL } from "../update-check.js";
 import { add, avatar, clear, fmtDateTime, h, iconBtn, idGt, statusLabel } from "./dom.js";
@@ -104,7 +104,7 @@ function friendsTab(page, actions, onlineOnly) {
   }
   for (const u of list) {
     add(page, personRow(u, {
-      sub: u.custom_status || statusLabel(statusOf(u.user_id)),
+      sub: customStatusOf(u) || statusLabel(statusOf(u.user_id)),
       onClick: () => actions.messageUser(u.user_id),
       buttons: [
         iconBtn("💬", t("message"), () => actions.messageUser(u.user_id)),

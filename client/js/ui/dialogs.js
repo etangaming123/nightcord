@@ -326,12 +326,22 @@ export function timeoutDialog(user, onTimeout) {
   });
 }
 
-export function customStatusDialog(current, onSave) {
+export function customStatusDialog(current, onSave, { expiresAt = null } = {}) {
   formModal({
     title: t("custom_status_title"),
     submitLabel: tc("save"),
-    fields: [h("label", {}, t("custom_status_label"), h("input", { name: "status", maxLength: LIMITS.CUSTOM_STATUS_MAX, value: current || "", placeholder: t("custom_status_placeholder") }))],
-    onSubmit: (fd) => onSave(String(fd.get("status")).trim()),
+    fields: [
+      h("label", {}, t("custom_status_label"),
+        h("input", { name: "status", maxLength: LIMITS.CUSTOM_STATUS_MAX, value: current || "", placeholder: t("custom_status_placeholder") })),
+      h("label", {}, t("clear_after_label"),
+        h("select", { name: "clear_after" },
+          LIMITS.CUSTOM_STATUS_DURATIONS.map((d) => h("option", { value: d, selected: d === "never" }, t(`clear_after_${d}`))))),
+      expiresAt
+        ? h("p", { class: "muted small" }, t("clears_at", { when: new Date(expiresAt).toLocaleString() }))
+        : null,
+      h("p", { class: "muted small" }, t("status_privacy_note")),
+    ],
+    onSubmit: (fd) => onSave(String(fd.get("status")).trim(), String(fd.get("clear_after"))),
   });
 }
 

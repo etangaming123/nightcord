@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-PROTOCOL_VERSION = "0.12"
+PROTOCOL_VERSION = "0.13"
 
 # --- Message types -----------------------------------------------------------
 
@@ -528,6 +528,8 @@ CHANNEL_KINDS = ("text", "voice", "category")
 STAFF_ROLES = ("none", "moderator", "admin")
 
 PRESENCE_PREFS = ("online", "idle", "dnd", "invisible")
+# How long a custom status lasts. "today" is the end of the current UTC day.
+CUSTOM_STATUS_DURATIONS = {"30m": 1800, "1h": 3600, "4h": 4 * 3600, "today": None, "never": None}
 NOTIFY_LEVELS = ("all", "mentions", "none")
 DM_PRIVACY = ("everyone", "requests", "friends")
 USER_SEARCH_MODES = ("off", "staff", "on")

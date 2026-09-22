@@ -2,7 +2,7 @@
 // server/nightcord/protocol.py — edit that file, then regenerate. Both follow
 // docs/PROTOCOL.md; server/tests/test_protocol_sync.py checks all three agree.
 
-export const PROTOCOL_VERSION = "0.12";
+export const PROTOCOL_VERSION = "0.13";
 
 export const T = Object.freeze({
   SETUP_CLAIM: "setup.claim",
@@ -430,5 +430,6 @@ export const LIMITS = Object.freeze({
   SAVED_PAGE: 50,
   MAX_SAVED: 500,
   USER_NOTE_MAX: 256,
+  CUSTOM_STATUS_DURATIONS: Object.freeze(["30m", "1h", "4h", "today", "never"]),
   MAX_ACCOUNTS_PER_CLIENT: 20,
 });

@@ -151,6 +151,15 @@ export function channelById(id) {
   return state.channels.find((c) => c.channel_id === id) || state.dms.get(id) || null;
 }
 
+// A custom status is only shown while someone is around. The server already
+// strips it from what it sends about an offline or invisible user; this stops
+// a copy we cached while they were online from lingering.
+export function customStatusOf(user) {
+  if (!user?.custom_status) return null;
+  if (user.user_id === state.user?.user_id) return user.custom_status;
+  return statusOf(user.user_id) === "offline" ? null : user.custom_status;
+}
+
 export function currentChannel() {
   if (state.view === "home") return state.dms.get(state.channelId) || null;
   return state.channels.find((c) => c.channel_id === state.channelId) || null;

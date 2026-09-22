@@ -1,6 +1,6 @@
 # Nightcord Protocol
 
-Version: `0.12`
+Version: `0.13`
 
 This document is the single source of truth for the wire format between the
 Nightcord client (GitHub Pages, vanilla JS) and a Nightcord server (Python).
@@ -21,6 +21,7 @@ Each protocol version arrived with one commit on `main`, named in the middle col
 | 0.6 | Friends, blocking and message requests | Friends and friend requests, one-sided blocking, per-user DM privacy with message requests, group DMs limited to friends, and user search as a server setting (off by default). |
 | 0.7 | Announcements inbox | A server-wide announcements inbox with per-account read state, and automatic entries when the Terms or Privacy Policy change. |
 | 0.8 | Account switcher | `max_accounts_per_client`, an advisory server setting for clients that keep several accounts. |
+| 0.13 | Status privacy and expiry | A custom status is hidden from everyone else while you're offline or invisible, and can be set to clear itself after 30m, 1h, 4h or at the end of the day. |
 | 0.12 | Message tools | `message.forward` (a snapshot, not a reference), and `read_state.ack` learning to move backwards so a message can be marked unread. |
 | 0.11 | Saved messages and private notes | A private bookmark list (`saved.*`) filtered by live permissions, and a note you can keep on someone that only you can read (`user.note.set`). |
 | 0.10 | Polls and slash commands | Polls with per-answer counts, `poll.vote`, `poll.end` and a sweeper that closes expired ones; server-rolled `/roll`, `/8ball`, `/coinflip` and `/choose` stored on the message so results can't be faked. |
@@ -202,11 +203,22 @@ profile banner image and `profile_colors` (or null) the two colours of a
 gradient profile card.
 The user's own view (`auth.ok`'s `user`, `user.updated` sent to
 themselves) adds `bio`, `created_at`, `presence`
-(`online | idle | dnd | invisible`, their chosen status), `muted_until`
+(`online | idle | dnd | invisible`, their chosen status),
+`custom_status_expires_at` (ISO8601 or null), `muted_until`
 (ISO8601, `"permanent"` or null; §8c), `legal_version` (the documents
 they accepted, §8b) and `dm_privacy` (`everyone | requests | friends`,
 default `requests`; §5 Message requests). `user.profile` returns `PublicUser` plus `bio` and
 `created_at`.
+
+**`custom_status` is only sent to other people while you're around.** A
+`PublicUser` serialised for anyone else reads `custom_status: null`
+whenever that user's status is `offline` — really offline, or invisible.
+Your own view always shows it, so it's still there when you come back.
+Setting one may carry `custom_status_clear_after`: `30m`, `1h`, `4h`,
+`today` (the end of the current **UTC** day — the server doesn't know your
+zone) or `never` (the default). The server clears it when the time comes
+and sends `user.updated`. Changing or clearing the text always settles the
+expiry too, so an old one can't clear a status you've since replaced.
 
 A `deleted` user's profile fields are cleared and their `username` is a
 placeholder; clients show "Deleted User". Their messages stay.
@@ -774,7 +786,7 @@ Server audit `action` values: `user.status`, `user.reset_password`,
 |---|---|---|
 | `user.profile` | C→S | `{ user_id }` |
 | `user.profile.result` | S→C | `{ user: PublicUser + { bio, created_at }, status, note }` — `note` is your own private note about them (§4 User note) |
-| `user.update` | C→S | `{ display_name?, bio?, avatar_color?, custom_status?, banner_media_id?, profile_colors?, dm_privacy? }` — `null` or `""` clears a field. `banner_media_id` is a `banner` upload (needs `profile_banner`, and `animated_media` if animated); `profile_colors` needs `profile_colors` (§8d) |
+| `user.update` | C→S | `{ display_name?, bio?, avatar_color?, custom_status?, custom_status_clear_after?, banner_media_id?, profile_colors?, dm_privacy? }` — `null` or `""` clears a field. `custom_status_clear_after` is `30m \| 1h \| 4h \| today \| never` and only goes with a `custom_status` (§4 User). `banner_media_id` is a `banner` upload (needs `profile_banner`, and `animated_media` if animated); `profile_colors` needs `profile_colors` (§8d) |
 | `user.update.result` | S→C | `{ user }` (self view) |
 | `user.avatar.set` | C→S | `{ data_b64 }` — base64 image, or `null` to remove; or `{ media_id }` — an `avatar` upload (animated needs `animated_media`, §8d) |
 | `user.avatar.set.result` | S→C | `{ user }` (self view) |

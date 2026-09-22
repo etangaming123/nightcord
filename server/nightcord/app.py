@@ -26,7 +26,7 @@ from .handlers import proxy as proxy_routes
 from .handlers.admin import ip_matches
 from .handlers.auth import LoginThrottle, hash_setup_code, setup_required
 from .handlers.server import public_config
-from .handlers.users import AVATAR_ID_RE, AVATAR_TYPES, avatar_dir
+from .handlers.users import AVATAR_ID_RE, AVATAR_TYPES, avatar_dir, status_sweeper
 from .hub import BANNED_CLOSE, Connection, Hub
 from .permissions import PermissionService
 
@@ -154,6 +154,9 @@ def create_app(config: Config, db: Database | None = None, *, setup_code: str | 
     db = db or Database(config.db_path)
     perms = PermissionService(db)
     ctx = Ctx(db=db, hub=Hub(db, perms), perms=perms, config=config, login_throttle=LoginThrottle())
+    # Serialised PublicUsers hide the custom status of anyone who reads as
+    # offline (really offline, or invisible) — §4 User.
+    db.set_status_source(ctx.hub.status_of)
     if setup_required(ctx):
         if setup_code is None:
             setup_code = new_setup_code()
@@ -181,6 +184,7 @@ def create_app(config: Config, db: Database | None = None, *, setup_code: str | 
             asyncio.create_task(media_routes.sweeper(app)),
             asyncio.create_task(proxy_routes.sweeper(app)),
             asyncio.create_task(poll_routes.sweeper(app)),
+            asyncio.create_task(status_sweeper(app)),
         ]
 
     async def on_shutdown(app: web.Application) -> None:

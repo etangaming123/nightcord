@@ -3,7 +3,7 @@
 // Offline — like Discord. Ghost memberships never reach here: the server
 // leaves them out (§7). In a group DM it lists the recipients.
 
-import { currentChannel, hoistedRole, isDm, memberCanView, nameOf, statusOf, userById } from "../state.js";
+import { currentChannel, customStatusOf, hoistedRole, isDm, memberCanView, nameOf, statusOf, userById } from "../state.js";
 import { $, add, avatar, clear, displayName, h, statusLabel } from "./dom.js";
 import { nameAttrs, profileBanner, profileThemeAttrs, roleIconEl } from "./names.js";
 import { scopedT } from "../strings.js";
@@ -24,7 +24,7 @@ function row(state, actions, user, { crown = false, guild = false } = {}) {
     h("span", { class: "name-line" },
       h("span", guild ? nameAttrs(user.user_id, "name") : { class: "name" }, guild ? nameOf(user) : displayName(user)),
       guild ? roleIconEl(user.user_id) : null),
-    user.custom_status ? h("span", { class: "sub" }, user.custom_status) : null),
+    customStatusOf(user) ? h("span", { class: "sub" }, customStatusOf(user)) : null),
   crown ? h("span", { class: "crown", title: t("guild_owner_title"), "aria-label": t("guild_owner_title") }, "♛") : null);
 }
 
@@ -37,7 +37,7 @@ function dmProfile(user, actions) {
     h("div", { class: "profile-card" },
       h("div", { class: "profile-name" }, displayName(user)),
       h("div", { class: "profile-username" }, user.username),
-      user.custom_status ? h("div", { class: "profile-status" }, user.custom_status) : null,
+      customStatusOf(user) ? h("div", { class: "profile-status" }, customStatusOf(user)) : null,
       h("div", { class: "muted small" }, statusLabel(status)),
       h("div", { class: "profile-actions" },
         h("button", { class: "btn", type: "button", on: { click: (e) => actions.openProfile(user.user_id, e.currentTarget, { placement: "left" }) } }, t("view_full_profile")))));

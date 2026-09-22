@@ -2,8 +2,9 @@
 // the DM list on Home, plus the user panel.
 
 import {
-  can, channelTree, dmTitle, friendsBadge, guildBadge, homeBadge, isIncomingRequest, isMuted, isPrivate, isStaff,
-  isUnread, memberById, mentionCount, messageRequests, nameOf, sortDms, statusOf, userById, voiceEnabled, voiceIn,
+  can, channelTree, customStatusOf, dmTitle, friendsBadge, guildBadge, homeBadge, isIncomingRequest, isMuted,
+  isPrivate, isStaff, isUnread, memberById, mentionCount, messageRequests, nameOf, sortDms, statusOf, userById,
+  voiceEnabled, voiceIn,
 } from "../state.js";
 import { guildCan } from "../perks.js";
 import { $, add, avatar, clear, displayName, h, iconBtn, imageEl, initials, mayAnimate } from "./dom.js";
@@ -261,7 +262,7 @@ function renderHome(state, actions) {
     const icon = other
       ? avatar(other, { status: statusOf(other.user_id) })
       : h("div", { class: "avatar group", "aria-hidden": "true" }, "👥");
-    const sub = other ? (other.custom_status || "") : t("group_members_count", { count: ch.recipients.length });
+    const sub = other ? (customStatusOf(other) || "") : t("group_members_count", { count: ch.recipients.length });
     const open = () => actions.openDm(ch.channel_id);
     add(list, h("div", {
       class: `channel dm ${active ? "active" : ""} ${unread ? "unread" : ""}`, role: "link", tabindex: "0",
