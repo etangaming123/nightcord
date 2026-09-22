@@ -5,6 +5,8 @@
 
 import { LIMITS, T } from "../protocol.js";
 import { messageRequests, nameOf, relationsOf, state, statusOf, userById } from "../state.js";
+import { invalidate } from "../render.js";
+import { getUpdateInfo, RELEASES_URL } from "../update-check.js";
 import { add, avatar, clear, fmtDateTime, h, iconBtn, idGt, statusLabel } from "./dom.js";
 import { showLegalModal } from "./legal.js";
 import { render as renderMarkdown } from "./markdown.js";
@@ -249,8 +251,12 @@ function inboxTab(page, state, actions) {
     queueMicrotask(actions.ackAnnouncements);
   }
   if (actions.canPostAnnouncements()) add(page, composer(actions));
+  // Local-only, device-only notice — never part of state.announcements, never
+  // acked/deleted server-side. See update-check.js.
+  const update = !updateDismissed && getUpdateInfo();
+  if (update) add(page, updateAnnouncementCard(update));
   if (!a.items.length) {
-    add(page, emptyNote("📬", t("inbox_empty")));
+    if (!update) add(page, emptyNote("📬", t("inbox_empty")));
     return;
   }
   // Items newer than what was read when the page opened get a NEW marker.
@@ -266,6 +272,25 @@ function inboxTab(page, state, actions) {
 
 // Read position when the Inbox tab was opened, for the NEW markers.
 let inboxSeen = null;
+
+// Session-only: resets on reload, so reopening an outdated standalone file
+// always re-shows the notice rather than remembering a dismiss forever.
+let updateDismissed = false;
+
+function updateAnnouncementCard(update) {
+  return h("article", { class: "announcement update-available" },
+    h("div", { class: "avatar system", "aria-hidden": "true" }, "⬆️"),
+    h("div", { class: "announcement-body" },
+      h("div", { class: "announcement-head" },
+        h("strong", {}, t("update_available_title")),
+        h("span", { class: "tag" }, t("tag_update")),
+        h("span", { class: "grow" }),
+        iconBtn("✕", t("update_available_dismiss"), () => { updateDismissed = true; invalidate("chat"); })),
+      h("div", { class: "announcement-content" },
+        t("update_available_body", { latest: update.latest, current: update.current }),
+        " ",
+        h("a", { href: RELEASES_URL, target: "_blank", rel: "noopener" }, t("update_available_link")))));
+}
 
 let postDraft = ""; // kept across redraws while the Inbox is open
 

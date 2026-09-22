@@ -15,6 +15,11 @@ import { fileURLToPath } from "node:url";
 const clientDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const outFile = path.join(clientDir, "dist", "nightcord-standalone.html");
 
+// Set by GitHub Actions to the pushed tag on a release build (e.g. "v1.0.1"),
+// or the branch name on a workflow_dispatch run; "dev" for a local build.
+// Read by client/js/update-check.js to know its own version.
+const buildVersion = process.env.GITHUB_REF_NAME || "dev";
+
 const MIME = { ".png": "image/png", ".wav": "audio/wav" };
 
 async function dataUri(relPath) {
@@ -74,7 +79,7 @@ async function main() {
       // The original is a module script, deferred until the DOM is parsed by
       // spec. This inline replacement sits in <head> too, so it needs the
       // same deferral or every document.getElementById() below runs too early.
-      `<script>window.__NIGHTCORD_LANG__ = ${JSON.stringify(lang)};</script>\n` +
+      `<script>window.__NIGHTCORD_LANG__ = ${JSON.stringify(lang)}; window.__NIGHTCORD_BUILD_VERSION__ = ${JSON.stringify(buildVersion)};</script>\n` +
         `<script>document.addEventListener("DOMContentLoaded", function () {\n${script}\n});</script>`
     );
 

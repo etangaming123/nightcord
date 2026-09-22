@@ -51,5 +51,11 @@
   "edited": "(edited)",
   "edit": "Edit",
   "delete": "Delete",
-  "read_rules": "Read the rules"
+  "read_rules": "Read the rules",
+
+  "update_available_title": "Update available",
+  "tag_update": "UPDATE",
+  "update_available_body": "Nightcord {latest} is out — you're running {current}.",
+  "update_available_link": "View release",
+  "update_available_dismiss": "Dismiss"
 }

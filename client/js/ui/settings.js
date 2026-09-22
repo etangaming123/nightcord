@@ -29,6 +29,9 @@ export function userSettings(actions, initial) {
       { heading: t("heading_app_settings") },
       { id: "appearance", label: t("section_appearance"), render: appearance },
       { id: "notifications", label: t("section_notifications"), render: notifications },
+      globalThis.__NIGHTCORD_BUILD_VERSION__
+        ? { id: "local-options", label: t("section_local_options"), render: localOptions }
+        : null,
       ...adminSections(actions),
       { separator: true },
       { label: t("log_out"), danger: true, onClick: () => { closeFullscreen(); actions.logout(); } },
@@ -437,5 +440,21 @@ function notifications(el) {
       type: "checkbox", checked: p.sound, on: { change: (e) => setPrefs({ sound: e.currentTarget.checked }) },
     }), t("play_sound_notifications")),
     h("p", { class: "muted small" }, t("dnd_note")),
+  );
+}
+
+// --- Local Options (standalone build only) ------------------------------------
+
+function localOptions(el) {
+  const p = getPrefs();
+  add(el,
+    h("p", { class: "muted" }, t("local_options_intro")),
+    h("label", { class: "check" }, h("input", {
+      type: "checkbox", checked: p.autoUpdateCheck, on: { change: (e) => setPrefs({ autoUpdateCheck: e.currentTarget.checked }) },
+    }), t("auto_update_checker_label")),
+    h("label", { class: "check" }, h("input", {
+      type: "checkbox", checked: p.updateNotifier, on: { change: (e) => setPrefs({ updateNotifier: e.currentTarget.checked }) },
+    }), t("update_notifier_label")),
+    h("p", { class: "muted small" }, t("local_options_note")),
   );
 }

@@ -62,6 +62,11 @@ logo, sounds and UI text) inlined. Double-click it to open it from disk and conn
 same as the hosted client. The server you connect to needs `allow_file_origin` turned on (see
 below), since a page opened from disk sends `Origin: null`, which servers reject by default.
 
+On load, the standalone client checks GitHub's release API (`api.github.com`) once to see if a newer
+standalone build exists, and shows a dismissible notice in the Inbox if so — this is the only network
+request the client ever makes outside the server you connect to. Turn it off in *Settings → Local
+Options*.
+
 ## Selfhosting
 
 ### You will need

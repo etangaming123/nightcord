@@ -103,5 +103,11 @@
   "dm_privacy_note": "Only friends can add you to group DMs, whatever you pick here.",
   "blocked_heading": "Blocked — {count}",
   "blocked_none": "Nobody blocked.",
-  "unblock": "Unblock"
+  "unblock": "Unblock",
+
+  "section_local_options": "Local Options",
+  "local_options_intro": "These settings live only in this browser/file and never sync to the server.",
+  "auto_update_checker_label": "Automatically check GitHub for newer standalone releases on load",
+  "update_notifier_label": "Show a toast when an update is found",
+  "local_options_note": "This pings GitHub's public release API — no account data is sent. Turn it off if you'd rather not."
 }

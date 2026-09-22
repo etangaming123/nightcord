@@ -14,6 +14,8 @@ const DEFAULTS = {
   frequentEmoji: [],
   themePreset: "default", // themes.js PRESETS id (needs the server's client_themes perk)
   customTheme: DEFAULT_CUSTOM,
+  autoUpdateCheck: true, // standalone-only: ping GitHub's release API on load
+  updateNotifier: true, // standalone-only: toast when an update is found
 };
 
 let prefs = load();

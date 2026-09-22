@@ -8,6 +8,7 @@ import { Connection, NightcordError, certTrustUrl, normalizeServerUrl } from "./
 import { resync, wireEvents } from "./events.js";
 import { applyPrefs } from "./prefs.js";
 import { ERR, LIMITS, PROTOCOL_VERSION, T } from "./protocol.js";
+import { checkForUpdate } from "./update-check.js";
 import { flush, invalidate, setActions } from "./render.js";
 import { currentChannel, resetServerState, state } from "./state.js";
 import * as store from "./storage.js";
@@ -577,6 +578,7 @@ async function boot() {
   await loadStrings();
   hydrateStatic();
   applyPrefs();
+  checkForUpdate(); // standalone-only, local pref-gated; see update-check.js
   matchMedia("(prefers-color-scheme: light)").addEventListener?.("change", applyPrefs);
   $("#connect-form").addEventListener("submit", (e) => {
     e.preventDefault();
