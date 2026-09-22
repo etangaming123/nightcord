@@ -23,6 +23,8 @@ export const state = {
   notifyPrefs: new Map(), // target_id -> NotifyPref
   relationships: new Map(), // user_id -> { user, kind: friend|outgoing|incoming|blocked, since }
   announcements: { items: [], lastReadId: "0", unread: 0, hasMore: false },
+  saved: new Set(), // message ids this account bookmarked (PROTOCOL.md §4 Saved message)
+  notes: new Map(), // user_id -> your private note about them
 
   view: "guild", // guild | home
   homeTab: "online", // Friends page tab: online | all | pending | blocked | requests | inbox | add
@@ -55,6 +57,7 @@ export function resetServerState() {
   Object.assign(state, {
     conn: null, url: null, info: null, user: null, connected: false,
     users: new Map(), presences: new Map(), guilds: new Map(), dms: new Map(),
+    saved: new Set(), notes: new Map(),
     readStates: new Map(), notifyPrefs: new Map(), relationships: new Map(),
     announcements: { items: [], lastReadId: "0", unread: 0, hasMore: false },
     view: "guild", guildId: null, channels: [], roles: [], members: [], channelId: null,

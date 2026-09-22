@@ -66,6 +66,6 @@ def test_rejects_v1_database(tmp_path):
 
 def test_fresh_database_is_versioned(tmp_path):
     db = Database(tmp_path / "new.db")
-    assert db.conn.execute("PRAGMA user_version").fetchone()[0] == 7
+    assert db.conn.execute("PRAGMA user_version").fetchone()[0] == 8
     db.close()
     Database(tmp_path / "new.db").close()  # reopening doesn't re-run migrations

@@ -47,7 +47,8 @@ async def profile(ctx, conn, payload):
     profile = ctx.db.profile(P.req_id(payload, "user_id"))
     if profile is None:
         raise ProtocolError(P.NOT_FOUND, "User not found")
-    return {"user": profile, "status": ctx.hub.status_of(profile["user_id"])}
+    note = ctx.db.get_user_note(conn.user_id, profile["user_id"]) if conn.user_id else None
+    return {"user": profile, "status": ctx.hub.status_of(profile["user_id"]), "note": note}
 
 
 @handles(P.USER_UPDATE)

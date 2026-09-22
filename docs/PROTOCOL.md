@@ -1,6 +1,6 @@
 # Nightcord Protocol
 
-Version: `0.10`
+Version: `0.11`
 
 This document is the single source of truth for the wire format between the
 Nightcord client (GitHub Pages, vanilla JS) and a Nightcord server (Python).
@@ -21,6 +21,7 @@ Each protocol version arrived with one commit on `main`, named in the middle col
 | 0.6 | Friends, blocking and message requests | Friends and friend requests, one-sided blocking, per-user DM privacy with message requests, group DMs limited to friends, and user search as a server setting (off by default). |
 | 0.7 | Announcements inbox | A server-wide announcements inbox with per-account read state, and automatic entries when the Terms or Privacy Policy change. |
 | 0.8 | Account switcher | `max_accounts_per_client`, an advisory server setting for clients that keep several accounts. |
+| 0.11 | Saved messages and private notes | A private bookmark list (`saved.*`) filtered by live permissions, and a note you can keep on someone that only you can read (`user.note.set`). |
 | 0.10 | Polls and slash commands | Polls with per-answer counts, `poll.vote`, `poll.end` and a sweeper that closes expired ones; server-rolled `/roll`, `/8ball`, `/coinflip` and `/choose` stored on the message so results can't be faked. |
 | 0.9 | Link embeds | The server fetches pages people link to and stores a preview on the message (`embeds`), with an SSRF-guarded fetcher, an image proxy so viewers' addresses never reach third parties, `message.embeds.suppress`, and a `link_embeds` server setting. |
 
@@ -456,6 +457,27 @@ public: `user_ids` lists who picked each answer, in the order they voted.
 A poll closes when `expires_at` passes (the server sweeps for this) or when
 `poll.end` is called; `ended_at` is set either way and voting stops.
 
+### Saved message
+A message you bookmarked. Saving is private: nobody is told, and the
+message itself is untouched. `saved.list` returns ordinary `Message`
+objects with `saved_at`, `cursor` and `guild_id` added, newest saved first.
+Page with `before`, which takes a `cursor` (the timestamp alone would skip
+messages saved in the same millisecond).
+
+The list is filtered against **live** permissions on every read: a saved
+message in a channel you can no longer `VIEW_CHANNEL` and `READ_HISTORY`
+is left out rather than leaked, and one whose message was deleted is gone
+(the row cascades). `saved.remove` works even for a message you can no
+longer see, so nothing gets stuck.
+
+### User note
+```json
+{ "user_id": "string", "note": "string | null" }
+```
+A private note you keep on someone — up to 256 characters, visible only to
+you. `user.profile.result` carries your note about that person as `note`;
+`user.note.set` with an empty or null `note` deletes it.
+
 ### Attachment
 ```json
 {
@@ -724,7 +746,7 @@ Server audit `action` values: `user.status`, `user.reset_password`,
 | type | direction | payload |
 |---|---|---|
 | `user.profile` | C→S | `{ user_id }` |
-| `user.profile.result` | S→C | `{ user: PublicUser + { bio, created_at }, status }` |
+| `user.profile.result` | S→C | `{ user: PublicUser + { bio, created_at }, status, note }` — `note` is your own private note about them (§4 User note) |
 | `user.update` | C→S | `{ display_name?, bio?, avatar_color?, custom_status?, banner_media_id?, profile_colors?, dm_privacy? }` — `null` or `""` clears a field. `banner_media_id` is a `banner` upload (needs `profile_banner`, and `animated_media` if animated); `profile_colors` needs `profile_colors` (§8d) |
 | `user.update.result` | S→C | `{ user }` (self view) |
 | `user.avatar.set` | C→S | `{ data_b64 }` — base64 image, or `null` to remove; or `{ media_id }` — an `avatar` upload (animated needs `animated_media`, §8d) |
@@ -1031,6 +1053,16 @@ the Terms or Privacy Policy. Read state is one `last_read_id` per account.
 | `poll.end` | C→S | `{ message_id }` — close a poll early. Its author, or `MANAGE_MESSAGES` in a guild |
 | `poll.end.result` | S→C | `{ poll }` |
 | `poll.updated` | S→C | `{ message_id, channel_id, guild_id, poll }` — to everyone who can see the channel, after a vote or a close |
+| `saved.list` | C→S | `{ before?: cursor, limit?: 1-50 }` — your saved messages, newest saved first (§4 Saved message). `before` is the previous page's `next` |
+| `saved.list.result` | S→C | `{ messages, has_more, next, count }` |
+| `saved.add` | C→S | `{ message_id }` — bookmark a message you can see. At most 500 |
+| `saved.add.result` | S→C | `{ message_id, saved: true, count }` |
+| `saved.remove` | C→S | `{ message_id }` |
+| `saved.remove.result` | S→C | `{ message_id, saved: false, count }` |
+| `saved.updated` | S→C | `{ message_id, saved, count }` — to your **other** connections, so every window agrees |
+| `user.note.set` | C→S | `{ user_id, note }` — your private note about someone (§4 User note). Empty or null deletes it |
+| `user.note.set.result` | S→C | `{ user_id, note }` |
+| `user.note.updated` | S→C | `{ user_id, note }` — to your other connections |
 | `message.search` | C→S | `{ guild_id \| channel_id, query?, author_id?, has?: "file"\|"image"\|"video"\|"link", pinned?, before?, after?, offset? }` — at least one filter. Searches text channels where you have `READ_HISTORY` (or one channel / DM); words match as prefixes, newest first, 25 per page |
 | `message.search.result` | S→C | `{ messages: [Message + guild_id], total }` |
 | `message.new` | S→C | `Message` + `guild_id` — to everyone who can view the channel (including the sender) |

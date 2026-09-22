@@ -41,5 +41,6 @@
   "ui/links",
   "ui/embeds",
   "ui/commands",
-  "ui/polls"
+  "ui/polls",
+  "ui/saved"
 ]

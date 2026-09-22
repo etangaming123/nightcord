@@ -1,7 +1,7 @@
 // Profile popout: avatar, names, status, bio, roles in this guild, and
 // actions (message, edit profile, moderation) the viewer is allowed to use.
 
-import { T } from "../protocol.js";
+import { LIMITS, T } from "../protocol.js";
 import { STAFF_LABEL, can, memberById, memberRoles, state, statusOf, userById } from "../state.js";
 import { add, avatar, clear, displayName, fmtDate, h, statusLabel } from "./dom.js";
 import { closePopover, confirmAction, openMenu, openPopover, repositionPopover, toast } from "./modals.js";
@@ -14,6 +14,9 @@ const t = scopedT("ui/profile");
 export function openProfile(userId, anchor, actions, { placement = "right" } = {}) {
   const cached = userById(userId) || memberById(userId)?.user;
   const body = h("div", { class: "profile" });
+  // The card is drawn twice — once from cache, once from user.profile — so the
+  // note box is built once and moved across, keeping focus and any edit.
+  let noteField = null;
   const draw = (user, extra = {}) => {
     const status = statusOf(user.user_id);
     const member = state.view === "guild" ? memberById(user.user_id) : null;
@@ -48,6 +51,7 @@ export function openProfile(userId, anchor, actions, { placement = "right" } = {
           member ? h("br") : null,
           member ? t("this_guild_since", { date: fmtDate(member.joined_at) }) : null)),
         member ? rolesSection(member, actions) : null,
+        me ? null : noteSection(user.user_id, actions, () => noteField, (el) => { noteField = el; }),
         member?.timed_out_until && new Date(member.timed_out_until) > new Date()
           ? h("p", { class: "timeout-note" }, t("timed_out_note", { until: new Date(member.timed_out_until).toLocaleString() })) : null,
         h("div", { class: "profile-actions" },
@@ -62,11 +66,41 @@ export function openProfile(userId, anchor, actions, { placement = "right" } = {
   if (cached) draw(cached);
   else add(body, h("p", { class: "muted pad" }, t("loading")));
   if (!openPopover(anchor, body, { placement, cls: "profile-pop", key: `profile:${userId}` })) return;
-  actions.req(T.USER_PROFILE, { user_id: userId }).then(({ user }) => {
+  actions.req(T.USER_PROFILE, { user_id: userId }).then(({ user, note }) => {
     if (!body.isConnected) return;
+    actions.applyUserNote({ user_id: userId, note });
     const fresh = actions.rememberUser(user);
     draw(fresh, { bio: user.bio, created_at: user.created_at });
   }).catch((e) => { if (body.isConnected && !cached) clear(body, h("p", { class: "pad" }, e.message)); });
+}
+
+// "Note (only you can see this)". Saves on blur, and survives the redraw.
+function noteSection(userId, actions, getField, setField) {
+  let field = getField();
+  if (!field) {
+    field = h("textarea", {
+      class: "profile-note", rows: 2, maxLength: LIMITS.USER_NOTE_MAX,
+      placeholder: t("note_placeholder"), "aria-label": t("note_heading"),
+    });
+    field.value = actions.userNote(userId) ?? "";
+    let saved = field.value;
+    field.addEventListener("blur", () => {
+      const next = field.value.trim();
+      if (next === saved.trim()) return;
+      saved = next;
+      actions.setUserNote(userId, next).catch((e) => toast(e.message, { error: true }));
+    });
+    // Enter saves and lets go; Shift+Enter keeps typing.
+    field.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); field.blur(); }
+      if (e.key === "Escape") e.stopPropagation();
+    });
+    setField(field);
+  } else if (document.activeElement !== field && !field.value) {
+    // Nothing typed yet: pick up a note that arrived with the fresh profile.
+    field.value = actions.userNote(userId) ?? "";
+  }
+  return section(t("note_heading"), field);
 }
 
 function section(title, content) {

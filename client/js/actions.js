@@ -26,6 +26,7 @@ import { closeFullscreen, closeModal, closePopover, confirmModal, formModal, ful
 import { inviteDialog, invitePreview } from "./ui/invites.js";
 import { openAccountSwitcher } from "./ui/accounts.js";
 import { openPins } from "./ui/pins.js";
+import { openSaved } from "./ui/saved.js";
 import { copyText, openProfile } from "./ui/profile.js";
 import { openSearch } from "./ui/search.js";
 import { userSettings } from "./ui/settings.js";
@@ -44,6 +45,12 @@ export async function loadAll() {
     req(T.GUILD_LIST), req(T.DM_LIST), req(T.READ_STATE_LIST), req(T.NOTIFY_PREFS_GET), req(T.FRIEND_LIST),
     req(T.ANNOUNCEMENT_LIST),
   ]);
+  // The bookmark list is private and usually small; knowing the ids up front
+  // is what lets the toolbar show 🔖 filled in.
+  req(T.SAVED_LIST, { limit: 50 }).then(({ messages }) => {
+    state.saved = new Set(messages.map((m) => m.message_id));
+    invalidate("chat");
+  }).catch(() => {});
   state.relationships = new Map(f.relationships.map((rel) => [rel.user.user_id, rel]));
   f.relationships.forEach((rel) => rememberUser(rel.user));
   setAnnouncements(a);
@@ -568,6 +575,46 @@ function pinAction(m, skipConfirm, { type, title, body, confirmLabel, done }) {
     });
   });
 }
+
+// --- saved messages and private notes (PROTOCOL.md §4) ---------------------------
+
+export const isSaved = (m) => state.saved.has(m.message_id);
+
+export async function saveMessage(m) {
+  const { count } = await req(T.SAVED_ADD, { message_id: m.message_id });
+  state.saved.add(m.message_id);
+  invalidate("chat");
+  toast(t("saved_message", { count }));
+}
+
+export async function unsaveMessage(m) {
+  await req(T.SAVED_REMOVE, { message_id: m.message_id });
+  state.saved.delete(m.message_id);
+  invalidate("chat");
+}
+
+export function toggleSaved(m) {
+  (isSaved(m) ? unsaveMessage(m) : saveMessage(m)).catch(fail);
+}
+
+// From saved.updated on another connection of this account.
+export function applySaved({ message_id: id, saved }) {
+  if (saved) state.saved.add(id);
+  else state.saved.delete(id);
+  invalidate("chat");
+}
+
+export const showSaved = (anchor) => openSaved(anchor, actions);
+
+export const setUserNote = (userId, note) => req(T.USER_NOTE_SET, { user_id: userId, note })
+  .then((res) => { applyUserNote(res); return res.note; });
+
+export function applyUserNote({ user_id: userId, note }) {
+  if (note) state.notes.set(userId, note);
+  else state.notes.delete(userId);
+}
+
+export const userNote = (userId) => state.notes.get(userId) ?? null;
 
 // --- polls (PROTOCOL.md §4 Poll) -------------------------------------------------
 
@@ -1422,6 +1469,7 @@ export const actions = {
   sendMessage, typing, reply, cancelReply, rerenderComposer, startEdit, cancelEdit, saveEdit, deleteMessage,
   react, unreact, pickReaction, jumpTo, showTopic, pinMessage, unpinMessage, showPins, showSearch, showSwitcher,
   openChannelById, canSuppressEmbeds, suppressEmbeds, votePoll, endPoll, composePoll, runCommand,
+  isSaved, saveMessage, unsaveMessage, toggleSaved, showSaved, setUserNote, userNote, applyUserNote,
   inviteLink, openInviteDialog, openInvite, createInvite, setGuildIcon, setGuildIconMedia,
   reorderChannels, sidebarOrder, toggleCategory, isCollapsed, joinVoice, leaveVoice, setVoiceFlags,
   changeNickname, staffItems, nameOf,

@@ -2,6 +2,7 @@
 
 import {
   ackCurrent, addMessage, applyGuildEmojis, applyGuildStickers, applyPoll, applyReaction, applyRelationship,
+  applySaved, applyUserNote,
   dropRelationship, expireTyping, forgetGuild, legalChanged, loadAll, openFriends, openGuild, openHome, reloadRoles,
   removeMessage, setServerInfo, updateMessage, upsertMember,
 } from "./actions.js";
@@ -108,6 +109,9 @@ export function wireEvents(conn) {
   on(T.MESSAGE_DELETED, ({ channel_id, message_id }) => {
     if (channel_id === state.channelId && removeMessage(message_id)) invalidate("chat");
   });
+
+  on(T.SAVED_UPDATED, applySaved);
+  on(T.USER_NOTE_UPDATED, applyUserNote);
 
   on(T.POLL_UPDATED, ({ channel_id, message_id, poll }) => {
     if (channel_id === state.channelId) applyPoll(message_id, poll);

@@ -1,0 +1,15 @@
+{
+  "heading": "Saved",
+  "empty_body": "Nothing saved yet.",
+  "empty_but_hidden": {
+    "one": "Your 1 saved message is in a channel you can't read any more.",
+    "other": "Your {count} saved messages are in channels you can't read any more."
+  },
+  "empty_hint": "Save a message from its ⋯ menu or the 🔖 in its toolbar. Only you can see this list.",
+  "jump": "Jump",
+  "remove": "Remove from Saved",
+  "attachment_count": {
+    "one": "1 attachment",
+    "other": "{count} attachments"
+  }
+}

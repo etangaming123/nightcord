@@ -80,6 +80,7 @@ export function renderChatHeader(state, actions) {
     add(header, h("span", { class: "title" }, channelTitle(channel)));
     add(header, h("span", { class: "grow" }));
     add(header, iconBtn("📌", t("pinned_messages"), (e) => actions.showPins(e.currentTarget)));
+    add(header, iconBtn("🔖", t("saved_messages"), (e) => actions.showSaved(e.currentTarget)));
     if (channel.kind === "group_dm") {
       add(header, iconBtn("✎", t("rename_group"), () => actions.renameGroup(channel)));
       add(header, iconBtn("＋", t("add_people"), () => actions.addToGroup(channel)));
@@ -98,6 +99,7 @@ export function renderChatHeader(state, actions) {
     if (channel.slowmode_seconds) add(header, h("span", { class: "slow-tag", title: t("slowmode_title", { seconds: channel.slowmode_seconds }) }, "🐢"));
     if (can("CREATE_INVITE") && !currentGuild()?.ghost) add(header, iconBtn("✉", t("invite_people"), () => actions.openInviteDialog(), { cls: "hide-narrow" }));
     add(header, iconBtn("📌", t("pinned_messages"), (e) => actions.showPins(e.currentTarget)));
+    add(header, iconBtn("🔖", t("saved_messages"), (e) => actions.showSaved(e.currentTarget), { cls: "hide-narrow" }));
     add(header, iconBtn("👥", t("show_members"), actions.toggleMembers, { cls: "members-btn" }));
     add(header, searchButton(actions));
   } else if (state.view === "home") {
@@ -208,6 +210,7 @@ function toolbar(m, state, actions) {
     canReact ? iconBtn("☺", t("add_reaction"), (e) => actions.pickReaction(m, e.currentTarget)) : null,
     canSend && !system ? iconBtn("↩", t("reply"), () => actions.reply(m)) : null,
     mine && canSend ? iconBtn("✎", t("edit"), () => actions.startEdit(m)) : null,
+    !system ? iconBtn("🔖", actions.isSaved(m) ? t("unsave") : t("save"), () => actions.toggleSaved(m), { cls: actions.isSaved(m) ? "on" : "" }) : null,
     canPin ? iconBtn("📌", m.pinned ? t("unpin_with_hint") : t("pin_with_hint"), (e) => (m.pinned ? actions.unpinMessage(m, e.shiftKey) : actions.pinMessage(m, e.shiftKey)), { cls: m.pinned ? "on" : "" }) : null,
     canDelete ? iconBtn("🗑", t("delete_with_hint"), (e) => actions.deleteMessage(m, e.shiftKey), { cls: "danger" }) : null,
   );

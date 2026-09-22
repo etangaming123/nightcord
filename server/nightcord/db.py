@@ -314,6 +314,24 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX poll_votes_by_user ON poll_votes(user_id)
     """,
+    # 8 — saved messages and private notes about people.
+    """
+    CREATE TABLE saved_messages (
+        user_id     TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        message_id  INTEGER NOT NULL REFERENCES messages(message_id) ON DELETE CASCADE,
+        saved_at    TEXT NOT NULL,
+        PRIMARY KEY (user_id, message_id)
+    );
+    CREATE INDEX saved_by_message ON saved_messages(message_id);
+    CREATE TABLE user_notes (
+        user_id     TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        target_id   TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        note        TEXT NOT NULL,
+        updated_at  TEXT NOT NULL,
+        PRIMARY KEY (user_id, target_id)
+    );
+    CREATE INDEX user_notes_by_target ON user_notes(target_id)
+    """,
 ]
 
 MIGRATION_2 = """
@@ -431,6 +449,11 @@ def iso_in(seconds: float) -> str:
 
 def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+def saved_cursor(saved_at: str, message_id: str) -> str:
+    """Opaque page cursor for saved.list: the save time plus the message id."""
+    return f"{saved_at}|{message_id}"
 
 
 def _sid(v: int | None) -> str | None:
@@ -745,6 +768,8 @@ class Database:
             self._exec("DELETE FROM read_states WHERE user_id = ?", user_id)
             self._exec("DELETE FROM relationships WHERE user_id = ? OR other_id = ?", user_id, user_id)
             self._exec("DELETE FROM poll_votes WHERE user_id = ?", user_id)
+            self._exec("DELETE FROM saved_messages WHERE user_id = ?", user_id)
+            self._exec("DELETE FROM user_notes WHERE user_id = ? OR target_id = ?", user_id, user_id)
         return {"avatar_id": row["avatar_id"], "banner_id": row["banner_id"], "attachment_ids": attachment_ids}
 
     def search_users(self, query: str, *, exclude: str, limit: int = 20) -> list[dict]:
@@ -1829,6 +1854,61 @@ class Database:
     def expired_poll_ids(self) -> list[int]:
         rows = self._all("SELECT message_id FROM polls WHERE ended_at IS NULL AND expires_at <= ?", now_iso())
         return [r["message_id"] for r in rows]
+
+    # --- saved messages and private notes (PROTOCOL.md §4) ------------------
+
+    def save_message(self, user_id: str, message_id: int) -> bool:
+        """True when it wasn't already saved."""
+        return self._exec(
+            "INSERT OR IGNORE INTO saved_messages(user_id, message_id, saved_at) VALUES (?,?,?)",
+            user_id, message_id, now_iso(),
+        ).rowcount > 0
+
+    def unsave_message(self, user_id: str, message_id: int) -> bool:
+        return self._exec(
+            "DELETE FROM saved_messages WHERE user_id = ? AND message_id = ?", user_id, message_id
+        ).rowcount > 0
+
+    def saved_count(self, user_id: str) -> int:
+        return self._one("SELECT COUNT(*) AS n FROM saved_messages WHERE user_id = ?", user_id)["n"]
+
+    def is_saved(self, user_id: str, message_id: int) -> bool:
+        return self._one(
+            "SELECT 1 FROM saved_messages WHERE user_id = ? AND message_id = ?", user_id, message_id
+        ) is not None
+
+    def saved_messages(self, user_id: str, *, before: str | None = None, limit: int = 50) -> list[dict]:
+        """Newest saved first. `before` is a cursor from saved_cursor(); paging
+        on the timestamp alone would skip rows saved in the same millisecond.
+        Each row carries saved_at and its cursor."""
+        at, _, mid = (before or "").partition("|")
+        rows = self._all(
+            "SELECT s.saved_at, m.* FROM saved_messages s JOIN messages m ON m.message_id = s.message_id "
+            "WHERE s.user_id = ? AND (s.saved_at < ? OR (s.saved_at = ? AND s.message_id < ?)) "
+            "ORDER BY s.saved_at DESC, s.message_id DESC LIMIT ?",
+            user_id, at or "9999", at or "9999", int(mid) if mid.isdigit() else 2**63 - 1, limit,
+        )
+        saved_at = {r["message_id"]: r["saved_at"] for r in rows}
+        out = self._messages(rows)
+        for m in out:
+            m["saved_at"] = saved_at[int(m["message_id"])]
+            m["cursor"] = saved_cursor(m["saved_at"], m["message_id"])
+        return out
+
+    def get_user_note(self, user_id: str, target_id: str) -> str | None:
+        row = self._one("SELECT note FROM user_notes WHERE user_id = ? AND target_id = ?", user_id, target_id)
+        return row["note"] if row else None
+
+    def set_user_note(self, user_id: str, target_id: str, note: str | None) -> str | None:
+        if not note:
+            self._exec("DELETE FROM user_notes WHERE user_id = ? AND target_id = ?", user_id, target_id)
+            return None
+        self._exec(
+            "INSERT INTO user_notes(user_id, target_id, note, updated_at) VALUES (?,?,?,?) "
+            "ON CONFLICT(user_id, target_id) DO UPDATE SET note = excluded.note, updated_at = excluded.updated_at",
+            user_id, target_id, note, now_iso(),
+        )
+        return note
 
     def set_embeds(self, message_id: int, embeds: list[dict]) -> dict | None:
         """Fills in link previews without touching edited_at (PROTOCOL.md §4 Embed)."""

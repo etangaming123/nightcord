@@ -97,5 +97,9 @@
   "time_usage": "Try /time or /time 19:30",
   "nick_needs_guild": "Open a guild first.",
   "nick_not_allowed": "You can't change your nickname here.",
-  "nickname_set": "Nickname set to {nickname}"
+  "nickname_set": "Nickname set to {nickname}",
+  "saved_message": {
+    "one": "Saved — 1 message in your list",
+    "other": "Saved — {count} messages in your list"
+  }
 }

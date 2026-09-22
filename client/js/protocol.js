@@ -2,7 +2,7 @@
 // server/nightcord/protocol.py — edit that file, then regenerate. Both follow
 // docs/PROTOCOL.md; server/tests/test_protocol_sync.py checks all three agree.
 
-export const PROTOCOL_VERSION = "0.10";
+export const PROTOCOL_VERSION = "0.11";
 
 export const T = Object.freeze({
   SETUP_CLAIM: "setup.claim",
@@ -217,6 +217,16 @@ export const T = Object.freeze({
   MESSAGE_NEW: "message.new",
   MESSAGE_UPDATED: "message.updated",
   MESSAGE_DELETED: "message.deleted",
+  SAVED_LIST: "saved.list",
+  SAVED_LIST_RESULT: "saved.list.result",
+  SAVED_ADD: "saved.add",
+  SAVED_ADD_RESULT: "saved.add.result",
+  SAVED_REMOVE: "saved.remove",
+  SAVED_REMOVE_RESULT: "saved.remove.result",
+  SAVED_UPDATED: "saved.updated",
+  USER_NOTE_SET: "user.note.set",
+  USER_NOTE_SET_RESULT: "user.note.set.result",
+  USER_NOTE_UPDATED: "user.note.updated",
   POLL_VOTE: "poll.vote",
   POLL_VOTE_RESULT: "poll.vote.result",
   POLL_END: "poll.end",
@@ -415,5 +425,8 @@ export const LIMITS = Object.freeze({
   POLL_MIN_ANSWERS: 2,
   POLL_MAX_ANSWERS: 10,
   POLL_DURATIONS: Object.freeze(["1h", "4h", "8h", "1d", "3d", "1w"]),
+  SAVED_PAGE: 50,
+  MAX_SAVED: 500,
+  USER_NOTE_MAX: 256,
   MAX_ACCOUNTS_PER_CLIENT: 20,
 });

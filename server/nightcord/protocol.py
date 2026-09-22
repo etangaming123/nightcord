@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-PROTOCOL_VERSION = "0.10"
+PROTOCOL_VERSION = "0.11"
 
 # --- Message types -----------------------------------------------------------
 
@@ -251,6 +251,18 @@ MESSAGE_EMBEDS_SUPPRESS_RESULT = "message.embeds.suppress.result"
 MESSAGE_NEW = "message.new"
 MESSAGE_UPDATED = "message.updated"
 MESSAGE_DELETED = "message.deleted"
+
+# Saved messages and private notes
+SAVED_LIST = "saved.list"
+SAVED_LIST_RESULT = "saved.list.result"
+SAVED_ADD = "saved.add"
+SAVED_ADD_RESULT = "saved.add.result"
+SAVED_REMOVE = "saved.remove"
+SAVED_REMOVE_RESULT = "saved.remove.result"
+SAVED_UPDATED = "saved.updated"
+USER_NOTE_SET = "user.note.set"
+USER_NOTE_SET_RESULT = "user.note.set.result"
+USER_NOTE_UPDATED = "user.note.updated"
 
 # Polls
 POLL_VOTE = "poll.vote"
@@ -540,6 +552,11 @@ POLL_ANSWER_MAX = 55
 POLL_MIN_ANSWERS = 2
 POLL_MAX_ANSWERS = 10
 POLL_DURATIONS = {"1h": 3600, "4h": 4 * 3600, "8h": 8 * 3600, "1d": 86400, "3d": 3 * 86400, "1w": 7 * 86400}
+
+# Saved messages and private notes (§4 Saved message, User note)
+SAVED_PAGE = 50
+MAX_SAVED = 500
+USER_NOTE_MAX = 256
 MAX_ACCOUNTS_PER_CLIENT = 20
 
 

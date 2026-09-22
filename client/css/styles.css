@@ -734,6 +734,10 @@ textarea { resize: vertical; }
 .profile-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .profile-actions .btn { flex: 1 1 calc(50% - 4px); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .profile-actions .btn.wide { flex-basis: 100%; }
+.profile-note {
+  width: 100%; box-sizing: border-box; resize: vertical; min-height: 44px;
+  font: inherit; font-size: 13px;
+}
 .timeout-note { margin: 8px 0 0; font-size: 13px; color: var(--warn); }
 .role-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .role-chip {
