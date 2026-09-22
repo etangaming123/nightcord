@@ -44,7 +44,6 @@
   "perm_heading_advanced": "Advanced",
   "perm_administrator_label": "Administrator",
   "perm_administrator_desc": "Every permission, ignoring channel overrides. Grant with care.",
-
   "audit_guild_update": "updated the guild",
   "audit_channel_create": "created a channel",
   "audit_channel_update": "updated a channel",
@@ -70,7 +69,6 @@
   "audit_sticker_create": "added a sticker",
   "audit_sticker_update": "edited a sticker",
   "audit_sticker_delete": "deleted a sticker",
-
   "settings_title": "{name} settings",
   "tab_overview": "Overview",
   "tab_roles": "Roles",
@@ -81,7 +79,6 @@
   "tab_bans": "Bans",
   "tab_audit_log": "Audit log",
   "tab_delete_guild": "Delete guild",
-
   "guild_listed_note": "Anyone on this server can find and join it from Browse.",
   "guild_unlisted_note": "The server owner has turned off the public list, so this has no effect right now.",
   "no_system_messages": "No system messages",
@@ -107,7 +104,6 @@
   "guild_id_copied_toast": "Guild ID copied",
   "save_changes_btn": "Save changes",
   "saved_toast": "Saved",
-
   "create_role_btn": "＋ Create role",
   "default_role_name": "new role",
   "move_up_label": "Move up",
@@ -121,10 +117,8 @@
   "discard_btn": "Discard",
   "delete_role_title": "Delete the {name} role?",
   "delete_role_message": "Members lose it and any channel overrides for it. This can't be undone.",
-
   "everyone_overrides_note": "Overrides for everyone. To make a private channel, deny View channel here and allow it for some roles.",
   "role_overrides_note": "Overrides for {name}. They win over @everyone's.",
-
   "second_colour_aria": "Second colour",
   "third_colour_aria": "Third colour",
   "remove_third_colour_btn": "− Third colour",
@@ -152,7 +146,6 @@
   "hoist_perm_desc": "Online members with this role get their own group in the member list.",
   "role_locked_note": "This role is at or above your highest role, so you can't edit it.",
   "role_saved_toast": "Role saved",
-
   "search_members_placeholder": "Search members",
   "search_members_aria": "Search members",
   "timed_out_tag": "TIMED OUT",
@@ -162,11 +155,9 @@
   "someone_fallback": "someone",
   "roles_btn": "Roles ▾",
   "moderate_btn": "Moderate ▾",
-
   "nobody_banned": "Nobody is banned.",
   "unban_btn": "Unban",
   "unbanned_toast": "{name} unbanned",
-
   "nothing_happened_yet": "Nothing has happened yet.",
   "load_more_btn": "Load more",
   "audit_reason": "reason: {reason}",
@@ -175,10 +166,17 @@
   "audit_added": "added {items}",
   "audit_removed": "removed {items}",
   "audit_in_channel": "in #{channel}",
-
-  "delete_guild_confirm_aria": "Type the guild name to confirm",
   "delete_guild_btn": "Delete guild",
   "delete_guild_intro_before": "This deletes every channel, message, role and invite in ",
   "delete_guild_intro_after": " for everyone. It can't be undone.",
-  "delete_guild_type_to_confirm": "Type the guild name to confirm"
+  "remove_icon_title": "Remove the guild icon?",
+  "remove_icon_body": "The guild falls back to its initials.",
+  "remove_guild_banner_title": "Remove the guild banner?",
+  "remove_guild_banner_body": "The image is deleted from the server.",
+  "remove_role_icon_title": "Remove the icon on {role}?",
+  "remove_role_icon_body": "Members with this role stop showing it beside their name.",
+  "unban_title": "Unban {name}?",
+  "unban_body": "They'll be able to join this guild again with an invite.",
+  "delete_guild_confirm_title": "Delete {name}?",
+  "delete_guild_confirm_body": "Every channel, message and attachment in this guild is deleted. This can't be undone."
 }

@@ -11,5 +11,9 @@
   "limit": "{count} / {limit}",
   "limit_reached": "This server asks for at most this many accounts per device.",
   "add_account": "+ Add an account",
-  "other_server": "Connect to another server"
+  "other_server": "Connect to another server",
+  "log_out_title": "Log out?",
+  "log_out_body": "This ends the session on this device. Other devices stay logged in.",
+  "forget_title": "Forget {name}?",
+  "forget_body": "This device stops remembering that account. The account itself is untouched."
 }

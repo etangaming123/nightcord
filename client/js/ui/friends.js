@@ -162,7 +162,7 @@ function requestsTab(page, actions) {
       onClick: () => actions.openDm(ch.channel_id),
       buttons: [
         h("button", { class: "btn small primary", type: "button", on: { click: () => actions.acceptRequest(ch) } }, t("accept")),
-        h("button", { class: "btn small", type: "button", on: { click: () => actions.declineRequest(ch) } }, t("decline")),
+        h("button", { class: "btn small", type: "button", on: { click: (e) => actions.declineRequest(ch, e.shiftKey) } }, t("decline")),
       ],
     }));
   }

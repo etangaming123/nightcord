@@ -128,6 +128,11 @@ function renderTokens(tokens, ctx) {
   return tokens.map((t) => renderToken(t, ctx));
 }
 
+// Flat text of a token list, for places that can't hold elements.
+function tokensText(tokens) {
+  return tokens.map((t) => (t.text ?? (t.children ? tokensText(t.children) : t.href ?? ""))).join("");
+}
+
 function renderToken(t, ctx) {
   switch (t.type) {
     case "text":
@@ -183,6 +188,9 @@ function renderToken(t, ctx) {
       return img;
     }
     case "link":
+      // plainLinks: somewhere a link can't be clicked anyway (the header
+      // topic is itself a button), so draw the text and skip the anchor.
+      if (ctx.plainLinks) return document.createTextNode(t.children ? tokensText(t.children) : t.href);
       return h("a", { href: t.href, target: "_blank", rel: "noopener noreferrer nofollow" },
         t.children ? renderTokens(t.children, ctx) : t.href);
     case "heading":

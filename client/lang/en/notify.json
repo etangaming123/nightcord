@@ -1,4 +1,5 @@
 {
   "notif_title_guild": "{author} ({channel}, {guild})",
-  "update_toast": "Nightcord {latest} is available — see Inbox for details."
+  "update_toast": "Nightcord {latest} is available.",
+  "update_toast_inbox": "Nightcord {latest} is available — see Inbox for details."
 }

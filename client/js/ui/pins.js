@@ -17,7 +17,8 @@ export async function openPins(anchor, actions) {
   const list = h("div", { class: "pins-list" }, h("p", { class: "muted pad" }, tc("loading")));
   const el = openPopover(anchor, h("div", { class: "pins" },
     h("div", { class: "pins-head" }, h("strong", {}, t("heading"))),
-    list), { placement: "bottom", cls: "pins-pop" });
+    list), { placement: "bottom", cls: "pins-pop", key: "pins" });
+  if (!el) return;
   const canUnpin = isDm(channel) || can("MANAGE_MESSAGES", channel);
   const draw = async () => {
     const { messages } = await actions.req(T.CHANNEL_PINS, { channel_id: channel.channel_id });
@@ -39,8 +40,11 @@ export async function openPins(anchor, actions) {
           h("div", { class: "pin-body" }, renderMarkdown(m.content, mdContext(state, actions)),
             m.attachments?.length ? h("div", { class: "muted small" }, t("attachment_count", { count: m.attachments.length })) : null)),
         h("div", { class: "pin-actions" },
-          h("button", { class: "btn small-btn", type: "button", on: { click: () => { closePopover(); actions.jumpTo(m.message_id, m.channel_id); } } }, t("jump")),
-          canUnpin ? iconBtn("✕", t("unpin"), async () => { try { await actions.unpinMessage(m); await draw(); } catch (e) { toast(e.message, { error: true }); } }) : null)));
+          h("button", { class: "btn small", type: "button", on: { click: () => { closePopover(); actions.jumpTo(m.message_id, m.channel_id); } } }, t("jump")),
+          canUnpin ? iconBtn("✕", t("unpin"), async (e) => {
+            if (!await actions.unpinMessage(m, e.shiftKey)) return;
+            try { await draw(); } catch (err) { toast(err.message, { error: true }); }
+          }) : null)));
     }
   };
   draw().catch((e) => clear(list, h("p", { class: "pad" }, e.message)));

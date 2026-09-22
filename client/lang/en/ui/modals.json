@@ -1,3 +1,6 @@
 {
-  "close_esc_title": "Close (Esc)"
+  "close_esc_title": "Close (Esc)",
+  "type_code_label": "Type this number to confirm:",
+  "type_code_aria": "Type the number {code} to confirm",
+  "code_mismatch": "That number doesn't match."
 }

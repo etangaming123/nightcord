@@ -325,11 +325,11 @@ function voicePanel(state, actions) {
     h("div", { class: "vp-note muted small" }, t("voice_audio_note")),
     h("div", { class: "vp-buttons" },
       h("button", {
-        class: `btn small-btn ${v.self_mute ? "on" : ""}`, type: "button", "aria-pressed": String(!!v.self_mute),
+        class: `btn small ${v.self_mute ? "on" : ""}`, type: "button", "aria-pressed": String(!!v.self_mute),
         on: { click: () => actions.setVoiceFlags({ self_mute: !v.self_mute }) },
       }, v.self_mute ? t("unmute_button") : t("mute_button")),
       h("button", {
-        class: `btn small-btn ${v.self_deaf ? "on" : ""}`, type: "button", "aria-pressed": String(!!v.self_deaf),
+        class: `btn small ${v.self_deaf ? "on" : ""}`, type: "button", "aria-pressed": String(!!v.self_deaf),
         on: { click: () => actions.setVoiceFlags({ self_deaf: !v.self_deaf }) },
       }, v.self_deaf ? t("undeafen_button") : t("deafen_button"))));
 }

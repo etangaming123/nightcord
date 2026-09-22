@@ -88,7 +88,7 @@ export function renderChatHeader(state, actions) {
       channel.topic ? h("button", {
         class: "topic", type: "button", title: channel.topic,
         on: { click: () => actions.showTopic(channel) },
-      }, renderMarkdown(channel.topic.split("\n")[0], mdContext(state, actions))) : h("span", { class: "grow" }),
+      }, renderMarkdown(channel.topic.split("\n")[0], { ...mdContext(state, actions), plainLinks: true })) : h("span", { class: "grow" }),
     );
     if (channel.slowmode_seconds) add(header, h("span", { class: "slow-tag", title: t("slowmode_title", { seconds: channel.slowmode_seconds }) }, "🐢"));
     if (can("CREATE_INVITE") && !currentGuild()?.ghost) add(header, iconBtn("✉", t("invite_people"), () => actions.openInviteDialog(), { cls: "hide-narrow" }));
@@ -203,7 +203,7 @@ function toolbar(m, state, actions) {
     canReact ? iconBtn("☺", t("add_reaction"), (e) => actions.pickReaction(m, e.currentTarget)) : null,
     canSend && !system ? iconBtn("↩", t("reply"), () => actions.reply(m)) : null,
     mine && canSend ? iconBtn("✎", t("edit"), () => actions.startEdit(m)) : null,
-    canPin ? iconBtn("📌", m.pinned ? t("unpin") : t("pin"), () => (m.pinned ? actions.unpinMessage(m) : actions.pinMessage(m)), { cls: m.pinned ? "on" : "" }) : null,
+    canPin ? iconBtn("📌", m.pinned ? t("unpin_with_hint") : t("pin_with_hint"), (e) => (m.pinned ? actions.unpinMessage(m, e.shiftKey) : actions.pinMessage(m, e.shiftKey)), { cls: m.pinned ? "on" : "" }) : null,
     canDelete ? iconBtn("🗑", t("delete_with_hint"), (e) => actions.deleteMessage(m, e.shiftKey), { cls: "danger" }) : null,
   );
 }

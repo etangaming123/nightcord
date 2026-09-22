@@ -27,3 +27,5 @@ jobs:
         run: for f in client/js/*.js client/js/ui/*.js; do node --check "$f"; done
       - name: Markdown tokenizer
         run: node client/tests/markdown.test.mjs
+      - name: UI strings
+        run: node client/tests/lang-keys.mjs

@@ -2,7 +2,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:standalone": "node scripts/build-standalone.mjs"
+    "build:standalone": "node scripts/build-standalone.mjs",
+    "test": "node tests/markdown.test.mjs && node tests/lang-keys.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.24.0"

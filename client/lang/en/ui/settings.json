@@ -75,7 +75,10 @@
   "remove_colour_title": "Remove colour",
   "remove_colour_n_aria": "Remove colour {n}",
   "add_colour": "+ Add colour",
-  "colour_count": { "one": "{count} of {max} — one colour gives a flat tint", "other": "{count} of {max}" },
+  "colour_count": {
+    "one": "{count} of {max} — one colour gives a flat tint",
+    "other": "{count} of {max}"
+  },
   "colours_label": "Colours",
   "direction_label": "Direction",
   "strength_label": "Strength",
@@ -91,7 +94,6 @@
   "notifications_shown_when_unfocused": "Shown when Nightcord isn't focused.",
   "play_sound_notifications": "Play a sound for new notifications",
   "dnd_note": "Do Not Disturb mutes all notifications.",
-
   "section_privacy": "Privacy",
   "dm_privacy_legend": "Who can message you",
   "dm_privacy_everyone": "Everyone",
@@ -104,10 +106,20 @@
   "blocked_heading": "Blocked — {count}",
   "blocked_none": "Nobody blocked.",
   "unblock": "Unblock",
-
   "section_local_options": "Local Options",
   "local_options_intro": "These settings live only in this browser/file and never sync to the server.",
   "auto_update_checker_label": "Automatically check GitHub for newer standalone releases on load",
   "update_notifier_label": "Show a toast when an update is found",
-  "local_options_note": "This pings GitHub's public release API — no account data is sent. Turn it off if you'd rather not."
+  "local_options_note": "This pings GitHub's public release API — no account data is sent. Turn it off if you'd rather not.",
+  "remove_avatar_title": "Remove your avatar?",
+  "remove_avatar_body": "You go back to a coloured circle with your initial.",
+  "remove_banner_title": "Remove your profile banner?",
+  "remove_banner_body": "The image is deleted from the server.",
+  "log_out_device_title": "Log out that device?",
+  "log_out_device_body": "{device} will need to log in again.",
+  "log_out_all_title": "Log out every other device?",
+  "log_out_all_body": {
+    "one": "1 other session ends right away.",
+    "other": "{count} other sessions end right away."
+  }
 }

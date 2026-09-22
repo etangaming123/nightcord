@@ -9,10 +9,8 @@
   "tab_bans": "Bans",
   "tab_guilds": "Guilds",
   "tab_audit_log": "Audit log",
-
   "saved": "Saved",
   "save": "Save",
-
   "staff_member_fallback": "staff member",
   "overview_role_line": "You're a {role} on {server}.",
   "stat_active_accounts": "active accounts",
@@ -22,7 +20,6 @@
   "overview_limits": "Upload limit: {limit} per file · Voice channels {voice}.",
   "voice_on": "on",
   "voice_off": "off",
-
   "server_name_label": "Server name",
   "account_creation_label": "Account creation",
   "account_creation_open": "Open: anyone can register",
@@ -37,7 +34,6 @@
   "voice_channels_label": "Voice channels",
   "voice_channels_hint": "A preview: people can join voice channels and see who's there, but audio isn't available yet.",
   "server_settings_saved": "Server settings saved",
-
   "feature_profile_banner_label": "Profile banners",
   "feature_profile_banner_hint": "An image at the top of your profile.",
   "feature_profile_colors_label": "Profile colours",
@@ -52,20 +48,17 @@
   "feature_role_icons_hint": "A small image or emoji next to members' names.",
   "feature_client_themes_label": "Themes",
   "feature_client_themes_hint": "Colour presets and custom gradient backgrounds for the app.",
-
   "mode_on_label": "Everyone",
   "mode_on_hint": "Every account can use the features switched on below.",
   "mode_allowlist_label": "Allow-list",
   "mode_allowlist_hint": "Only people given perks by an admin (and server staff). Like handing out Nitro.",
   "mode_off_label": "Nobody",
   "mode_off_hint": "Customisation is off. Stored banners and colours are kept but hidden.",
-
   "who_can_customise_legend": "Who can customise",
   "features_legend": "Features",
   "owner_only_note": "Only the server owner can change these.",
   "customization_intro": "Custom emoji and stickers are always available to everyone. These extras can be limited.",
   "customisation_saved": "Customisation settings saved",
-
   "allowlist_heading": "Allow-list",
   "add_someone_placeholder": "Add someone: search accounts",
   "search_accounts_perks_aria": "Search accounts to give perks",
@@ -76,7 +69,6 @@
   "give_perks_btn": "Give perks",
   "allowlist_active_hint": "These people can customise. Server staff always can.",
   "allowlist_inactive_hint": "Only used in allow-list mode. You can prepare it now.",
-
   "legal_intro": "Markdown. People see these before creating an account, and existing members are asked to accept them again whenever you change them. Leave both empty to turn this off.",
   "terms_label": "Terms of Service",
   "privacy_label": "Privacy Policy",
@@ -85,7 +77,6 @@
   "preview_btn": "Preview",
   "edit_btn": "Edit",
   "legal_saved_toast": "{label} saved — members will be asked to accept it",
-
   "search_accounts_placeholder": "Search accounts",
   "search_accounts_aria": "Search accounts",
   "filter_all": "All",
@@ -96,7 +87,6 @@
   "no_account_requests": "No account requests right now.",
   "no_accounts_match": "No accounts match.",
   "ip_visibility_note": "IP addresses are visible to server staff only.",
-
   "approve_btn": "Approve",
   "reject_btn": "Reject",
   "enable_btn": "Enable",
@@ -104,12 +94,14 @@
   "joined_fact": "Joined {date}",
   "ip_fact": "IP {ip}",
   "seen_fact": "seen {date}",
-  "device_count_fact": { "one": "{count} device", "other": "{count} devices" },
+  "device_count_fact": {
+    "one": "{count} device",
+    "other": "{count} devices"
+  },
   "note_fact": "“{note}”",
   "muted_tag": "MUTED",
   "perks_tag_title": "Has customisation perks",
   "perks_tag": "PERKS",
-
   "unmute_label": "Unmute on server",
   "unmuted_toast": "{name} unmuted",
   "mute_label": "Mute on server…",
@@ -143,7 +135,6 @@
   "perks_given_toast2": "Perks given",
   "delete_account_label": "Delete account…",
   "account_deleted_toast": "{name}'s account was deleted",
-
   "mute_dialog_title": "Mute {name} on this server",
   "mute_dialog_subtitle": "They can still read, but can't send messages, react, upload or join voice anywhere on the server — including DMs.",
   "mute_btn": "Mute",
@@ -155,16 +146,10 @@
   "mute_1w": "1 week",
   "mute_30d": "30 days",
   "mute_until_unmuted": "Until unmuted",
-
   "reason_optional_label": "Reason (optional)",
-
   "delete_account_title": "Delete {name}'s account?",
   "delete_account_message": "Their messages stay but show as “Deleted User”. Their avatar and uploads are deleted, guilds they own pass to their highest-ranked member, and the username becomes free. This can't be undone.",
   "delete_account_btn": "Delete account",
-  "type_to_confirm_label": "Type {username} to confirm",
-  "type_username_aria": "Type their username to confirm",
-  "username_mismatch_error": "The username doesn't match.",
-
   "staff_intro": "Moderators can approve and disable accounts, mute people server-wide and ban IPs and devices. Admins can also delete accounts, reset passwords and manage every guild. Only the server owner changes server settings and appoints admins.",
   "remove_from_staff_btn": "Remove from staff",
   "current_staff_heading": "Current staff",
@@ -175,7 +160,6 @@
   "make_moderator_btn": "Make moderator",
   "make_admin_btn": "Make admin",
   "add_staff_heading": "Add staff",
-
   "ip_bans_heading": "IP bans",
   "ip_bans_intro": "Banned addresses can't connect at all. Use a range (/24) for people who hop between nearby addresses.",
   "cidr_placeholder": "203.0.113.7 or 203.0.113.0/24",
@@ -189,11 +173,13 @@
   "device_bans_intro": "Added from an account's Manage menu. A device ban only stops that browser profile; clearing site data gets around it.",
   "no_device_bans": "No device bans.",
   "unknown_user": "Unknown user",
-
   "guilds_intro": "Every guild on this server. A ghost join lets you read a guild without its members seeing you; you can't post.",
   "listed_tag": "LISTED",
   "no_guilds_yet": "No guilds yet.",
-  "guild_owner_members": { "one": "Owner {owner} · {count} member", "other": "Owner {owner} · {count} members" },
+  "guild_owner_members": {
+    "one": "Owner {owner} · {count} member",
+    "other": "Owner {owner} · {count} members"
+  },
   "copy_guild_id_title": "Copy guild ID",
   "guild_id_copied_toast": "Guild ID copied",
   "open_ghost_btn": "Open (ghost)",
@@ -203,7 +189,6 @@
   "delete_guild_message": "Every channel, message and role in it is deleted for everyone. This can't be undone.",
   "delete_guild_btn": "Delete guild",
   "delete_btn": "Delete",
-
   "audit_status_approved": "approved / enabled",
   "audit_status_disabled": "disabled",
   "audit_status_rejected": "rejected",
@@ -217,18 +202,19 @@
   "audit_staff_made": "made {role}",
   "audit_ip_ban_add": "banned IP {cidr}",
   "audit_ip_ban_remove": "unbanned IP {cidr}",
-  "audit_device_ban_add": { "one": "banned {count} device of", "other": "banned {count} devices of" },
+  "audit_device_ban_add": {
+    "one": "banned {count} device of",
+    "other": "banned {count} devices of"
+  },
   "audit_device_ban_remove": "removed a device ban",
   "audit_guild_delete": "deleted the guild {name}",
   "audit_config_update": "changed server settings ({keys})",
   "audit_legal_update": "updated {documents}",
-
   "load_more_btn": "Load more",
   "nothing_happened_yet": "Nothing has happened yet.",
   "audit_reason": "reason: {reason}",
   "audit_until": "until {date}",
   "audit_indefinitely": "indefinitely",
-
   "user_search_label": "User search",
   "user_search_off": "Off — add friends by exact username",
   "user_search_staff": "Staff only",
@@ -237,5 +223,13 @@
   "announcements_admins_label": "Admins can post announcements",
   "announcements_admins_hint": "You can always post in everyone's Inbox; this lets server admins do it too.",
   "max_accounts_label": "Accounts per device",
-  "max_accounts_hint": "How many accounts the account switcher offers for this server (0 = no limit). A courtesy limit, not enforced."
+  "max_accounts_hint": "How many accounts the account switcher offers for this server (0 = no limit). A courtesy limit, not enforced.",
+  "reject_account_title": "Reject {name}'s request?",
+  "reject_account_body": "They won't be able to log in. You can approve them later from the Rejected filter.",
+  "remove_staff_title": "Remove {name} from staff?",
+  "remove_staff_body": "They keep their account and lose every staff power.",
+  "unban_ip_title": "Lift the ban on {cidr}?",
+  "unban_ip_body": "Connections from that address will be accepted again.",
+  "unban_device_title": "Lift this device ban?",
+  "unban_device_body": "That device will be able to log in again."
 }

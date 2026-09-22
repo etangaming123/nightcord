@@ -19,7 +19,8 @@
   "server_staff_heading": "Server staff",
   "copied": "Copied",
   "copy_failed": "Couldn't copy",
-
   "add_friend_label": "Add friend",
-  "friend_menu_button": "Friend ▾"
+  "friend_menu_button": "Friend ▾",
+  "remove_role_body": "Take {role} away from {name}?",
+  "remove_role_confirm": "Remove role"
 }

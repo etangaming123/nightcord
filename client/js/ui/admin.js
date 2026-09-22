@@ -7,7 +7,7 @@ import { LIMITS, T } from "../protocol.js";
 import { STAFF_LABEL, staffLevel, state } from "../state.js";
 import { add, avatar, clear, displayName, fmtBytes, fmtDate, fmtDateTime, h, initials } from "./dom.js";
 import { renderDocument } from "./markdown.js";
-import { closeFullscreen, confirmModal, formModal, openMenu, openModal, refreshFullscreen, toast } from "./modals.js";
+import { closeFullscreen, confirmAction, confirmModal, formModal, openMenu, openModal, refreshFullscreen, toast } from "./modals.js";
 import { copyText } from "./profile.js";
 import { scopedT } from "../strings.js";
 
@@ -271,18 +271,35 @@ async function accountsSection(el, actions) {
 const isMuted = (u) => u.muted_until && (u.muted_until === "permanent" || new Date(u.muted_until) > new Date());
 
 function accountRow(u, actions, redraw) {
+  const apply = async (status) => {
+    try {
+      await actions.req(T.ADMIN_USERS_SET_STATUS, { user_id: u.user_id, status });
+      await redraw();
+    } catch (e) { fail(e); }
+  };
   const act = (label, status, cls = "") => h("button", {
     class: `btn ${cls}`, type: "button",
-    on: { click: async () => { try { await actions.req(T.ADMIN_USERS_SET_STATUS, { user_id: u.user_id, status }); await redraw(); } catch (e) { fail(e); } } },
+    on: { click: () => apply(status) },
   }, label);
+  const reject = () => h("button", {
+    class: "btn", type: "button",
+    on: {
+      click: (e) => confirmAction(e, {
+        title: t("reject_account_title", { name: displayName(u) }),
+        message: t("reject_account_body"),
+        confirmLabel: t("reject_btn"),
+        onConfirm: () => apply("rejected"),
+      }),
+    },
+  }, t("reject_btn"));
   const below = staffLevel(u) < staffLevel();
   const buttons = [];
-  if (u.status === "pending" && below) buttons.push(act(t("approve_btn"), "active", "primary"), act(t("reject_btn"), "rejected"));
+  if (u.status === "pending" && below) buttons.push(act(t("approve_btn"), "active", "primary"), reject());
   else if (u.status === "disabled" && below) buttons.push(act(t("enable_btn"), "active"));
   if (u.status === "active" && below) {
     buttons.push(h("button", {
       class: "btn", type: "button", "aria-haspopup": "menu",
-      on: { click: (e) => openMenu(e.currentTarget, adminModeration(u, actions, redraw), { placement: "left" }) },
+      on: { click: (e) => openMenu(e.currentTarget, adminModeration(u, actions, redraw), { placement: "left", key: `admin:${u.user_id}` }) },
     }, t("manage_btn")));
   }
   const role = staffLevel(u) ? h("span", { class: `tag staff ${u.server_role}` }, (u.server_role || "").toUpperCase()) : null;
@@ -374,16 +391,12 @@ function reasonDialog(title, message, confirmLabel, onConfirm) {
 }
 
 function deleteAccountDialog(u, onDelete) {
-  const input = h("input", { placeholder: u.username, "aria-label": t("type_username_aria"), autocomplete: "off" });
   confirmModal({
     title: t("delete_account_title", { name: displayName(u) }),
     message: t("delete_account_message"),
     confirmLabel: t("delete_account_btn"),
-    fields: [h("label", {}, t("type_to_confirm_label", { username: u.username }), input)],
-    onConfirm: () => {
-      if (input.value.trim() !== u.username) throw new Error(t("username_mismatch_error"));
-      return onDelete();
-    },
+    code: true,
+    onConfirm: onDelete,
   });
 }
 
@@ -401,7 +414,17 @@ async function staffSection(el, actions) {
     add(list, h("div", { class: "list-row" },
       avatar(u, { size: "sm" }),
       h("span", { class: "meta" }, h("span", { class: "name" }, displayName(u)), h("span", { class: "sub" }, STAFF_LABEL[u.server_role] || u.server_role)),
-      canEdit ? h("button", { class: "btn", type: "button", on: { click: () => setRole(u, "none") } }, t("remove_from_staff_btn")) : null));
+      canEdit ? h("button", {
+        class: "btn", type: "button",
+        on: {
+          click: (e) => confirmAction(e, {
+            title: t("remove_staff_title", { name: displayName(u) }),
+            message: t("remove_staff_body"),
+            confirmLabel: t("remove_from_staff_btn"),
+            onConfirm: () => setRole(u, "none"),
+          }),
+        },
+      }, t("remove_from_staff_btn")) : null));
   }
   add(el, h("h3", {}, t("current_staff_heading")), list);
   const search = h("input", { type: "search", placeholder: t("find_someone_placeholder"), "aria-label": t("find_user_aria") });
@@ -453,7 +476,18 @@ async function bansSection(el, actions) {
     add(ipList, h("div", { class: "list-row" }, h("span", { class: "list-icon", "aria-hidden": "true" }, "🌐"),
       h("span", { class: "meta" }, h("span", { class: "name mono" }, b.cidr),
         h("span", { class: "sub" }, [b.reason ? t("note_fact", { note: b.reason }) : null, b.banned_by ? t("banned_by_fact", { name: displayName(b.banned_by) }) : null, fmtDateTime(b.created_at)].filter(Boolean).join(" · "))),
-      h("button", { class: "btn", type: "button", on: { click: () => actions.req(T.ADMIN_IP_BANS_REMOVE, { cidr: b.cidr }).then(refreshFullscreen, fail) } }, t("unban_btn"))));
+      h("button", {
+        class: "btn", type: "button",
+        on: {
+          click: (e) => confirmAction(e, {
+            title: t("unban_ip_title", { cidr: b.cidr }),
+            message: t("unban_ip_body"),
+            confirmLabel: t("unban_btn"),
+            danger: false,
+            onConfirm: () => actions.req(T.ADMIN_IP_BANS_REMOVE, { cidr: b.cidr }).then(refreshFullscreen, fail),
+          }),
+        },
+      }, t("unban_btn"))));
   }
   add(el, ipList, h("h3", {}, t("device_bans_heading")),
     h("p", { class: "muted small" }, t("device_bans_intro")));
@@ -463,7 +497,18 @@ async function bansSection(el, actions) {
     add(devList, h("div", { class: "list-row" }, h("span", { class: "list-icon", "aria-hidden": "true" }, "📵"),
       h("span", { class: "meta" }, h("span", { class: "name" }, b.user ? displayName(b.user) : t("unknown_user"), h("span", { class: "muted small mono" }, ` ${b.device_id.slice(0, 8)}…`)),
         h("span", { class: "sub" }, [b.reason ? t("note_fact", { note: b.reason }) : null, fmtDateTime(b.created_at)].filter(Boolean).join(" · "))),
-      h("button", { class: "btn", type: "button", on: { click: () => actions.req(T.ADMIN_DEVICE_BANS_REMOVE, { device_id: b.device_id }).then(refreshFullscreen, fail) } }, t("unban_btn"))));
+      h("button", {
+        class: "btn", type: "button",
+        on: {
+          click: (e) => confirmAction(e, {
+            title: t("unban_device_title"),
+            message: t("unban_device_body"),
+            confirmLabel: t("unban_btn"),
+            danger: false,
+            onConfirm: () => actions.req(T.ADMIN_DEVICE_BANS_REMOVE, { device_id: b.device_id }).then(refreshFullscreen, fail),
+          }),
+        },
+      }, t("unban_btn"))));
   }
   add(el, devList);
 }
@@ -493,6 +538,7 @@ async function guildsSection(el, actions) {
               title: t("delete_guild_title", { name: g.name }),
               message: t("delete_guild_message"),
               confirmLabel: t("delete_guild_btn"),
+              code: true,
               onConfirm: async () => { await actions.req(T.ADMIN_GUILDS_DELETE, { guild_id: g.guild_id }); refreshFullscreen(); },
             }),
           },

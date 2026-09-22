@@ -477,7 +477,7 @@ export function pickReaction(m, anchor) {
   openEmojiPicker(anchor, (emoji) => {
     const mine = m.reactions?.find((r) => sameEmoji(r.emoji, emoji))?.user_ids.includes(state.user.user_id);
     if (!mine) react(m, emoji);
-  }, { placement: "left" });
+  }, { placement: "left", key: `react:${m.message_id}` });
 }
 
 export async function sendSticker(sticker) {
@@ -506,7 +506,7 @@ export async function emojiInfo(emoji, anchor) {
   const body = h("div", { class: "emoji-info" },
     h("img", { class: "cemoji huge", src: anchor.src, alt: `:${emoji.name}:` }),
     h("div", {}, h("strong", {}, `:${emoji.name}:`), h("p", { class: "muted small" }, tc("loading"))));
-  openPopover(anchor, body, { placement: "top" });
+  if (!openPopover(anchor, body, { placement: "top", key: `emoji:${emoji.id}` })) return;
   try {
     const info = await req(T.EMOJI_INFO, { emoji_id: emoji.id });
     const note = info.is_member
@@ -552,8 +552,28 @@ export async function jumpTo(messageId, channelId = state.channelId, guildId = u
   await openChannel(channelId, { around: messageId });
 }
 
-export const pinMessage = (m) => req(T.MESSAGE_PIN, { message_id: m.message_id }).then(() => toast(t("message_pinned")), fail);
-export const unpinMessage = (m) => req(T.MESSAGE_UNPIN, { message_id: m.message_id }).then(() => toast(t("message_unpinned")), fail);
+// Resolve true once the message really was (un)pinned, so callers that redraw
+// a list (the pins panel) only do so when something changed.
+function pinAction(m, skipConfirm, { type, title, body, confirmLabel, done }) {
+  const run = () => req(type, { message_id: m.message_id }).then(() => { toast(t(done)); return true; });
+  if (skipConfirm) return run().catch((e) => { fail(e); return false; });
+  return new Promise((resolve) => {
+    confirmModal({
+      title: t(title),
+      message: t(body),
+      confirmLabel: t(confirmLabel),
+      danger: false,
+      onConfirm: () => run().then(() => resolve(true)),
+    });
+  });
+}
+
+export const pinMessage = (m, skipConfirm = false) => pinAction(m, skipConfirm, {
+  type: T.MESSAGE_PIN, title: "pin_title", body: "pin_body", confirmLabel: "pin_confirm", done: "message_pinned",
+});
+export const unpinMessage = (m, skipConfirm = false) => pinAction(m, skipConfirm, {
+  type: T.MESSAGE_UNPIN, title: "unpin_title", body: "unpin_body", confirmLabel: "unpin_confirm", done: "message_unpinned",
+});
 export const showPins = (anchor) => openPins(anchor, actions);
 export const showSearch = (initial) => openSearch(actions, initial);
 export const showSwitcher = () => openSwitcher(actions);
@@ -652,7 +672,7 @@ export function statusMenu(anchor) {
     } : null,
     { label: t("edit_profile"), icon: "✎", onClick: () => openUserSettings("profile") },
     { label: t("copy_user_id"), icon: "🆔", onClick: () => copyText(state.user.user_id, t("copied_user_id")) },
-  ], { placement: "top" });
+  ], { placement: "top", key: "status" });
 }
 
 export const openUserSettings = (section) => userSettings(actions, section);
@@ -782,7 +802,7 @@ export async function guildMenu(g, anchor) {
     "-",
     { label: t("copy_guild_id"), icon: "🆔", onClick: () => copyText(g.guild_id, t("copied_guild_id")) },
     isGuildOwner(g) ? null : { label: g.ghost ? t("leave_ghost") : t("leave_guild"), icon: "⇥", danger: true, onClick: () => leaveGuild(g) },
-  ], { placement: anchor instanceof Element ? "bottom" : "right" });
+  ], { placement: anchor instanceof Element ? "bottom" : "right", key: `guild:${g.guild_id}` });
 }
 
 // --- channels ---------------------------------------------------------------------
@@ -894,7 +914,7 @@ export function channelMenu(c, anchor) {
     manage ? { label: isCat ? t("delete_category") : t("delete_channel"), icon: "🗑", danger: true, onClick: () => dialogs.deleteChannelDialog(c, () => req(T.CHANNEL_DELETE, { channel_id: c.channel_id })) } : null,
     "-",
     { label: t("copy_channel_id"), icon: "🆔", onClick: () => copyText(c.channel_id, t("copied_channel_id")) },
-  ], { placement: "right" });
+  ], { placement: "right", key: `channel:${c.channel_id}` });
 }
 
 // --- voice (placeholder: presence only, no audio yet) ------------------------------
@@ -1014,7 +1034,7 @@ export function dmMenu(ch, anchor) {
     ch.kind === "group_dm" ? { label: t("add_people"), icon: "＋", onClick: () => addToGroup(ch) } : null,
     "-",
     { label: ch.kind === "dm" ? t("close_conversation") : t("leave_group"), icon: "✕", danger: ch.kind !== "dm", onClick: () => leaveDm(ch) },
-  ], { placement: "right" });
+  ], { placement: "right", key: `dm:${ch.channel_id}` });
 }
 
 // --- message requests (PROTOCOL.md §5 Message requests) ------------------------------
@@ -1028,7 +1048,19 @@ export async function acceptRequest(ch) {
   }
 }
 
-export async function declineRequest(ch) {
+export function declineRequest(ch, skipConfirm = false) {
+  if (skipConfirm) return doDeclineRequest(ch);
+  const other = ch.recipients?.find((u) => u.user_id !== state.user.user_id);
+  confirmModal({
+    title: t("decline_request_title"),
+    message: t("decline_request_body", { name: nameOf(userById(other?.user_id) || other || {}, null) }),
+    confirmLabel: t("decline_request_confirm"),
+    onConfirm: () => doDeclineRequest(ch),
+  });
+  return undefined;
+}
+
+async function doDeclineRequest(ch) {
   try {
     await req(T.DM_REQUEST_DECLINE, { channel_id: ch.channel_id });
     state.dms.delete(ch.channel_id);
@@ -1257,7 +1289,7 @@ export function memberMenu(userId, anchor) {
     ...(staffItems(userId).length ? ["-", { heading: t("server_staff_heading") }, ...staffItems(userId)] : []),
     "-",
     { label: t("copy_user_id"), icon: "🆔", onClick: () => copyText(userId, t("copied_user_id")) },
-  ], { placement: "left" });
+  ], { placement: "left", key: `member:${userId}` });
 }
 
 // --- session -----------------------------------------------------------------------

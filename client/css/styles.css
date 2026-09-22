@@ -15,6 +15,7 @@
   --accent-ink: #ffffff;
   --accent-text: #ddaacc;  /* the accent where it's text or a thin line on dark panels */
   --danger: #f7768e;
+  --danger-2: #e85f79;
   --danger-bg: rgba(247, 118, 142, .12);
   --danger-text: #ffb3c1;
   --ok: #9ece6a;
@@ -54,6 +55,7 @@
   --accent-ink: #ffffff;
   --accent-text: #884499;
   --danger: #d63d5a;
+  --danger-2: #b8304a;
   --danger-bg: rgba(214, 61, 90, .1);
   --danger-text: #a82540;
   --ok: #3f8f2a;
@@ -104,10 +106,13 @@ a { color: var(--accent-text); }
 .btn.primary { background: var(--accent); color: var(--accent-ink); }
 .btn.primary:hover:not(:disabled) { background: var(--accent-2); }
 .btn.danger { background: var(--danger); color: #fff; }
+.btn.danger:hover:not(:disabled) { background: var(--danger-2); }
 .btn.link { background: none; padding: 0; color: var(--accent-text); font-weight: 500; font-size: inherit; }
 .btn.link:hover { text-decoration: underline; }
 .btn.block { width: 100%; }
-.btn.small { padding: 5px 12px; font-size: 13px; }
+.btn.small { padding: 4px 10px; font-size: 12px; }
+a.btn { text-decoration: none; display: inline-block; }
+.gap { gap: 12px; }
 .icon-btn {
   border: 0; background: none; color: var(--text-2); cursor: pointer; position: relative;
   width: 28px; height: 28px; border-radius: 6px; display: inline-grid; place-items: center;
@@ -183,15 +188,17 @@ textarea { resize: vertical; }
 .steps li[aria-current="step"] { color: var(--text); border-color: var(--accent); }
 .steps li.done { color: var(--text-2); border-color: var(--ok); }
 
-.saved-servers { list-style: none; padding: 0; margin: 0 0 18px; display: grid; gap: 6px; }
+.saved-servers { list-style: none; padding: 0; margin: 0 0 18px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
 .saved-servers:empty { display: none; }
 .saved-server {
   display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px;
   background: var(--bg-1); border: 1px solid var(--line); cursor: pointer;
 }
 .saved-server:hover { border-color: var(--accent); }
+.saved-server[aria-disabled="true"] { opacity: .5; pointer-events: none; }
 .saved-server .meta { flex: 1; min-width: 0; }
-.saved-server .name { font-weight: 600; }
+.saved-server .name { font-weight: 600; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.saved-server .name > :first-child, .saved-server .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .saved-server .url { font: 12px var(--mono); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .tabs { display: flex; gap: 4px; background: var(--bg-0); padding: 4px; border-radius: 8px; margin: 18px 0; }
@@ -528,12 +535,17 @@ textarea { resize: vertical; }
 .modal.wide { max-width: 560px; }
 .modal h2 { margin: 0 0 4px; font-size: 20px; }
 .modal .sub { margin: 0 0 16px; color: var(--text-2); font-size: 14px; }
-.modal .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.modal .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 .modal hr { border: 0; border-top: 1px solid var(--line); margin: 20px 0; }
 .code-display {
   font: 600 20px var(--mono); letter-spacing: .12em; background: var(--bg-0); padding: 10px 14px;
   border-radius: 6px; flex: 1; text-align: center; user-select: all; overflow-wrap: anywhere;
 }
+.code-display.inline {
+  display: inline-block; flex: none; font-size: 18px; padding: 4px 10px; margin: 0 6px; text-align: center;
+}
+.code-input { max-width: 120px; letter-spacing: .3em; text-align: center; }
+
 .public-guild { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 8px; background: var(--bg-1); }
 .public-guild .meta { flex: 1; min-width: 0; display: grid; }
 .public-guild .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
@@ -594,9 +606,16 @@ textarea { resize: vertical; }
 .emoji-cell:hover { background: var(--bg-3); }
 .emoji-empty { grid-column: 1 / -1; }
 
-.profile-pop { width: 300px; overflow: hidden; }
-/* overflow keeps the card's bottom margin inside, so a themed gradient (below)
-   reaches the bottom edge instead of stopping short. */
+.profile-pop { width: 300px; padding: 0; max-height: min(78vh, 640px); overflow-y: auto; }
+/* The ring lives on the inner .profile because the --p1/--p2 theme variables
+   are set there; padding-box over border-box paints a gradient border. */
+.profile-pop > .profile { border: 2px solid var(--line); border-radius: 10px; }
+.profile-pop > .profile.themed {
+  border-color: transparent;
+  background:
+    linear-gradient(var(--bg-1), var(--bg-1)) padding-box,
+    linear-gradient(160deg, var(--p1), var(--p2)) border-box;
+}
 .profile, .profile-preview { position: relative; background: var(--bg-1); overflow: hidden; }
 .profile-preview { border-radius: 10px; overflow: hidden; border: 1px solid var(--line); max-width: 300px; }
 .profile-banner { height: 60px; }
@@ -609,8 +628,9 @@ textarea { resize: vertical; }
 .profile-section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); margin-bottom: 4px; }
 .profile-section p { margin: 0; font-size: 14px; }
 .profile-bio { white-space: pre-wrap; overflow-wrap: anywhere; }
-.profile-actions { display: flex; gap: 8px; margin-top: 12px; }
-.profile-actions .btn { flex: 1; }
+.profile-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.profile-actions .btn { flex: 1 1 calc(50% - 4px); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.profile-actions .btn.wide { flex-basis: 100%; }
 .timeout-note { margin: 8px 0 0; font-size: 13px; color: var(--warn); }
 .role-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .role-chip {
@@ -638,7 +658,7 @@ textarea { resize: vertical; }
 .fs-main { flex: 1 1 800px; display: flex; position: relative; min-width: 0; }
 .fs-body { flex: 1; overflow-y: auto; padding: 60px 40px 80px; }
 .fs-content { max-width: 740px; }
-.fs-title { margin: 0 0 20px; font-size: 20px; }
+.fs-title { margin: 0 0 20px; font-size: 20px; padding-right: 56px; overflow-wrap: anywhere; }
 .fs-section h3 { margin: 28px 0 12px; font-size: 16px; }
 .fs-section > p { margin: 0 0 14px; }
 .fs-close {
@@ -662,8 +682,16 @@ textarea { resize: vertical; }
 .facts dt { font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--muted); }
 .facts dd { margin: 0; }
 .split { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 32px; align-items: start; }
-.avatar-edit { display: flex; align-items: center; gap: 16px; }
+.avatar-edit { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; }
+.avatar-edit .row, .field .row { flex-wrap: wrap; }
 .radio-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.radio-cards { border: 0; margin: 0; padding: 0; display: grid; gap: 8px; min-width: 0; }
+.radio-cards.narrow { max-width: 520px; }
+.radio-cards > legend {
+  padding: 0; margin-bottom: 8px; font-size: 12px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--muted);
+}
+.radio-cards .radio-card { align-items: flex-start; }
 .radio-card {
   display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 8px; background: var(--bg-1);
   border: 1px solid var(--line); cursor: pointer; font-weight: 500; color: var(--text);
@@ -857,7 +885,6 @@ textarea { resize: vertical; }
 .vp-note { font-size: 11px; }
 .vp-buttons { display: flex; gap: 6px; }
 .vp-buttons .btn { flex: 1; }
-.small-btn { padding: 4px 8px; font-size: 12px; }
 .btn.on { background: var(--danger-bg); color: var(--danger-text); }
 .icon-btn.on { color: var(--accent-text); }
 
@@ -1077,8 +1104,8 @@ textarea { resize: vertical; }
 .expr-row .grow { flex: 1; text-align: right; }
 .empty-note { text-align: center; padding: 32px; background: var(--bg-1); border-radius: 10px; }
 .big-emoji { font-size: 40px; }
-.sticker-form { display: flex; gap: 16px; align-items: stretch; margin: 16px 0 24px; padding: 16px; background: var(--bg-1); border-radius: 10px; }
-.sticker-form .stack { flex: 1; }
+.sticker-form { display: flex; flex-wrap: wrap; gap: 16px; align-items: stretch; margin: 16px 0 24px; padding: 16px; background: var(--bg-1); border-radius: 10px; }
+.sticker-form .stack { flex: 1 1 220px; min-width: 0; }
 .sticker-drop {
   width: 120px; height: 120px; flex: none; border: 2px dashed var(--line); border-radius: 10px; display: grid; place-items: center;
   color: var(--muted); cursor: pointer; font-size: 13px; overflow: hidden;

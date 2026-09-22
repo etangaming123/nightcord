@@ -52,7 +52,7 @@ export function emojiGlyph(value, { cls = "" } = {}) {
 }
 
 // Opens the picker next to anchor; onPick(value) is called once.
-export function openEmojiPicker(anchor, onPick, { placement = "top", custom = true } = {}) {
+export function openEmojiPicker(anchor, onPick, { placement = "top", custom = true, key = null } = {}) {
   const search = h("input", { type: "search", placeholder: t("search_placeholder"), "aria-label": t("search_aria"), class: "emoji-search" });
   const grid = h("div", { class: "emoji-grid" });
   const tabs = h("div", { class: "emoji-tabs", role: "tablist", "aria-label": t("emoji_categories_aria") });
@@ -116,8 +116,8 @@ export function openEmojiPicker(anchor, onPick, { placement = "top", custom = tr
     }
   });
   draw();
-  const el = openPopover(anchor, h("div", { class: "emoji-picker" }, search, h("div", { class: "emoji-body" }, tabs, grid), preview), { placement, cls: "emoji-pop" });
-  search.focus();
+  const el = openPopover(anchor, h("div", { class: "emoji-picker" }, search, h("div", { class: "emoji-body" }, tabs, grid), preview), { placement, cls: "emoji-pop", key });
+  if (el) search.focus();
   return el;
 }
 

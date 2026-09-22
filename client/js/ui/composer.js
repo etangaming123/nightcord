@@ -121,7 +121,7 @@ function dmBlocked(form, channel, state, actions) {
     add(form, h("div", { class: "request-bar" },
       h("div", { class: "grow" }, h("strong", {}, t("request_title", { name })), h("span", { class: "muted small block" }, t("request_body"))),
       h("button", { class: "btn small primary", type: "button", on: { click: () => actions.acceptRequest(channel) } }, t("request_accept")),
-      h("button", { class: "btn small", type: "button", on: { click: () => actions.declineRequest(channel) } }, t("request_decline")),
+      h("button", { class: "btn small", type: "button", on: { click: (e) => actions.declineRequest(channel, e.shiftKey) } }, t("request_decline")),
       h("button", { class: "btn small danger", type: "button", on: { click: () => actions.blockUser(other.user_id) } }, t("request_block"))));
     return true;
   }
@@ -332,7 +332,7 @@ export function renderComposer(state, actions) {
         input.setSelectionRange(pos + emoji.length, pos + emoji.length);
         autosize();
         input.focus();
-      }, { placement: "top" }),
+      }, { placement: "top", key: "composer-emoji" }),
     },
   }, "☺");
   const stickerBtn = usableStickerGroups().length ? h("button", {
@@ -342,7 +342,7 @@ export function renderComposer(state, actions) {
       click: (e) => openStickerPicker(e.currentTarget, async (sticker) => {
         if (slow && slowmodeLeft(channel)) return;
         try { await actions.sendSticker(sticker); } catch (err) { toast(err.message, { error: true }); }
-      }),
+      }, { key: "composer-stickers" }),
     },
   }, "🗒") : null;
 
