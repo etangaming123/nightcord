@@ -17,6 +17,7 @@ import { clearPending } from "./uploads.js";
 import { setupDropZone } from "./ui/composer.js";
 import { legalLinks, legalUpdateModal, renderLegalTabs, showLegalModal } from "./ui/legal.js";
 import { closeSearch, searchOpen } from "./ui/search.js";
+import { setupLinkGuard } from "./ui/links.js";
 import { closeFullscreen, closeModal, closePopover, confirmAction, openModal, toast } from "./ui/modals.js";
 import { loadStrings, scopedT } from "./strings.js";
 
@@ -684,6 +685,7 @@ async function boot() {
     else if (state.replyTo) actions.cancelReply();
   });
   setupDropZone();
+  setupLinkGuard();
 
   // ?server=host:port lets a server operator share a direct link;
   // &invite=CODE opens that guild invite once logged in.

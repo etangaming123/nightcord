@@ -3,8 +3,8 @@
 
 import { LIMITS } from "../protocol.js";
 import {
-  STAFF_LABEL, can, channelTitle, currentChannel, currentGuild, isBlocked, isDm, isPrivate, mentionsMe, nameOf,
-  statusOf, userById,
+  STAFF_LABEL, can, channelById, channelTitle, currentChannel, currentGuild, isBlocked, isDm, isPrivate, mentionsMe,
+  nameOf, statusOf, userById,
 } from "../state.js";
 import { renderAttachments } from "./attachments.js";
 import { $, add, avatar, clear, h, iconBtn, idGt } from "./dom.js";
@@ -55,6 +55,8 @@ export function mdContext(state, actions) {
     meId: state.user?.user_id,
     onMention: (id, el) => actions.openProfile(id, el),
     onEmoji: (emoji, el) => actions.emojiInfo(emoji, el),
+    channel: channelById,
+    onChannel: (id) => actions.openChannelById(id),
   };
 }
 

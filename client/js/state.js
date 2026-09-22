@@ -143,6 +143,11 @@ export function statusOf(userId) {
 
 export const currentGuild = () => (state.view === "guild" ? state.guilds.get(state.guildId) || null : null);
 
+// Any channel this client knows: the open guild's, or a DM.
+export function channelById(id) {
+  return state.channels.find((c) => c.channel_id === id) || state.dms.get(id) || null;
+}
+
 export function currentChannel() {
   if (state.view === "home") return state.dms.get(state.channelId) || null;
   return state.channels.find((c) => c.channel_id === state.channelId) || null;

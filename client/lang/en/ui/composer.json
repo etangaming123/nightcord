@@ -35,7 +35,6 @@
   "ping_off": "@OFF",
   "cancel_reply_title": "Cancel reply",
   "cancel_reply_aria": "Cancel reply",
-
   "blocked_notice": "You blocked {name}. Unblock them to send messages.",
   "unblock": "Unblock",
   "request_title": "{name} wants to message you",
@@ -43,5 +42,6 @@
   "request_accept": "Accept",
   "request_decline": "Decline",
   "request_block": "Block",
-  "request_sent": "Message request sent. You can send more once {name} accepts."
+  "request_sent": "Message request sent. You can send more once {name} accepts.",
+  "channels_heading": "Channels"
 }

@@ -445,11 +445,31 @@ Its image is `GET /media/{sticker_id}`; clients show it at up to 160 px.
 `max_uses: 0` means unlimited; `expires_at: null` never expires. Codes
 are 8 characters and case-insensitive.
 
-Content is plain text with a small markdown subset rendered by clients:
-`**bold**`, `*italic*`, `__underline__`, `~~strike~~`, `` `code` ``,
-```` ```code blocks``` ````, `> quotes`, `||spoilers||` and links. Mentions
-are written `<@user_id>` and `@everyone`, custom emoji `<:name:id>` (§4
-Emoji). The server never renders HTML.
+Content is plain text with a small markdown subset rendered by clients. The
+server never renders HTML and never rewrites content; every rule below is a
+client-side display convention, so an older client just shows the raw text.
+
+Inline: `**bold**`, `*italic*`, `__underline__`, `~~strike~~`, `` `code` ``,
+`||spoilers||`.
+
+Blocks: ```` ```code blocks``` ````, `> quotes` (and `>>> ` for the rest of
+the message), `# `/`## `/`### ` headings, `-# ` subtext, and `- `/`* `/`1. `
+lists with one level of nesting (two or more leading spaces).
+
+Links: a bare `https://…` URL, `[label](https://…)` for a masked one, and
+`<https://…>` or `[label](<https://…>)` for a link the server should not
+build a preview for. A trailing `)` counts as part of a bare URL
+only when the URL opened one itself.
+
+References: mentions `<@user_id>` and `@everyone`, channels `<#channel_id>`,
+custom emoji `<:name:id>` / `<a:name:id>` (§4 Emoji), and timestamps
+`<t:unix_seconds>` or `<t:unix_seconds:style>` where style is one of
+`t` `T` `d` `D` `f` `F` `R` (short/long time, short/long date, short/long
+date and time, relative). Clients render timestamps in the reader's own time
+zone; `R` counts up on its own. A `<#id>` whose channel the reader can't see
+is shown as a dead chip.
+
+A backslash escapes any of `` * _ ~ ` | \ < > @ # [ ] : - ``.
 
 ### Read state
 ```json

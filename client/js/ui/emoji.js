@@ -36,6 +36,14 @@ const groupLabel = (key) => t(`group_${key}`);
 // Every unicode emoji with its keywords, for :name autocomplete.
 export const UNICODE_EMOJI = ALL.flatMap(([, list]) => list);
 
+// :shortcode: -> glyph, keyed on each emoji's first keyword. First one wins.
+const BY_NAME = new Map();
+for (const e of UNICODE_EMOJI) {
+  const name = e.words.split(" ")[0];
+  if (name && !BY_NAME.has(name)) BY_NAME.set(name, e.emoji);
+}
+export const unicodeByName = (name) => BY_NAME.get(String(name).toLowerCase()) || null;
+
 // The custom emoji behind a picked value, or null for unicode.
 export function customOf(value) {
   const m = CUSTOM_EMOJI.exec(value || "");

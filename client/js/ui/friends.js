@@ -8,6 +8,7 @@ import { messageRequests, nameOf, relationsOf, state, statusOf, userById } from 
 import { invalidate } from "../render.js";
 import { getUpdateInfo, RELEASES_URL } from "../update-check.js";
 import { add, avatar, clear, fmtDateTime, h, iconBtn, idGt, statusLabel } from "./dom.js";
+import { mdContext } from "./chat.js";
 import { showLegalModal } from "./legal.js";
 import { render as renderMarkdown } from "./markdown.js";
 import { toast } from "./modals.js";
@@ -343,7 +344,7 @@ function announcementCard(item, actions, isNew) {
         h("span", { class: "grow" }),
         canEdit && !legal ? iconBtn("✎", t("edit"), () => actions.editAnnouncement(item)) : null,
         canEdit ? iconBtn("🗑", t("delete"), () => actions.deleteAnnouncement(item), { cls: "danger" }) : null),
-      h("div", { class: "announcement-content" }, renderMarkdown(item.content, { user: userById, meId: state.user?.user_id })),
+      h("div", { class: "announcement-content" }, renderMarkdown(item.content, mdContext(state, actions))),
       legal ? h("button", {
         class: "btn small", type: "button",
         on: { click: () => actions.req(T.LEGAL_GET).then((docs) => showLegalModal(docs), fail) },

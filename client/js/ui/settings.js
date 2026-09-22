@@ -10,11 +10,14 @@ import { adminSections } from "./admin.js";
 import { add, avatar, clear, displayName, fmtDate, fmtDateTime, h } from "./dom.js";
 import { cropImage } from "./cropper.js";
 import { pickImage, uploadImage } from "./images.js";
+import { renderInline } from "./markdown.js";
+import { untrustDomain } from "./links.js";
 import { profileBanner, profileThemeAttrs } from "./names.js";
 import { closeFullscreen, confirmAction, confirmModal, openFullscreen, refreshFullscreen, toast } from "./modals.js";
 import { scopedT } from "../strings.js";
 
 const t = scopedT("ui/settings");
+const tl = scopedT("ui/links");
 
 // Profile toggles that aren't form controls, so a redraw (after an avatar or
 // banner upload) can't read them back off the page. Cleared when the settings
@@ -90,6 +93,7 @@ function privacy(el, actions) {
         h("input", { type: "radio", name: "dm_privacy", value: v, checked: current === v, on: { change: () => save(v) } }),
         h("span", {}, h("strong", {}, label), h("span", { class: "muted small block" }, hint))))),
     h("p", { class: "muted small" }, t("dm_privacy_note")),
+    trustedDomainList(),
     h("div", { class: "section-label" }, t("blocked_heading", { count: blocked.length })),
     blocked.length
       ? h("div", { class: "list" }, blocked.map((r) => h("div", { class: "list-row" },
@@ -97,6 +101,30 @@ function privacy(el, actions) {
         h("span", { class: "grow" }, displayName(r.user), " ", h("span", { class: "muted small" }, r.user.username)),
         h("button", { class: "btn small", type: "button", on: { click: async () => { await actions.unblockUser(r.user.user_id); refreshFullscreen(); } } }, t("unblock")))))
       : h("p", { class: "muted small" }, t("blocked_none")));
+}
+
+// Link domains this device stops asking about (ui/links.js).
+function trustedDomainList() {
+  const domains = getPrefs().trustedDomains || [];
+  return h("div", {},
+    h("div", { class: "section-label" }, tl("trusted_heading")),
+    h("p", { class: "muted small" }, tl("trusted_note")),
+    domains.length
+      ? h("div", { class: "list" }, domains.map((d) => h("div", { class: "list-row" },
+        h("span", { class: "list-icon", "aria-hidden": "true" }, "🔗"),
+        h("span", { class: "grow mono" }, d),
+        h("button", {
+          class: "btn small", type: "button",
+          on: {
+            click: (e) => confirmAction(e, {
+              title: tl("forget_domain_title", { host: d }),
+              message: tl("forget_domain_body"),
+              confirmLabel: tl("forget_domain", { host: d }),
+              onConfirm: () => { untrustDomain(d); refreshFullscreen(); },
+            }),
+          },
+        }, t("remove")))))
+      : h("p", { class: "muted small" }, tl("trusted_none")));
 }
 
 // --- My Account --------------------------------------------------------------
@@ -208,7 +236,10 @@ function profile(el, actions) {
         h("div", { class: "profile-name" }, displayName(shown)),
         h("div", { class: "profile-username" }, shown.username),
         shown.custom_status ? h("div", { class: "profile-status" }, shown.custom_status) : null,
-        String(fd.get("bio") || "").trim() ? h("div", { class: "profile-section" }, h("div", { class: "profile-section-title" }, t("about_me_label")), h("p", { class: "profile-bio" }, String(fd.get("bio")).trim())) : null));
+        String(fd.get("bio") || "").trim()
+          ? h("div", { class: "profile-section" }, h("div", { class: "profile-section-title" }, t("about_me_label")),
+            h("p", { class: "profile-bio" }, renderInline(String(fd.get("bio")).trim(), { user: () => null })))
+          : null));
   };
   const busy = async (btn, work, ok) => {
     btn.disabled = true;

@@ -1,4 +1,5 @@
 {
   "unknown_user_mention": "@unknown-user",
-  "spoiler_hint": "Spoiler — click to reveal"
+  "spoiler_hint": "Spoiler — click to reveal",
+  "deleted_channel": "#deleted-channel"
 }

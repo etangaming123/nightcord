@@ -5,11 +5,12 @@
 import { emojiByName, emojiToken, searchEmojis, usableStickerGroups } from "../perks.js";
 import { LIMITS } from "../protocol.js";
 import {
-  can, currentChannel, currentGuild, isBlocked, isDm, isFriend, memberById, mutedUntil, nameOf, state as appState, userById,
+  can, channelById, currentChannel, currentGuild, isBlocked, isDm, isFriend, memberById, mutedUntil, nameOf,
+  state as appState, userById,
 } from "../state.js";
 import { addFiles, removePending, uploading } from "../uploads.js";
 import { $, add, avatar, clear, fmtBytes, h } from "./dom.js";
-import { UNICODE_EMOJI, customOf, emojiGlyph, openEmojiPicker } from "./emoji.js";
+import { UNICODE_EMOJI, customOf, emojiGlyph, openEmojiPicker, unicodeByName } from "./emoji.js";
 import { toast } from "./modals.js";
 import { openStickerPicker } from "./stickers.js";
 import { scopedT } from "../strings.js";
@@ -30,24 +31,40 @@ function candidates() {
 
 // Custom emoji are typed as :name: and sent as <:name:id> (PROTOCOL.md §4 Emoji).
 const EMOJI_NAME_TOKEN = /(?<![<\w]|<a):([A-Za-z0-9_]{2,32}):(?!\d)/g;
+// Channels are typed as #name and sent as <#channel_id> (§4 Message).
+const CHANNEL_TOKEN = /(?<![\w<#])#([a-z0-9_-]{1,32})/g;
 
-// "@alice" -> "<@id>" for users who can be mentioned here; ":name:" -> <:name:id>.
+// Text channels of the open guild, by name.
+function channelsByName() {
+  return new Map(appState.channels.filter((c) => c.kind === "text").map((c) => [c.name.toLowerCase(), c.channel_id]));
+}
+
+// "@alice" -> "<@id>", "#general" -> "<#id>", ":name:" -> <:name:id> for a
+// custom emoji or the glyph itself for a unicode one.
 export function toWire(text) {
   const byName = new Map(candidates().map((u) => [u.username.toLowerCase(), u.user_id]));
+  const channels = channelsByName();
   return text.replace(MENTION_TOKEN, (all, name) => {
     const id = byName.get(name.toLowerCase());
     return id ? `<@${id}>` : all;
+  }).replace(CHANNEL_TOKEN, (all, name) => {
+    const id = channels.get(name.toLowerCase());
+    return id ? `<#${id}>` : all;
   }).replace(EMOJI_NAME_TOKEN, (all, name) => {
     const e = emojiByName(name);
-    return e ? emojiToken(e) : all;
+    if (e) return emojiToken(e);
+    return unicodeByName(name) || all;
   });
 }
 
-// "<@id>" -> "@username" and <:name:id> -> ":name:" (when it maps back) for editing.
+// The wire form back to what you'd type, for editing.
 export function fromWire(content) {
   return content.replace(/<@(\d{1,20})>/g, (all, id) => {
     const u = userById(id) || memberById(id)?.user;
     return u ? `@${u.username}` : all;
+  }).replace(/<#(\d{1,20})>/g, (all, id) => {
+    const c = channelById(id);
+    return c?.name ? `#${c.name}` : all;
   }).replace(/<a?:([A-Za-z0-9_]{2,32}):(\d{1,20})>/g, (all, name, id) => (emojiByName(name)?.emoji_id === id ? `:${name}:` : all));
 }
 
@@ -199,7 +216,9 @@ export function renderComposer(state, actions) {
     if (!ac) return;
     const before = input.value.slice(0, ac.start);
     const after = input.value.slice(input.selectionStart);
-    const insert = ac.kind === "emoji" ? `${item.custom ? `:${item.name}:` : item.emoji} ` : `@${item.username} `;
+    const insert = ac.kind === "emoji" ? `${item.custom ? `:${item.name}:` : item.emoji} `
+      : ac.kind === "channel" ? `#${item.name} `
+        : `@${item.username} `;
     input.value = before + insert + after;
     const pos = before.length + insert.length;
     input.setSelectionRange(pos, pos);
@@ -221,6 +240,16 @@ export function renderComposer(state, actions) {
       h("span", { class: "ac-sub" }, e.custom ? e.guildName : ""))));
       return;
     }
+    if (ac.kind === "channel") {
+      add(popup, h("div", { class: "ac-title" }, t("channels_heading")));
+      ac.items.forEach((c, i) => add(popup, h("div", {
+        class: `ac-item ${i === ac.index ? "active" : ""}`, role: "option", "aria-selected": String(i === ac.index),
+        on: { mousedown: (ev) => { ev.preventDefault(); pickAc(c); } },
+      }, h("span", { class: "ac-emoji" }, "#"),
+      h("span", { class: "ac-name" }, c.name),
+      h("span", { class: "ac-sub" }, c.topic ? c.topic.split("\n")[0].slice(0, 60) : ""))));
+      return;
+    }
     add(popup, h("div", { class: "ac-title" }, t("members_heading")));
     ac.items.forEach((u, i) => add(popup, h("div", {
       class: `ac-item ${i === ac.index ? "active" : ""}`, role: "option", "aria-selected": String(i === ac.index),
@@ -238,6 +267,14 @@ export function renderComposer(state, actions) {
       const unicode = UNICODE_EMOJI.filter((e) => e.words.split(" ").some((w) => w.startsWith(q)))
         .slice(0, 10 - custom.length).map((e) => ({ emoji: e.emoji, name: e.words.split(" ")[0] }));
       ac = { kind: "emoji", query: em[2], start: pos - em[2].length - 1, items: [...custom, ...unicode], index: 0 };
+      drawAc();
+      return;
+    }
+    const chan = /(^|\s)#([a-z0-9_-]{0,32})$/.exec(input.value.slice(0, pos));
+    if (chan && !isDm(channel)) {
+      const q = chan[2].toLowerCase();
+      const list = appState.channels.filter((c) => c.kind === "text" && c.name.toLowerCase().includes(q) && can("VIEW_CHANNEL", c)).slice(0, 8);
+      ac = { kind: "channel", start: pos - chan[2].length - 1, items: list, index: 0 };
       drawAc();
       return;
     }

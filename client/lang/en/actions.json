@@ -89,5 +89,6 @@
   "unpin_confirm": "Unpin",
   "decline_request_title": "Decline this message request?",
   "decline_request_body": "{name} won't be told. The conversation disappears from your list.",
-  "decline_request_confirm": "Decline"
+  "decline_request_confirm": "Decline",
+  "channel_not_here": "That channel isn't in this guild."
 }

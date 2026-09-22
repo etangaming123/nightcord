@@ -1,8 +1,9 @@
 // Message markdown (PROTOCOL.md §4 Message): **bold**, *italic*, __underline__,
-// ~~strike~~, `code`, ```blocks```, > quotes, ||spoilers||, links, <@id>
-// mentions, @everyone and custom emoji <:name:id>. Documents (Terms of Service, Privacy Policy;
-// PROTOCOL.md §8b) also get headings, paragraphs, lists, rules and
-// [label](https://…) links.
+// ~~strike~~, `code`, ```blocks```, > quotes, ||spoilers||, # headings,
+// -# subtext, - and 1. lists, links (bare, <quiet> and [masked](url)),
+// <t:unix> timestamps, <#channel> chips, <@id> mentions, @everyone and custom
+// emoji <:name:id>. Documents (Terms of Service, Privacy Policy;
+// PROTOCOL.md §8b) also get paragraphs and rules.
 //
 // parse() turns text into a token tree without touching the DOM (so it can be
 // tested in node); render() builds DOM nodes from it with text nodes only —
@@ -16,23 +17,53 @@ const ts = scopedT("ui/markdown");
 
 const MAX_DEPTH = 6;
 
+// One alternation, named groups, tried left to right at each position. Order
+// matters: <https://…> and [label](…) have to win over the bare-link rule.
 const INLINE = new RegExp(
   [
-    "\\\\([*_~`|\\\\<>@])", // 1: backslash escape
-    "(`+)([\\s\\S]*?[^`])\\2(?!`)", // 2,3: inline code
-    "\\*\\*([\\s\\S]+?)\\*\\*(?!\\*)", // 4: bold
-    "__([\\s\\S]+?)__(?!_)", // 5: underline
-    "\\*(?=\\S)([\\s\\S]*?\\S)\\*(?!\\*)", // 6: italic
-    "(?<![A-Za-z0-9_])_(?=\\S)([\\s\\S]*?\\S)_(?![A-Za-z0-9_])", // 7: italic
-    "~~([\\s\\S]+?)~~", // 8: strike
-    "\\|\\|([\\s\\S]+?)\\|\\|", // 9: spoiler
-    "<@(\\d{1,20})>", // 10: user mention
-    "(?<![\\w`@])(@everyone)\\b", // 11: @everyone
-    "(https?:\\/\\/[^\\s<>\"']+[^\\s<>\"'.,;:!?)\\]])", // 12: link
-    "<(a?):([A-Za-z0-9_]{2,32}):(\\d{1,20})>", // 13,14,15: custom emoji
+    "\\\\(?<esc>[*_~`|\\\\<>@#\\[\\]:-])", // backslash escape
+    "(?<ticks>`+)(?<code>[\\s\\S]*?[^`])\\k<ticks>(?!`)", // inline code
+    "\\*\\*(?<bold>[\\s\\S]+?)\\*\\*(?!\\*)",
+    "__(?<underline>[\\s\\S]+?)__(?!_)",
+    "\\*(?=\\S)(?<italic>[\\s\\S]*?\\S)\\*(?!\\*)",
+    "(?<![A-Za-z0-9_])_(?=\\S)(?<italicU>[\\s\\S]*?\\S)_(?![A-Za-z0-9_])",
+    "~~(?<strike>[\\s\\S]+?)~~",
+    "\\|\\|(?<spoiler>[\\s\\S]+?)\\|\\|",
+    "<@(?<mention>\\d{1,20})>",
+    "(?<![\\w`@])(?<everyone>@everyone)\\b",
+    "<#(?<channel>\\d{1,20})>",
+    "<t:(?<stamp>-?\\d{1,15})(?::(?<stampStyle>[tTdDfFR]))?>",
+    "\\[(?<quietLabel>[^\\[\\]\\n]{1,200})\\]\\(<(?<quietHref>https?:\\/\\/[^\\s<>]+)>\\)",
+    "\\[(?<maskLabel>[^\\[\\]\\n]{1,200})\\]\\((?<maskHref>https?:\\/\\/[^\\s)<>\"']+)\\)",
+    "<(?<quiet>https?:\\/\\/[^\\s<>]+)>",
+    "(?<link>https?:\\/\\/[^\\s<>\"']+)",
+    "<(?<anim>a?):(?<emojiName>[A-Za-z0-9_]{2,32}):(?<emojiId>\\d{1,20})>",
   ].join("|"),
   "g",
 );
+
+// Where a bare URL really ends. Sentence punctuation isn't part of it, and a
+// closing bracket only is when the URL opened one itself — so Wikipedia's
+// .../Foo_(bar) keeps its ")" but "(see https://a.b)" doesn't.
+export function trimUrl(url) {
+  let s = url;
+  for (;;) {
+    const before = s;
+    s = s.replace(/[.,;:!?'"]+$/, "");
+    const close = s.slice(-1);
+    if (close === ")" || close === "]") {
+      const open = close === ")" ? "(" : "[";
+      let opens = 0;
+      let closes = 0;
+      for (const c of s) {
+        if (c === open) opens++;
+        else if (c === close) closes++;
+      }
+      if (closes > opens) s = s.slice(0, -1);
+    }
+    if (s === before) return s;
+  }
+}
 
 export function parseInline(text, depth = 0) {
   const out = [];
@@ -48,27 +79,74 @@ export function parseInline(text, depth = 0) {
   let m;
   const re = new RegExp(INLINE.source, "g"); // fresh lastIndex: parseInline recurses
   while ((m = re.exec(text))) {
+    const g = m.groups;
     pushText(text.slice(last, m.index));
     last = m.index + m[0].length;
     const inner = (s) => parseInline(s, depth + 1);
-    if (m[1] !== undefined) pushText(m[1]);
-    else if (m[3] !== undefined) push({ type: "code", text: m[3].replace(/^ (.*) $/s, "$1") });
-    else if (m[4] !== undefined) push({ type: "bold", children: inner(m[4]) });
-    else if (m[5] !== undefined) push({ type: "underline", children: inner(m[5]) });
-    else if (m[6] !== undefined) push({ type: "italic", children: inner(m[6]) });
-    else if (m[7] !== undefined) push({ type: "italic", children: inner(m[7]) });
-    else if (m[8] !== undefined) push({ type: "strike", children: inner(m[8]) });
-    else if (m[9] !== undefined) push({ type: "spoiler", children: inner(m[9]) });
-    else if (m[10] !== undefined) push({ type: "mention", id: m[10] });
-    else if (m[11] !== undefined) push({ type: "everyone" });
-    else if (m[12] !== undefined) push({ type: "link", href: m[12] });
-    else if (m[15] !== undefined) push({ type: "emoji", animated: m[13] === "a", name: m[14], id: m[15] });
+    if (g.esc !== undefined) pushText(g.esc);
+    else if (g.code !== undefined) push({ type: "code", text: g.code.replace(/^ (.*) $/s, "$1") });
+    else if (g.bold !== undefined) push({ type: "bold", children: inner(g.bold) });
+    else if (g.underline !== undefined) push({ type: "underline", children: inner(g.underline) });
+    else if (g.italic !== undefined) push({ type: "italic", children: inner(g.italic) });
+    else if (g.italicU !== undefined) push({ type: "italic", children: inner(g.italicU) });
+    else if (g.strike !== undefined) push({ type: "strike", children: inner(g.strike) });
+    else if (g.spoiler !== undefined) push({ type: "spoiler", children: inner(g.spoiler) });
+    else if (g.mention !== undefined) push({ type: "mention", id: g.mention });
+    else if (g.everyone !== undefined) push({ type: "everyone" });
+    else if (g.channel !== undefined) push({ type: "channel", id: g.channel });
+    else if (g.stamp !== undefined) push({ type: "timestamp", at: Number(g.stamp), style: g.stampStyle || "f" });
+    else if (g.quietHref !== undefined) push({ type: "link", href: g.quietHref, children: inner(g.quietLabel), embed: false });
+    else if (g.maskHref !== undefined) push({ type: "link", href: g.maskHref, children: inner(g.maskLabel) });
+    else if (g.quiet !== undefined) push({ type: "link", href: g.quiet, embed: false });
+    else if (g.link !== undefined) {
+      // The regex is greedy; trimUrl decides where the link stops and the
+      // sentence starts, and the rest is rescanned as text.
+      const href = trimUrl(g.link);
+      push({ type: "link", href });
+      last = m.index + href.length;
+      re.lastIndex = last;
+    } else if (g.emojiId !== undefined) push({ type: "emoji", animated: g.anim === "a", name: g.emojiName, id: g.emojiId });
   }
   pushText(text.slice(last));
   return out;
 }
 
-// Splits plain (non-code-block) text into quote blocks and inline runs.
+// --- block structure --------------------------------------------------------
+
+const HEADING = /^(#{1,3})\s+(\S.*)$/;
+const SUBTEXT = /^-#\s+(\S.*)$/;
+// Up to 8 leading spaces so one level of nesting can be told apart.
+const LIST_ITEM = /^( {0,8})(?:([-*])|(\d{1,3})[.)])\s+(.*)$/;
+
+// Reads a run of list lines from `start`. Indented items become one nested
+// list inside the item above them; anything deeper joins that nested list.
+function takeList(lines, start, depth = 0) {
+  const first = LIST_ITEM.exec(lines[start]);
+  const ordered = !!first[3];
+  const indent = first[1].length;
+  const list = { type: "list", ordered, items: [] };
+  if (ordered && first[3] !== "1") list.start = Number(first[3]);
+  let i = start;
+  while (i < lines.length) {
+    const m = LIST_ITEM.exec(lines[i]);
+    if (!m) break;
+    const at = m[1].length;
+    if (at < indent) break;
+    if (at > indent && depth === 0 && list.items.length) {
+      const [sub, next] = takeList(lines, i, depth + 1);
+      list.items[list.items.length - 1].push(sub);
+      i = next;
+      continue;
+    }
+    if (at === indent && !!m[3] !== ordered) break;
+    list.items.push(parseInline(m[4]));
+    i++;
+  }
+  return [list, i];
+}
+
+// Splits plain (non-code-block) text into block tokens (quotes, headings,
+// subtext, lists) and inline runs.
 function parseLines(text) {
   const out = [];
   const lines = text.split("\n");
@@ -96,6 +174,25 @@ function parseLines(text) {
       out.push({ type: "quote", children: parseInline(quoted.join("\n")) });
       continue;
     }
+    const sub = SUBTEXT.exec(line);
+    if (sub) {
+      flush();
+      out.push({ type: "subtext", children: parseInline(sub[1]) });
+      continue;
+    }
+    const heading = HEADING.exec(line);
+    if (heading) {
+      flush();
+      out.push({ type: "heading", level: heading[1].length, children: parseInline(heading[2].trim()) });
+      continue;
+    }
+    if (LIST_ITEM.test(line)) {
+      flush();
+      const [list, next] = takeList(lines, i);
+      out.push(list);
+      i = next - 1;
+      continue;
+    }
     plain.push(line);
   }
   flush();
@@ -119,9 +216,69 @@ export function parse(content) {
   return out;
 }
 
-// ctx: { user(id) -> PublicUser|undefined, onMention(id, el) }
+// --- <t:unix[:style]> timestamps --------------------------------------------
+
+// Formats are Discord's: t/T time, d/D date, f/F date and time, R relative.
+// Everything is rendered in the viewer's own zone and locale.
+const STAMP_FORMATS = {
+  t: { timeStyle: "short" },
+  T: { timeStyle: "medium" },
+  d: { dateStyle: "short" },
+  D: { dateStyle: "long" },
+  f: { dateStyle: "long", timeStyle: "short" },
+  F: { dateStyle: "full", timeStyle: "short" },
+};
+const stampFmt = new Map();
+const stampFull = new Intl.DateTimeFormat(undefined, { dateStyle: "full", timeStyle: "short" });
+
+const RELATIVE_UNITS = [
+  ["year", 31536000], ["month", 2592000], ["week", 604800], ["day", 86400],
+  ["hour", 3600], ["minute", 60], ["second", 1],
+];
+let relFmt = null;
+
+function relativeStamp(date) {
+  relFmt ??= new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+  const diff = (date.getTime() - Date.now()) / 1000;
+  for (const [unit, secs] of RELATIVE_UNITS) {
+    if (Math.abs(diff) >= secs || unit === "second") {
+      return relFmt.format(Math.round(diff / secs), unit);
+    }
+  }
+  return "";
+}
+
+function stampText(date, style) {
+  if (style === "R") return relativeStamp(date);
+  if (!stampFmt.has(style)) stampFmt.set(style, new Intl.DateTimeFormat(undefined, STAMP_FORMATS[style] || STAMP_FORMATS.f));
+  return stampFmt.get(style).format(date);
+}
+
+// Relative stamps keep counting. One timer redraws every live one each minute
+// and drops the ones whose element has left the page.
+const liveStamps = new Set();
+let stampTimer = null;
+
+function tickStamps() {
+  for (const entry of liveStamps) {
+    if (!entry.el.isConnected) liveStamps.delete(entry);
+    else entry.el.textContent = relativeStamp(entry.date);
+  }
+  if (!liveStamps.size) {
+    clearInterval(stampTimer);
+    stampTimer = null;
+  }
+}
+
+// ctx: { user(id) -> PublicUser|undefined, onMention(id, el),
+//        channel(id) -> Channel|undefined, onChannel(id), plainLinks }
 export function render(content, ctx = {}) {
   return renderTokens(parse(content), ctx);
+}
+
+// Inline-only rendering (bios): no headings, lists or block quotes.
+export function renderInline(text, ctx = {}) {
+  return renderTokens(parseInline(String(text || "")), ctx);
 }
 
 function renderTokens(tokens, ctx) {
@@ -191,14 +348,38 @@ function renderToken(t, ctx) {
       // plainLinks: somewhere a link can't be clicked anyway (the header
       // topic is itself a button), so draw the text and skip the anchor.
       if (ctx.plainLinks) return document.createTextNode(t.children ? tokensText(t.children) : t.href);
-      return h("a", { href: t.href, target: "_blank", rel: "noopener noreferrer nofollow" },
+      // md-link is what ui/links.js watches for, to warn before leaving.
+      return h("a", { class: "md-link", href: t.href, target: "_blank", rel: "noopener noreferrer nofollow" },
         t.children ? renderTokens(t.children, ctx) : t.href);
+    case "channel": {
+      const channel = ctx.channel?.(t.id);
+      const name = channel ? `#${channel.name || channel.title || t.id}` : ts("deleted_channel");
+      if (!channel || !ctx.onChannel) return h("span", { class: "md-channel gone" }, name);
+      return h("button", {
+        class: "md-channel", type: "button",
+        on: { click: (e) => { e.stopPropagation(); ctx.onChannel(t.id); } },
+      }, name);
+    }
+    case "timestamp": {
+      const date = new Date(t.at * 1000);
+      if (Number.isNaN(date.getTime())) return document.createTextNode(`<t:${t.at}>`);
+      const el = h("time", { class: "md-ts", datetime: date.toISOString(), title: stampFull.format(date) },
+        stampText(date, t.style));
+      if (t.style === "R") {
+        liveStamps.add({ el, date });
+        stampTimer ??= setInterval(tickStamps, 60000);
+      }
+      return el;
+    }
     case "heading":
-      return h(`h${Math.min(6, t.level + 1)}`, { class: "doc-h" }, renderTokens(t.children, ctx));
+      return h(`h${Math.min(6, t.level + 1)}`, { class: `doc-h md-h md-h${t.level}` }, renderTokens(t.children, ctx));
+    case "subtext":
+      return h("div", { class: "md-subtext" }, renderTokens(t.children, ctx));
     case "paragraph":
       return h("p", {}, renderTokens(t.children, ctx));
     case "list":
-      return h(t.ordered ? "ol" : "ul", {}, t.items.map((item) => h("li", {}, renderTokens(item, ctx))));
+      return h(t.ordered ? "ol" : "ul", { class: "md-list", start: t.start || null },
+        t.items.map((item) => h("li", {}, renderTokens(item, ctx))));
     case "hr":
       return h("hr");
     default:
@@ -212,7 +393,13 @@ export function plainText(content, ctx = {}) {
   const walk = (tokens) => tokens.map((t) => {
     switch (t.type) {
       case "text": case "code": case "codeblock": return t.text;
-      case "link": return t.href;
+      case "link": return t.children ? walk(t.children) : t.href;
+      case "channel": {
+        const c = ctx.channel?.(t.id);
+        return c ? `#${c.name || c.title || t.id}` : ts("deleted_channel");
+      }
+      case "timestamp": return stampText(new Date(t.at * 1000), t.style);
+      case "list": return t.items.map((item) => walk(item)).join(" ");
       case "everyone": return "@everyone";
       case "emoji": return `:${t.name}:`;
       case "mention": {
@@ -245,19 +432,9 @@ export function jumboCount(content) {
 
 // --- documents -------------------------------------------------------------
 
-const DOC_LINK = /\[([^\]\n]{1,200})\]\((https?:\/\/[^\s)<>"']+)\)/g;
-
-// Inline markdown plus [label](url) links.
+// Inline markdown; [label](url) links now live in parseInline() itself.
 export function parseDocInline(text) {
-  const out = [];
-  let last = 0;
-  for (const m of text.matchAll(DOC_LINK)) {
-    out.push(...parseInline(text.slice(last, m.index)));
-    out.push({ type: "link", href: m[2], children: parseInline(m[1]) });
-    last = m.index + m[0].length;
-  }
-  out.push(...parseInline(text.slice(last)));
-  return out.filter((t) => t.type !== "text" || t.text);
+  return parseInline(text).filter((t) => t.type !== "text" || t.text);
 }
 
 // Block structure of a Markdown document, as tokens.

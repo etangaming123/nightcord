@@ -21,7 +21,7 @@ import { openEmojiPicker } from "./ui/emoji.js";
 import { guildSettings } from "./ui/guildSettings.js";
 import { render as renderMarkdown } from "./ui/markdown.js";
 import { uploadImage } from "./ui/images.js";
-import { closeFullscreen, closeModal, confirmModal, fullscreenOpen, openMenu, openModal, openPopover, refreshFullscreen, toast } from "./ui/modals.js";
+import { closeFullscreen, closeModal, closePopover, confirmModal, fullscreenOpen, openMenu, openModal, openPopover, refreshFullscreen, toast } from "./ui/modals.js";
 import { inviteDialog, invitePreview } from "./ui/invites.js";
 import { openAccountSwitcher } from "./ui/accounts.js";
 import { openPins } from "./ui/pins.js";
@@ -566,6 +566,15 @@ function pinAction(m, skipConfirm, { type, title, body, confirmLabel, done }) {
       onConfirm: () => run().then(() => resolve(true)),
     });
   });
+}
+
+// A <#channel_id> chip: switch to that channel wherever it lives.
+export async function openChannelById(channelId) {
+  closePopover();
+  if (state.dms.has(channelId)) { await openHome(channelId); return; }
+  const here = state.channels.find((c) => c.channel_id === channelId);
+  if (here) { await openChannel(channelId); return; }
+  toast(t("channel_not_here"), { error: true });
 }
 
 export const pinMessage = (m, skipConfirm = false) => pinAction(m, skipConfirm, {
@@ -1309,6 +1318,7 @@ export const actions = {
   openGuild, openHome, openDm, openChannel, loadOlder, loadNewer, jumpToPresent, seenBottom,
   sendMessage, typing, reply, cancelReply, rerenderComposer, startEdit, cancelEdit, saveEdit, deleteMessage,
   react, unreact, pickReaction, jumpTo, showTopic, pinMessage, unpinMessage, showPins, showSearch, showSwitcher,
+  openChannelById,
   inviteLink, openInviteDialog, openInvite, createInvite, setGuildIcon, setGuildIconMedia,
   reorderChannels, sidebarOrder, toggleCategory, isCollapsed, joinVoice, leaveVoice, setVoiceFlags,
   changeNickname, staffItems, nameOf,
