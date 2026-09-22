@@ -3,6 +3,7 @@
 // keywords. Picks are a unicode string or a custom token <:name:id>.
 
 import { CUSTOM_EMOJI, emojiToken, emojiUrl, usableEmojiById, usableEmojiGroups } from "../perks.js";
+import { FLAG_EMOJI } from "./emojiData/flags.js";
 import { getPrefs, noteEmojiUse } from "../prefs.js";
 import { add, clear, h, imageUrl, initials } from "./dom.js";
 import { closePopover, openPopover } from "./modals.js";
@@ -22,15 +23,22 @@ const GROUPS = [
   ["food", `🍎 apple|🍊 orange|🍋 lemon|🍌 banana|🍉 watermelon|🍇 grapes|🍓 strawberry|🍒 cherries|🍑 peach|🥭 mango|🍍 pineapple|🥥 coconut|🥑 avocado|🍅 tomato|🌶️ pepper hot|🌽 corn|🥕 carrot|🥔 potato|🍞 bread|🥐 croissant|🧀 cheese|🥚 egg|🍳 cooking egg|🥞 pancakes|🥓 bacon|🍔 burger|🍟 fries|🍕 pizza|🌭 hotdog|🌮 taco|🌯 burrito|🍜 ramen noodles|🍝 spaghetti pasta|🍣 sushi|🍱 bento|🍙 rice ball|🍦 ice cream|🍩 donut|🍪 cookie|🎂 birthday cake|🍰 cake|🧁 cupcake|🍫 chocolate|🍬 candy|🍿 popcorn|☕ coffee|🍵 tea|🧋 boba bubble tea|🥤 cup drink|🍺 beer|🍻 cheers beers|🍷 wine|🍸 cocktail|🥂 champagne toast`],
   ["activities", `⚽ soccer football|🏀 basketball|🏈 american football|⚾ baseball|🎾 tennis|🏐 volleyball|🎱 8ball pool|🏓 ping pong|🏸 badminton|🥊 boxing|🎯 target bullseye dart|🎮 video game controller|🕹️ joystick|🎲 dice|🧩 puzzle|♟️ chess|🎨 art palette|🎬 movie clapper|🎤 microphone sing|🎧 headphones music|🎸 guitar|🎹 piano|🥁 drum|🎺 trumpet|🎻 violin|🏆 trophy win|🥇 gold medal first|🥈 silver medal|🥉 bronze medal|🎉 tada party celebrate|🎊 confetti|🎁 gift present|🎈 balloon|🎄 christmas tree|🎃 pumpkin halloween|🎆 fireworks`],
   ["objects", `💻 laptop computer|🖥️ desktop|⌨️ keyboard|🖱️ mouse|📱 phone mobile|☎️ telephone|📷 camera|📺 tv|💡 bulb idea|🔦 flashlight|📚 books|📖 book|📝 memo note|✏️ pencil|📌 pin|📎 paperclip|🔗 link|📅 calendar|⏰ alarm clock|⌛ hourglass|💰 money bag|💸 money wings|💳 card|🔑 key|🔒 lock|🔓 unlock|🛠️ tools|🔧 wrench|🔨 hammer|⚙️ gear settings|🧪 test tube|🔬 microscope|💊 pill|🩹 bandage|🚀 rocket launch ship|✈️ plane|🚗 car|🚲 bike|⛵ boat|🏠 house home|🏢 office|⛺ tent camping|🗺️ map|🧭 compass|📦 package box|🛒 cart|🔔 bell|📣 megaphone|📢 loudspeaker`],
-  ["symbols", `✅ check yes done|☑️ ballot check|✔️ check mark|❌ cross x no|❎ cross button|➕ plus|➖ minus|❓ question|❗ exclamation|‼️ double exclamation|⁉️ interrobang|⚠️ warning|🚫 prohibited no|⛔ no entry|🆗 ok button|🆕 new|🆒 cool button|🔴 red circle|🟠 orange circle|🟡 yellow circle|🟢 green circle|🔵 blue circle|🟣 purple circle|⚫ black circle|⚪ white circle|⬆️ up arrow|⬇️ down arrow|⬅️ left arrow|➡️ right arrow|🔁 repeat|🔄 refresh|▶️ play|⏸️ pause|⏹️ stop|♻️ recycle|™️ trademark|©️ copyright|#️⃣ hash|0️⃣ zero|1️⃣ one|2️⃣ two|3️⃣ three|4️⃣ four|5️⃣ five|🔟 ten|🏳️‍🌈 rainbow flag pride|🏁 checkered flag finish`],
+  ["symbols", `✅ check yes done|☑️ ballot check|✔️ check mark|❌ cross x no|❎ cross button|➕ plus|➖ minus|❓ question|❗ exclamation|‼️ double exclamation|⁉️ interrobang|⚠️ warning|🚫 prohibited no|⛔ no entry|🆗 ok button|🆕 new|🆒 cool button|🔴 red circle|🟠 orange circle|🟡 yellow circle|🟢 green circle|🔵 blue circle|🟣 purple circle|⚫ black circle|⚪ white circle|⬆️ up arrow|⬇️ down arrow|⬅️ left arrow|➡️ right arrow|🔁 repeat|🔄 refresh|▶️ play|⏸️ pause|⏹️ stop|♻️ recycle|™️ trademark|©️ copyright|#️⃣ hash|0️⃣ zero|1️⃣ one|2️⃣ two|3️⃣ three|4️⃣ four|5️⃣ five|🔟 ten`],
 ];
 
-const ALL = GROUPS.map(([key, list]) => [key, list.split("|").map((entry) => {
-  const [emoji, ...words] = entry.split(" ");
-  return { emoji, words: words.join(" ") };
-})]);
+const ALL = [
+  ...GROUPS.map(([key, list]) => [key, list.split("|").map((entry) => {
+    const [emoji, ...words] = entry.split(" ");
+    return { emoji, words: words.join(" ") };
+  })]),
+  // Country flags live in their own module: there are 260 of them.
+  ["flags", FLAG_EMOJI],
+];
 
-const GROUP_ICONS = { smileys: "😀", people: "👋", hearts: "❤️", nature: "🌿", food: "🍕", activities: "⚽", objects: "💡", symbols: "🔣" };
+const GROUP_ICONS = {
+  smileys: "😀", people: "👋", hearts: "❤️", nature: "🌿", food: "🍕", activities: "⚽",
+  objects: "💡", symbols: "🔣", flags: "🏳️",
+};
 const groupLabel = (key) => t(`group_${key}`);
 
 // Every unicode emoji with its keywords, for :name autocomplete.
