@@ -1,7 +1,8 @@
 """aiohttp application: GET /ws (the protocol), GET / (cert-trust page),
 GET /avatars/{avatar_id} (small base64-uploaded avatars and guild icons),
-the attachment routes POST /upload and GET /files/{id}/{name}, and the
-media routes POST /media and GET /media/{media_id}."""
+the attachment routes POST /upload and GET /files/{id}/{name}, the media
+routes POST /media and GET /media/{media_id}, and GET /proxy/{sig}/{url}
+for images inside link embeds."""
 
 from __future__ import annotations
 
@@ -12,6 +13,7 @@ import secrets
 
 from aiohttp import WSMsgType, web
 
+from . import embeds as embed_lib
 from . import protocol as P
 from .config import Config
 from .db import Database
@@ -19,10 +21,12 @@ from .dispatch import dispatch
 from .handlers import Ctx
 from .handlers import files as file_routes
 from .handlers import media as media_routes
+from .handlers import polls as poll_routes
+from .handlers import proxy as proxy_routes
 from .handlers.admin import ip_matches
 from .handlers.auth import LoginThrottle, hash_setup_code, setup_required
 from .handlers.server import public_config
-from .handlers.users import AVATAR_ID_RE, AVATAR_TYPES, avatar_dir
+from .handlers.users import AVATAR_ID_RE, AVATAR_TYPES, avatar_dir, status_sweeper
 from .hub import BANNED_CLOSE, Connection, Hub
 from .permissions import PermissionService
 
@@ -150,6 +154,9 @@ def create_app(config: Config, db: Database | None = None, *, setup_code: str | 
     db = db or Database(config.db_path)
     perms = PermissionService(db)
     ctx = Ctx(db=db, hub=Hub(db, perms), perms=perms, config=config, login_throttle=LoginThrottle())
+    # Serialised PublicUsers hide the custom status of anyone who reads as
+    # offline (really offline, or invisible) — §4 User.
+    db.set_status_source(ctx.hub.status_of)
     if setup_required(ctx):
         if setup_code is None:
             setup_code = new_setup_code()
@@ -166,10 +173,18 @@ def create_app(config: Config, db: Database | None = None, *, setup_code: str | 
     app.router.add_post("/media", media_routes.upload)
     app.router.add_route("OPTIONS", "/media", file_routes.upload_preflight)
     app.router.add_get("/media/{media_id}", media_routes.serve)
+    app.router.add_get("/proxy/{sig}/{token}", proxy_routes.serve)
 
     async def on_startup(app: web.Application) -> None:
+        # One outbound session for every link preview, with the SSRF-guarded
+        # resolver; nothing else in the server makes outbound requests.
+        app[CTX_KEY].http = embed_lib.make_session()
         app[SWEEPER_KEY] = [
-            asyncio.create_task(file_routes.sweeper(app)), asyncio.create_task(media_routes.sweeper(app)),
+            asyncio.create_task(file_routes.sweeper(app)),
+            asyncio.create_task(media_routes.sweeper(app)),
+            asyncio.create_task(proxy_routes.sweeper(app)),
+            asyncio.create_task(poll_routes.sweeper(app)),
+            asyncio.create_task(status_sweeper(app)),
         ]
 
     async def on_shutdown(app: web.Application) -> None:
@@ -179,6 +194,10 @@ def create_app(config: Config, db: Database | None = None, *, setup_code: str | 
                 await task
         # Close sockets first so open handlers return and shutdown doesn't stall.
         await app[CTX_KEY].hub.close_all()
+        session = app[CTX_KEY].http
+        app[CTX_KEY].http = None
+        if session is not None:
+            await session.close()
 
     async def on_cleanup(app: web.Application) -> None:
         db.close()

@@ -5,11 +5,14 @@
 import { emojiByName, emojiToken, searchEmojis, usableStickerGroups } from "../perks.js";
 import { LIMITS } from "../protocol.js";
 import {
-  can, currentChannel, currentGuild, isBlocked, isDm, isFriend, memberById, mutedUntil, nameOf, state as appState, userById,
+  can, channelById, currentChannel, currentGuild, isBlocked, isDm, isFriend, memberById, mutedUntil, nameOf,
+  state as appState, userById,
 } from "../state.js";
 import { addFiles, removePending, uploading } from "../uploads.js";
 import { $, add, avatar, clear, fmtBytes, h } from "./dom.js";
-import { UNICODE_EMOJI, customOf, emojiGlyph, openEmojiPicker } from "./emoji.js";
+import { COMMANDS, describe, matchCommands, planCommand, usageOf } from "./commands.js";
+import { attachFormatBar, formatShortcut } from "./format.js";
+import { UNICODE_EMOJI, customOf, emojiGlyph, openEmojiPicker, unicodeByName } from "./emoji.js";
 import { toast } from "./modals.js";
 import { openStickerPicker } from "./stickers.js";
 import { scopedT } from "../strings.js";
@@ -30,24 +33,40 @@ function candidates() {
 
 // Custom emoji are typed as :name: and sent as <:name:id> (PROTOCOL.md §4 Emoji).
 const EMOJI_NAME_TOKEN = /(?<![<\w]|<a):([A-Za-z0-9_]{2,32}):(?!\d)/g;
+// Channels are typed as #name and sent as <#channel_id> (§4 Message).
+const CHANNEL_TOKEN = /(?<![\w<#])#([a-z0-9_-]{1,32})/g;
 
-// "@alice" -> "<@id>" for users who can be mentioned here; ":name:" -> <:name:id>.
+// Text channels of the open guild, by name.
+function channelsByName() {
+  return new Map(appState.channels.filter((c) => c.kind === "text").map((c) => [c.name.toLowerCase(), c.channel_id]));
+}
+
+// "@alice" -> "<@id>", "#general" -> "<#id>", ":name:" -> <:name:id> for a
+// custom emoji or the glyph itself for a unicode one.
 export function toWire(text) {
   const byName = new Map(candidates().map((u) => [u.username.toLowerCase(), u.user_id]));
+  const channels = channelsByName();
   return text.replace(MENTION_TOKEN, (all, name) => {
     const id = byName.get(name.toLowerCase());
     return id ? `<@${id}>` : all;
+  }).replace(CHANNEL_TOKEN, (all, name) => {
+    const id = channels.get(name.toLowerCase());
+    return id ? `<#${id}>` : all;
   }).replace(EMOJI_NAME_TOKEN, (all, name) => {
     const e = emojiByName(name);
-    return e ? emojiToken(e) : all;
+    if (e) return emojiToken(e);
+    return unicodeByName(name) || all;
   });
 }
 
-// "<@id>" -> "@username" and <:name:id> -> ":name:" (when it maps back) for editing.
+// The wire form back to what you'd type, for editing.
 export function fromWire(content) {
   return content.replace(/<@(\d{1,20})>/g, (all, id) => {
     const u = userById(id) || memberById(id)?.user;
     return u ? `@${u.username}` : all;
+  }).replace(/<#(\d{1,20})>/g, (all, id) => {
+    const c = channelById(id);
+    return c?.name ? `#${c.name}` : all;
   }).replace(/<a?:([A-Za-z0-9_]{2,32}):(\d{1,20})>/g, (all, name, id) => (emojiByName(name)?.emoji_id === id ? `:${name}:` : all));
 }
 
@@ -57,6 +76,20 @@ export function clearDraft(channelId) {
 
 export function focusComposer() {
   $("#composer textarea")?.focus();
+}
+
+// Types `text` where the cursor is (the emoji picker, /time, the formatting
+// toolbar). Keeps the draft and the send button in step via an input event.
+export function insertIntoComposer(text) {
+  const input = $("#composer textarea");
+  if (!input) return;
+  const start = input.selectionStart ?? input.value.length;
+  const end = input.selectionEnd ?? start;
+  input.value = input.value.slice(0, start) + text + input.value.slice(end);
+  const pos = start + text.length;
+  input.setSelectionRange(pos, pos);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.focus();
 }
 
 let slowTimer = null;
@@ -121,7 +154,7 @@ function dmBlocked(form, channel, state, actions) {
     add(form, h("div", { class: "request-bar" },
       h("div", { class: "grow" }, h("strong", {}, t("request_title", { name })), h("span", { class: "muted small block" }, t("request_body"))),
       h("button", { class: "btn small primary", type: "button", on: { click: () => actions.acceptRequest(channel) } }, t("request_accept")),
-      h("button", { class: "btn small", type: "button", on: { click: () => actions.declineRequest(channel) } }, t("request_decline")),
+      h("button", { class: "btn small", type: "button", on: { click: (e) => actions.declineRequest(channel, e.shiftKey) } }, t("request_decline")),
       h("button", { class: "btn small danger", type: "button", on: { click: () => actions.blockUser(other.user_id) } }, t("request_block"))));
     return true;
   }
@@ -199,7 +232,10 @@ export function renderComposer(state, actions) {
     if (!ac) return;
     const before = input.value.slice(0, ac.start);
     const after = input.value.slice(input.selectionStart);
-    const insert = ac.kind === "emoji" ? `${item.custom ? `:${item.name}:` : item.emoji} ` : `@${item.username} `;
+    const insert = ac.kind === "emoji" ? `${item.custom ? `:${item.name}:` : item.emoji} `
+      : ac.kind === "channel" ? `#${item.name} `
+        : ac.kind === "command" ? `/${item.name} `
+          : `@${item.username} `;
     input.value = before + insert + after;
     const pos = before.length + insert.length;
     input.setSelectionRange(pos, pos);
@@ -221,6 +257,26 @@ export function renderComposer(state, actions) {
       h("span", { class: "ac-sub" }, e.custom ? e.guildName : ""))));
       return;
     }
+    if (ac.kind === "command") {
+      add(popup, h("div", { class: "ac-title" }, t("commands_heading")));
+      ac.items.forEach((c, i) => add(popup, h("div", {
+        class: `ac-item ${i === ac.index ? "active" : ""}`, role: "option", "aria-selected": String(i === ac.index),
+        on: { mousedown: (ev) => { ev.preventDefault(); pickAc(c); } },
+      }, h("span", { class: "ac-emoji" }, "/"),
+      h("span", { class: "ac-name" }, usageOf(c)),
+      h("span", { class: "ac-sub" }, describe(c)))));
+      return;
+    }
+    if (ac.kind === "channel") {
+      add(popup, h("div", { class: "ac-title" }, t("channels_heading")));
+      ac.items.forEach((c, i) => add(popup, h("div", {
+        class: `ac-item ${i === ac.index ? "active" : ""}`, role: "option", "aria-selected": String(i === ac.index),
+        on: { mousedown: (ev) => { ev.preventDefault(); pickAc(c); } },
+      }, h("span", { class: "ac-emoji" }, "#"),
+      h("span", { class: "ac-name" }, c.name),
+      h("span", { class: "ac-sub" }, c.topic ? c.topic.split("\n")[0].slice(0, 60) : ""))));
+      return;
+    }
     add(popup, h("div", { class: "ac-title" }, t("members_heading")));
     ac.items.forEach((u, i) => add(popup, h("div", {
       class: `ac-item ${i === ac.index ? "active" : ""}`, role: "option", "aria-selected": String(i === ac.index),
@@ -231,6 +287,14 @@ export function renderComposer(state, actions) {
   };
   const updateAc = () => {
     const pos = input.selectionStart;
+    // A command only counts at the very start of the box.
+    const cmd = /^\/(\w*)$/.exec(input.value.slice(0, pos));
+    if (cmd && pos === input.value.length) {
+      const items = matchCommands(cmd[1]);
+      ac = items.length ? { kind: "command", start: 0, items, index: 0 } : null;
+      drawAc();
+      return;
+    }
     const em = /(^|\s):([A-Za-z0-9_]{2,32})$/.exec(input.value.slice(0, pos));
     if (em) {
       const q = em[2].toLowerCase();
@@ -238,6 +302,14 @@ export function renderComposer(state, actions) {
       const unicode = UNICODE_EMOJI.filter((e) => e.words.split(" ").some((w) => w.startsWith(q)))
         .slice(0, 10 - custom.length).map((e) => ({ emoji: e.emoji, name: e.words.split(" ")[0] }));
       ac = { kind: "emoji", query: em[2], start: pos - em[2].length - 1, items: [...custom, ...unicode], index: 0 };
+      drawAc();
+      return;
+    }
+    const chan = /(^|\s)#([a-z0-9_-]{0,32})$/.exec(input.value.slice(0, pos));
+    if (chan && !isDm(channel)) {
+      const q = chan[2].toLowerCase();
+      const list = appState.channels.filter((c) => c.kind === "text" && c.name.toLowerCase().includes(q) && can("VIEW_CHANNEL", c)).slice(0, 8);
+      ac = { kind: "channel", start: pos - chan[2].length - 1, items: list, index: 0 };
       drawAc();
       return;
     }
@@ -260,6 +332,32 @@ export function renderComposer(state, actions) {
     if ((!raw && !state.pending.length) || raw.length > LIMITS.CONTENT_MAX_CHARS || !state.connected) return;
     if (slowmodeLeft(channel) && slow) return;
     const reply = state.replyTo;
+    // Slash commands: some are sent for the server to roll, some just rewrite
+    // what you typed, some open a dialog instead of sending anything.
+    const plan = planCommand(raw);
+    if (plan) {
+      if (plan.error) { toast(plan.error, { error: true }); return; }
+      if (plan.action) {
+        input.value = "";
+        autosize();
+        closeAc();
+        actions.runCommand(plan.action, plan.args);
+        return;
+      }
+      input.value = "";
+      autosize();
+      closeAc();
+      try {
+        if (plan.send) await actions.sendMessage("", reply, { command: plan.send.command });
+        else await actions.sendMessage(toWire(plan.text), reply);
+      } catch (e) {
+        if (!input.value) input.value = raw;
+        autosize();
+        toast(e.message, { error: true });
+      }
+      input.focus();
+      return;
+    }
     input.value = "";
     autosize();
     closeAc();
@@ -291,6 +389,7 @@ export function renderComposer(state, actions) {
   });
   input.addEventListener("blur", () => setTimeout(closeAc, 100));
   input.addEventListener("keydown", (e) => {
+    if (formatShortcut(e, input)) return;
     if (ac?.items.length) {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
@@ -298,7 +397,10 @@ export function renderComposer(state, actions) {
         drawAc();
         return;
       }
-      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+      // Enter on a command you've already typed in full sends it; Tab still
+      // completes, and Enter on anything else picks from the list.
+      const exact = ac.kind === "command" && COMMANDS.some((c) => `/${c.name}` === input.value.trim());
+      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey && !exact)) {
         e.preventDefault();
         pickAc(ac.items[ac.index]);
         return;
@@ -332,7 +434,7 @@ export function renderComposer(state, actions) {
         input.setSelectionRange(pos + emoji.length, pos + emoji.length);
         autosize();
         input.focus();
-      }, { placement: "top" }),
+      }, { placement: "top", key: "composer-emoji" }),
     },
   }, "☺");
   const stickerBtn = usableStickerGroups().length ? h("button", {
@@ -342,9 +444,15 @@ export function renderComposer(state, actions) {
       click: (e) => openStickerPicker(e.currentTarget, async (sticker) => {
         if (slow && slowmodeLeft(channel)) return;
         try { await actions.sendSticker(sticker); } catch (err) { toast(err.message, { error: true }); }
-      }),
+      }, { key: "composer-stickers" }),
     },
   }, "🗒") : null;
+
+  const pollBtn = h("button", {
+    class: "icon-btn poll-btn", type: "button", title: t("create_poll_title"), "aria-label": t("create_poll_aria"),
+    disabled: !state.connected,
+    on: { click: () => actions.composePoll() },
+  }, "📊");
 
   const fileInput = h("input", { type: "file", multiple: true, hidden: true });
   fileInput.addEventListener("change", () => { addFiles([...fileInput.files]); fileInput.value = ""; input.focus(); });
@@ -369,7 +477,8 @@ export function renderComposer(state, actions) {
   }
 
   const tray = uploadTray(state);
-  add(form, ...[popup, replyBar, tray, h("div", { class: `box ${replyBar || tray ? "with-reply" : ""}` }, attachBtn, fileInput, input, stickerBtn, emojiBtn, send), slowNote, count].filter(Boolean));
+  attachFormatBar(form, input);
+  add(form, ...[popup, replyBar, tray, h("div", { class: `box ${replyBar || tray ? "with-reply" : ""}` }, attachBtn, fileInput, input, pollBtn, stickerBtn, emojiBtn, send), slowNote, count].filter(Boolean));
   autosize();
   if (state.connected && matchMedia("(pointer: fine)").matches && !state.editingId) input.focus();
 }

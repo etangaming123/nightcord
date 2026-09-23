@@ -7,21 +7,23 @@
   "age_1d": "1 day",
   "age_7d": "7 days",
   "age_seconds": "{seconds}s",
-  "uses_limited": { "one": "{count} use", "other": "{count} uses" },
+  "uses_limited": {
+    "one": "{count} use",
+    "other": "{count} uses"
+  },
   "uses_unlimited": "No limit",
-
   "never_expires": "Never expires",
   "expired": "Expired",
   "expires_in_minutes": "Expires in {minutes} min",
   "expires_in_hours": "Expires in {hours} h",
   "expires_in_days": "Expires in {days} days",
-
   "uses_left": "{left} of {max} uses left",
-  "uses_no_limit": { "one": "{count} use · no limit", "other": "{count} uses · no limit" },
-
+  "uses_no_limit": {
+    "one": "{count} use · no limit",
+    "other": "{count} uses · no limit"
+  },
   "copy_btn": "Copy",
   "copied_toast": "Copied",
-
   "share_link_label": "Share this link",
   "invite_link_aria": "Invite link",
   "or_code_before": "Or the code ",
@@ -32,14 +34,15 @@
   "public_link_label": "Public link (never expires)",
   "public_invite_link_aria": "Public invite link",
   "done_btn": "Done",
-
   "open_guild_btn": "Open guild",
   "accept_invite_btn": "Accept invite",
   "invited_by_title": "{name} invited you to join",
   "invited_generic_title": "You've been invited to join",
   "online_count": "{count} online",
-  "member_count": { "one": "{count} member", "other": "{count} members" },
-
+  "member_count": {
+    "one": "{count} member",
+    "other": "{count} members"
+  },
   "invites_manage_intro": "Every active invite in this guild. Revoke any you don't want used.",
   "invites_own_intro": "Your active invites.",
   "create_invite_btn": "Create invite",
@@ -50,7 +53,6 @@
   "invite_link_copied_toast": "Invite link copied",
   "revoke_btn": "Revoke",
   "invite_revoked_toast": "Invite revoked",
-
   "public_invite_link_label": "Public invite link",
   "public_link_hint": "A permanent code anyone can use — handy for sharing publicly. Leave empty to turn it off.",
   "vanity_code_aria": "Public invite code",
@@ -59,5 +61,7 @@
   "public_link_copied_toast": "Public link copied",
   "invalid_vanity_code": "Use 3–32 characters: a-z, 0-9 and -",
   "public_link_saved_toast": "Public link saved",
-  "public_link_off_toast": "Public link turned off"
+  "public_link_off_toast": "Public link turned off",
+  "revoke_invite_title": "Revoke invite {code}?",
+  "revoke_invite_body": "The link stops working. People who already joined stay."
 }

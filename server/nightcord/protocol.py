@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-PROTOCOL_VERSION = "0.8"
+PROTOCOL_VERSION = "0.13"
 
 # --- Message types -----------------------------------------------------------
 
@@ -246,9 +246,32 @@ MESSAGE_UNPIN = "message.unpin"
 MESSAGE_UNPIN_RESULT = "message.unpin.result"
 MESSAGE_SEARCH = "message.search"
 MESSAGE_SEARCH_RESULT = "message.search.result"
+MESSAGE_FORWARD = "message.forward"
+MESSAGE_FORWARD_RESULT = "message.forward.result"
+MESSAGE_EMBEDS_SUPPRESS = "message.embeds.suppress"
+MESSAGE_EMBEDS_SUPPRESS_RESULT = "message.embeds.suppress.result"
 MESSAGE_NEW = "message.new"
 MESSAGE_UPDATED = "message.updated"
 MESSAGE_DELETED = "message.deleted"
+
+# Saved messages and private notes
+SAVED_LIST = "saved.list"
+SAVED_LIST_RESULT = "saved.list.result"
+SAVED_ADD = "saved.add"
+SAVED_ADD_RESULT = "saved.add.result"
+SAVED_REMOVE = "saved.remove"
+SAVED_REMOVE_RESULT = "saved.remove.result"
+SAVED_UPDATED = "saved.updated"
+USER_NOTE_SET = "user.note.set"
+USER_NOTE_SET_RESULT = "user.note.set.result"
+USER_NOTE_UPDATED = "user.note.updated"
+
+# Polls
+POLL_VOTE = "poll.vote"
+POLL_VOTE_RESULT = "poll.vote.result"
+POLL_END = "poll.end"
+POLL_END_RESULT = "poll.end.result"
+POLL_UPDATED = "poll.updated"
 
 # Reactions
 REACTION_ADD = "reaction.add"
@@ -380,6 +403,8 @@ DM_NOT_ALLOWED = "dm_not_allowed"
 REQUEST_PENDING = "request_pending"
 ALREADY_FRIENDS = "already_friends"
 NOT_FRIENDS = "not_friends"
+EMBEDS_DISABLED = "embeds_disabled"
+POLL_ENDED = "poll_ended"
 
 ERROR_CODES = frozenset(
     {
@@ -393,7 +418,7 @@ ERROR_CODES = frozenset(
         INVALID_CURRENT_PASSWORD, FILE_TOO_LARGE, MUTED, IP_BANNED, DEVICE_BANNED,
         SLOWMODE, INVITE_EXPIRED, LEGAL_REQUIRED, VOICE_DISABLED, PIN_LIMIT,
         FEATURE_DISABLED, MEDIA_INVALID, BLOCKED, DM_NOT_ALLOWED, REQUEST_PENDING, ALREADY_FRIENDS,
-        NOT_FRIENDS,
+        NOT_FRIENDS, EMBEDS_DISABLED, POLL_ENDED,
     }
 )
 
@@ -503,10 +528,43 @@ CHANNEL_KINDS = ("text", "voice", "category")
 STAFF_ROLES = ("none", "moderator", "admin")
 
 PRESENCE_PREFS = ("online", "idle", "dnd", "invisible")
+# How long a custom status lasts. "today" is the end of the current UTC day.
+CUSTOM_STATUS_DURATIONS = {"30m": 1800, "1h": 3600, "4h": 4 * 3600, "today": None, "never": None}
 NOTIFY_LEVELS = ("all", "mentions", "none")
 DM_PRIVACY = ("everyone", "requests", "friends")
 USER_SEARCH_MODES = ("off", "staff", "on")
 ANNOUNCEMENT_MAX_CHARS = 4000
+# Link embeds (§4 Embed): the server fetches pages people post.
+MAX_EMBEDS_PER_MESSAGE = 5
+EMBED_FETCH_TIMEOUT = 5
+EMBED_PAGE_MAX_BYTES = 1024 * 1024
+EMBED_IMAGE_MAX_BYTES = 8 * 1024 * 1024
+EMBED_CACHE_SECONDS = 3600
+PROXY_CACHE_DAYS = 7
+
+# Slash commands the server rolls, so nobody can fake a result (§4 Message).
+SERVER_COMMANDS = ("roll", "8ball", "coinflip", "choose")
+COMMAND_ARGS_MAX = 200
+MAX_DICE = 20
+MAX_DIE_SIDES = 1000
+MAX_DICE_MODIFIER = 10000
+MAX_CHOICES = 20
+
+# Polls (§4 Poll)
+POLL_QUESTION_MAX = 300
+POLL_ANSWER_MAX = 55
+POLL_MIN_ANSWERS = 2
+POLL_MAX_ANSWERS = 10
+POLL_DURATIONS = {"1h": 3600, "4h": 4 * 3600, "8h": 8 * 3600, "1d": 86400, "3d": 3 * 86400, "1w": 7 * 86400}
+
+# Saved messages and private notes (§4 Saved message, User note)
+SAVED_PAGE = 50
+MAX_SAVED = 500
+USER_NOTE_MAX = 256
+
+# Forwards (§4 Forward): how much of the original travels with the copy.
+FORWARD_CONTENT_MAX = 2000
+FORWARD_ATTACHMENTS_MAX = 10
 MAX_ACCOUNTS_PER_CLIENT = 20
 
 

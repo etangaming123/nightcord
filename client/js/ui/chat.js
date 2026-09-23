@@ -3,10 +3,15 @@
 
 import { LIMITS } from "../protocol.js";
 import {
-  STAFF_LABEL, can, channelTitle, currentChannel, currentGuild, isBlocked, isDm, isPrivate, mentionsMe, nameOf,
-  statusOf, userById,
+  STAFF_LABEL, can, channelById, channelTitle, currentChannel, currentGuild, isBlocked, isDm, isPrivate, mentionsMe,
+  nameOf, statusOf, userById,
 } from "../state.js";
 import { renderAttachments } from "./attachments.js";
+import { commandHeader, commandResult } from "./commands.js";
+import { forwardCard, messageMenuHandlers } from "./messageMenu.js";
+import { renderEmbeds } from "./embeds.js";
+import { renderPoll } from "./polls.js";
+import { messageQuote } from "./quote.js";
 import { $, add, avatar, clear, h, iconBtn, idGt } from "./dom.js";
 import { renderFriendsHeader, renderFriendsPage } from "./friends.js";
 import { QUICK_REACTIONS, customOf, emojiGlyph } from "./emoji.js";
@@ -55,6 +60,9 @@ export function mdContext(state, actions) {
     meId: state.user?.user_id,
     onMention: (id, el) => actions.openProfile(id, el),
     onEmoji: (emoji, el) => actions.emojiInfo(emoji, el),
+    channel: channelById,
+    onChannel: (id) => actions.openChannelById(id),
+    quote: (href) => messageQuote(href, actions),
   };
 }
 
@@ -75,6 +83,7 @@ export function renderChatHeader(state, actions) {
     add(header, h("span", { class: "title" }, channelTitle(channel)));
     add(header, h("span", { class: "grow" }));
     add(header, iconBtn("📌", t("pinned_messages"), (e) => actions.showPins(e.currentTarget)));
+    add(header, iconBtn("🔖", t("saved_messages"), (e) => actions.showSaved(e.currentTarget)));
     if (channel.kind === "group_dm") {
       add(header, iconBtn("✎", t("rename_group"), () => actions.renameGroup(channel)));
       add(header, iconBtn("＋", t("add_people"), () => actions.addToGroup(channel)));
@@ -88,11 +97,12 @@ export function renderChatHeader(state, actions) {
       channel.topic ? h("button", {
         class: "topic", type: "button", title: channel.topic,
         on: { click: () => actions.showTopic(channel) },
-      }, renderMarkdown(channel.topic.split("\n")[0], mdContext(state, actions))) : h("span", { class: "grow" }),
+      }, renderMarkdown(channel.topic.split("\n")[0], { ...mdContext(state, actions), plainLinks: true })) : h("span", { class: "grow" }),
     );
     if (channel.slowmode_seconds) add(header, h("span", { class: "slow-tag", title: t("slowmode_title", { seconds: channel.slowmode_seconds }) }, "🐢"));
     if (can("CREATE_INVITE") && !currentGuild()?.ghost) add(header, iconBtn("✉", t("invite_people"), () => actions.openInviteDialog(), { cls: "hide-narrow" }));
     add(header, iconBtn("📌", t("pinned_messages"), (e) => actions.showPins(e.currentTarget)));
+    add(header, iconBtn("🔖", t("saved_messages"), (e) => actions.showSaved(e.currentTarget), { cls: "hide-narrow" }));
     add(header, iconBtn("👥", t("show_members"), actions.toggleMembers, { cls: "members-btn" }));
     add(header, searchButton(actions));
   } else if (state.view === "home") {
@@ -203,8 +213,10 @@ function toolbar(m, state, actions) {
     canReact ? iconBtn("☺", t("add_reaction"), (e) => actions.pickReaction(m, e.currentTarget)) : null,
     canSend && !system ? iconBtn("↩", t("reply"), () => actions.reply(m)) : null,
     mine && canSend ? iconBtn("✎", t("edit"), () => actions.startEdit(m)) : null,
-    canPin ? iconBtn("📌", m.pinned ? t("unpin") : t("pin"), () => (m.pinned ? actions.unpinMessage(m) : actions.pinMessage(m)), { cls: m.pinned ? "on" : "" }) : null,
+    !system ? iconBtn("🔖", actions.isSaved(m) ? t("unsave") : t("save"), () => actions.toggleSaved(m), { cls: actions.isSaved(m) ? "on" : "" }) : null,
+    canPin ? iconBtn("📌", m.pinned ? t("unpin_with_hint") : t("pin_with_hint"), (e) => (m.pinned ? actions.unpinMessage(m, e.shiftKey) : actions.pinMessage(m, e.shiftKey)), { cls: m.pinned ? "on" : "" }) : null,
     canDelete ? iconBtn("🗑", t("delete_with_hint"), (e) => actions.deleteMessage(m, e.shiftKey), { cls: "danger" }) : null,
+    iconBtn("⋯", t("more_actions"), (e) => actions.showMessageMenu(m, e.currentTarget)),
   );
 }
 
@@ -271,16 +283,22 @@ function messageNodes(m, prev, state, actions) {
       m.content ? renderMarkdown(m.content, mdContext(state, actions)) : null,
       m.edited_at ? h("span", { class: "edited", title: `Edited ${fullFmt.format(new Date(m.edited_at))}` }, " (edited)") : null);
   const files = editing ? null : [
+    forwardCard(m, actions),
+    commandResult(m.command),
+    renderPoll(m, actions),
     renderAttachments(m),
+    renderEmbeds(m, actions),
     m.stickers?.length ? h("div", { class: "msg-stickers" }, m.stickers.map((st) => stickerImg(st))) : null,
   ];
   const cls = `msg ${mentionsMe(m) ? "mentioned" : ""} ${editing ? "editing" : ""} ${m.pinned ? "pinned" : ""}`;
   const profile = (e) => actions.openProfile(author.user_id, e.currentTarget);
+  const menu = messageMenuHandlers(m, actions);
   if (continued) {
-    nodes.push(h("div", { class: `${cls} msg-line`, dataset: { id: m.message_id } },
-      stamp(d, { short: true }), body, files, reactionsRow(m, state, actions), editing ? null : toolbar(m, state, actions)));
+    nodes.push(h("div", { class: `${cls} msg-line`, dataset: { id: m.message_id }, on: menu },
+      stamp(d, { short: true }), commandHeader(m.command), body, files,
+      reactionsRow(m, state, actions), editing ? null : toolbar(m, state, actions)));
   } else {
-    nodes.push(h("div", { class: `${cls} msg-group`, dataset: { id: m.message_id } },
+    nodes.push(h("div", { class: `${cls} msg-group`, dataset: { id: m.message_id }, on: menu },
       replyPreview(m, state, actions),
       h("button", { class: "avatar-btn", type: "button", "aria-label": t("profile_aria", { name: displayName(author) }), on: { click: profile } }, avatar(author, { size: "lg" })),
       h("div", { class: "msg-head" },
@@ -289,6 +307,7 @@ function messageNodes(m, prev, state, actions) {
         STAFF_LABEL[author?.server_role] ? h("span", { class: `tag staff ${author.server_role}`, title: STAFF_LABEL[author.server_role] },
           { owner: "OWNER", admin: "ADMIN", moderator: "MOD" }[author.server_role]) : null,
         stamp(d)),
+      commandHeader(m.command),
       body,
       files,
       reactionsRow(m, state, actions),
@@ -353,12 +372,7 @@ export function renderChat(state, actions) {
   if (state.hasMoreAfter) {
     add(box, h("div", { class: "history-edge" }, state.loadingOlder ? tc("loading") : t("scroll_newer")));
   }
-  $("#jump-present")?.remove();
-  if (state.hasMoreAfter) {
-    $("#chat").append(h("button", {
-      id: "jump-present", class: "jump-present", type: "button", on: { click: () => actions.jumpToPresent() },
-    }, t("viewing_older"), h("strong", {}, t("jump_to_present"))));
-  }
+  drawBars(state, actions, box);
 
   if (state.scrollTo === "bottom") {
     box.scrollTop = box.scrollHeight;
@@ -382,7 +396,48 @@ export function renderChat(state, actions) {
       if (state.hasMoreAfter) actions.loadNewer();
       else actions.seenBottom();
     }
+    // Scrolling alone decides whether the jump bar belongs on screen.
+    const away = state.hasMoreAfter
+      || box.scrollHeight - box.scrollTop - box.clientHeight > box.clientHeight * TWO_SCREENS;
+    if (away !== !!$("#jump-present")) drawBars(state, actions, box);
   };
+}
+
+// Two bars over the message list:
+//  - the top one counts what arrived since you last read, and marks it read;
+//  - the bottom one gets you back to the present, whether you scrolled up or
+//    jumped into the past.
+const TWO_SCREENS = 2;
+
+function drawBars(state, actions, box) {
+  $("#jump-present")?.remove();
+  $("#new-bar")?.remove();
+  const chat = $("#chat");
+  const away = state.hasMoreAfter
+    || box.scrollHeight - box.scrollTop - box.clientHeight > box.clientHeight * TWO_SCREENS;
+  if (away) {
+    chat.append(h("button", {
+      id: "jump-present", class: "jump-present", type: "button",
+      on: { click: () => (state.hasMoreAfter ? actions.jumpToPresent() : scrollToBottom()) },
+    }, t("viewing_older"), h("strong", {}, t("jump_to_present"))));
+  }
+  // The NEW divider tells us where unread starts; count from there.
+  const first = state.messages.findIndex((m) => idGt(m.message_id, state.unreadMarker));
+  if (state.unreadMarker && first >= 0) {
+    const unread = state.messages.slice(first);
+    const since = new Date(unread[0].sent_at);
+    chat.append(h("div", { id: "new-bar", class: "new-bar" },
+      h("span", { class: "grow" }, t("new_since", { count: unread.length, time: timeFmt.format(since) })),
+      h("button", {
+        class: "btn link", type: "button",
+        on: { click: () => actions.markChannelRead(state.channelId) },
+      }, t("mark_as_read"))));
+  }
+}
+
+function scrollToBottom() {
+  const box = $("#messages");
+  box.scrollTo({ top: box.scrollHeight, behavior: "smooth" });
 }
 
 // Images and videos load after rendering; keep a bottom-pinned chat pinned.

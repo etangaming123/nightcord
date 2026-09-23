@@ -65,7 +65,6 @@
   "profile": "Profile",
   "message_user": "Message",
   "server_staff_heading": "Server staff",
-
   "now_friends": "You're friends now",
   "friend_request_sent": "Friend request sent",
   "remove_friend_title": "Remove {name}?",
@@ -81,5 +80,29 @@
   "unblocked": "Unblocked",
   "delete_announcement_title": "Delete this announcement?",
   "delete_announcement_body": "It disappears from everyone's Inbox.",
-  "delete_announcement": "Delete"
+  "delete_announcement": "Delete",
+  "pin_title": "Pin this message?",
+  "pin_body": "Everyone in the channel can see pinned messages. Shift-click the pin to skip this next time.",
+  "pin_confirm": "Pin",
+  "unpin_title": "Unpin this message?",
+  "unpin_body": "It stays in the channel, just not in the pins list.",
+  "unpin_confirm": "Unpin",
+  "decline_request_title": "Decline this message request?",
+  "decline_request_body": "{name} won't be told. The conversation disappears from your list.",
+  "decline_request_confirm": "Decline",
+  "channel_not_here": "That channel isn't in this guild.",
+  "remind_usage": "Try /remind 20m take the bins out",
+  "remind_set": "Reminder set for {when}: {text}",
+  "reminder": "⏰ {text}",
+  "time_usage": "Try /time or /time 19:30",
+  "nick_needs_guild": "Open a guild first.",
+  "nick_not_allowed": "You can't change your nickname here.",
+  "nickname_set": "Nickname set to {nickname}",
+  "saved_message": {
+    "one": "Saved — 1 message in your list",
+    "other": "Saved — {count} messages in your list"
+  },
+  "marked_unread": "Marked unread from here",
+  "reminder_title": "Nightcord reminder",
+  "nothing_unread": "Nothing unread here."
 }

@@ -7,7 +7,7 @@ import { can, currentGuild, isGuildOwner, memberRoles, nameOf, state, userById }
 import { add, avatar, clear, displayName, fmtDate, fmtDateTime, h, iconBtn, imageEl } from "./dom.js";
 import { emojiTab, stickersTab } from "./expressionSettings.js";
 import { guildIcon, invitesTab } from "./invites.js";
-import { closeFullscreen, confirmModal, openFullscreen, openMenu, refreshFullscreen, toast } from "./modals.js";
+import { closeFullscreen, confirmAction, confirmModal, openFullscreen, openMenu, refreshFullscreen, toast } from "./modals.js";
 import { copyText } from "./profile.js";
 import { guildCan } from "../perks.js";
 import { openEmojiPicker } from "./emoji.js";
@@ -137,7 +137,18 @@ function overview(el, actions) {
       h("div", { class: "stack" },
         h("div", { class: "row" },
           h("button", { class: "btn primary", type: "button", on: { click: upload("guild_icon", (id) => actions.setGuildIconMedia(id), t("icon_updated_toast")) } }, t("upload_icon_btn")),
-          g.icon_id ? h("button", { class: "btn", type: "button", on: { click: async () => { try { await actions.setGuildIcon(null); refreshFullscreen(); } catch (e) { toast(e.message, { error: true }); } } } }, t("remove_btn")) : null),
+          g.icon_id ? h("button", {
+            class: "btn",
+            type: "button",
+            on: {
+              click: (e) => confirmAction(e, {
+                title: t("remove_icon_title"),
+                message: t("remove_icon_body"),
+                confirmLabel: t("remove_btn"),
+                onConfirm: async () => { try { await actions.setGuildIcon(null); refreshFullscreen(); } catch (err) { toast(err.message, { error: true }); } },
+              }),
+            },
+          }, t("remove_btn")) : null),
         h("span", { class: "muted small" }, animated ? t("icon_hint_animated") : t("icon_hint")))),
     h("div", { class: "field" },
       h("span", { class: "field-label" }, t("banner_field_label")),
@@ -145,7 +156,18 @@ function overview(el, actions) {
       bannerAllowed
         ? h("div", { class: "row" },
           h("button", { class: "btn", type: "button", on: { click: upload("guild_banner", (id) => actions.updateGuild({ banner_media_id: id }), t("banner_updated_toast")) } }, g.banner_id ? t("change_banner_btn") : t("upload_banner_btn")),
-          g.banner_id ? h("button", { class: "btn", type: "button", on: { click: async () => { try { await actions.updateGuild({ banner_media_id: null }); refreshFullscreen(); } catch (e) { toast(e.message, { error: true }); } } } }, t("remove_btn")) : null,
+          g.banner_id ? h("button", {
+            class: "btn",
+            type: "button",
+            on: {
+              click: (e) => confirmAction(e, {
+                title: t("remove_guild_banner_title"),
+                message: t("remove_guild_banner_body"),
+                confirmLabel: t("remove_btn"),
+                onConfirm: async () => { try { await actions.updateGuild({ banner_media_id: null }); refreshFullscreen(); } catch (err) { toast(err.message, { error: true }); } },
+              }),
+            },
+          }, t("remove_btn")) : null,
           h("span", { class: "muted small" }, t("banner_hint")))
         : h("div", { class: "locked-note" }, "🔒 ", state.info.customization_mode === "allowlist"
           ? t("banner_locked_allowlist")
@@ -340,7 +362,17 @@ function roles(el, actions) {
           }, t("pick_emoji_btn")),
           role.icon_id || role.icon_emoji ? h("button", {
             class: "btn", type: "button", disabled: !editable,
-            on: { click: (e) => setIcon({ icon_media_id: null, icon_emoji: null }, e.currentTarget) },
+            on: {
+              click: (e) => {
+                const btn = e.currentTarget;
+                confirmAction(e, {
+                  title: t("remove_role_icon_title", { role: role.name }),
+                  message: t("remove_role_icon_body"),
+                  confirmLabel: t("remove_btn"),
+                  onConfirm: () => setIcon({ icon_media_id: null, icon_emoji: null }, btn),
+                });
+              },
+            },
           }, t("remove_btn")) : null)
         : h("div", { class: "locked-note" }, t("role_icons_locked_prefix"), state.info.customization_mode === "allowlist" ? t("role_icons_locked_allowlist") : t("role_icons_locked_off")));
     const bar = h("div", { class: "unsaved-bar", hidden: true },
@@ -478,7 +510,23 @@ async function bans(el, actions) {
         h("span", { class: "sub" }, `${b.reason ? `“${b.reason}” · ` : ""}${fmtDateTime(b.created_at)}`)),
       h("button", {
         class: "btn", type: "button",
-        on: { click: async () => { await actions.req(T.MEMBER_UNBAN, { guild_id: state.guildId, user_id: b.user.user_id }); toast(t("unbanned_toast", { name: displayName(b.user) })); refreshFullscreen(); } },
+        on: {
+          click: (e) => confirmAction(e, {
+            title: t("unban_title", { name: displayName(b.user) }),
+            message: t("unban_body"),
+            confirmLabel: t("unban_btn"),
+            danger: false,
+            onConfirm: async () => {
+              try {
+                await actions.req(T.MEMBER_UNBAN, { guild_id: state.guildId, user_id: b.user.user_id });
+                toast(t("unbanned_toast", { name: displayName(b.user) }));
+                refreshFullscreen();
+              } catch (err) {
+                toast(err.message, { error: true });
+              }
+            },
+          }),
+        },
       }, t("unban_btn"))));
   }
   add(el, box);
@@ -529,19 +577,22 @@ async function audit(el, actions) {
 
 function deleteGuild(el, actions) {
   const g = currentGuild();
-  const input = h("input", { placeholder: g.name, "aria-label": t("delete_guild_confirm_aria") });
-  const btn = h("button", { class: "btn danger", type: "button", disabled: true }, t("delete_guild_btn"));
-  input.addEventListener("input", () => { btn.disabled = input.value.trim() !== g.name; });
-  btn.addEventListener("click", async () => {
-    try {
-      await actions.req(T.GUILD_DELETE, { guild_id: g.guild_id });
-      closeFullscreen();
-    } catch (e) {
-      toast(e.message, { error: true });
-    }
-  });
+  const btn = h("button", {
+    class: "btn danger", type: "button",
+    on: {
+      click: () => confirmModal({
+        title: t("delete_guild_confirm_title", { name: g.name }),
+        message: t("delete_guild_confirm_body"),
+        confirmLabel: t("delete_guild_btn"),
+        code: true,
+        onConfirm: async () => {
+          await actions.req(T.GUILD_DELETE, { guild_id: g.guild_id });
+          closeFullscreen();
+        },
+      }),
+    },
+  }, t("delete_guild_btn"));
   add(el, h("div", { class: "stack narrow" },
     h("p", {}, t("delete_guild_intro_before"), h("strong", {}, g.name), t("delete_guild_intro_after")),
-    h("label", {}, t("delete_guild_type_to_confirm"), input),
     h("div", {}, btn)));
 }

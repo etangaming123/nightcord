@@ -8,6 +8,7 @@
 
 import { getPrefs } from "./prefs.js";
 import { invalidate } from "./render.js";
+import { state } from "./state.js";
 import { toast } from "./ui/modals.js";
 import { scopedT } from "./strings.js";
 
@@ -60,7 +61,8 @@ export async function checkForUpdate() {
     /* ignore */
   }
   if (notified.includes(latestTag)) return; // toast already shown for this version
-  toast(t("update_toast", { latest: latestTag }), { ms: 6000 });
+  // Before logging in there is no Inbox to point at.
+  toast(t(state.user ? "update_toast_inbox" : "update_toast", { latest: latestTag }), { ms: 6000 });
   try {
     localStorage.setItem(NOTIFIED_KEY, JSON.stringify([...notified, latestTag].slice(-10)));
   } catch {

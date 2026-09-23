@@ -38,6 +38,18 @@ export function playSound(name) {
   }
 }
 
+// A desktop notification that isn't about a message (a reminder, the
+// touch-grass nudge). Silently does nothing when they aren't allowed.
+export function showDesktopNotification(title, body) {
+  if (!getPrefs().desktopNotifications || !("Notification" in window) || Notification.permission !== "granted") return;
+  try {
+    const n = new Notification(title, { body: String(body).slice(0, 200), tag: "nightcord-local" });
+    n.onclick = () => { window.focus(); n.close(); };
+  } catch {
+    /* some browsers only allow notifications from a service worker */
+  }
+}
+
 export function shouldNotify(message, channel) {
   if (!state.user || message.author?.user_id === state.user.user_id) return false;
   if (state.user.presence === "dnd") return false;

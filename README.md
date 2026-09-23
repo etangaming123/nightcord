@@ -11,6 +11,10 @@ A web-based messaging app, built for selfhosting. A parody of Discord.
 > [!WARNING]
 > **Whoever runs a server can see your IP address and read everything on it.** Only join servers run by people you
 > trust. The client warns about this before it connects anywhere new.
+>
+> **Link previews are fetched by the server, not by you.** When someone posts a link, the server requests that page
+> and proxies its preview image, so the site sees the *server's* address and never the readers'. Server owners who'd
+> rather not make outbound requests at all can turn it off with `link_embeds`.
 
 > [!NOTE]
 > Nightcord is built for **personal use**: a few friends, a big friend group at most. It's one small Python process
@@ -20,7 +24,17 @@ A web-based messaging app, built for selfhosting. A parody of Discord.
 
 ### Chat
 - Guilds with text channels, categories, topics, slowmode and (placeholder) voice channels
-- Markdown, replies, reactions, pins, edits, @mentions, typing indicators, unread badges synced across devices
+- Markdown (headings, lists, subtext, masked links, `<t:…>` timestamps, `#channel` chips), replies, reactions,
+  pins, edits, @mentions, typing indicators, unread badges synced across devices
+- **Link previews** built by the server, with an image proxy so reading a channel never tells the linked site who
+  you are. A leaving-site dialog names the real host before any link opens.
+- **Polls** with multiple choice, a countdown and visible voters, and **slash commands** — `/roll 2d6+3`, `/8ball`,
+  `/coinflip` and `/choose` are rolled by the server so nobody can type a lucky result, while `/shrug`, `/me`,
+  `/spoiler`, `/remind` and friends stay in the client
+- **Forward** a message anywhere, **Save** one for later in a private list, and **Mark Unread** to come back to it.
+  Every message has a right-click (or long-press) menu, and a Copy Link that opens in the app rather than a new tab.
+- Country flags in the emoji picker, a formatting toolbar over the message box, and keyboard shortcuts with a
+  cheat sheet on Ctrl+/
 - Search with `from:`, `in:`, `has:` and `pinned:` filters; Ctrl/Cmd+K quick switcher
 - File uploads with inline images and video
 - Custom emoji and stickers per guild, usable **everywhere by everyone**. No Nitro required, or even possible.
@@ -32,7 +46,9 @@ A web-based messaging app, built for selfhosting. A parody of Discord.
 - 1:1 and group DMs. Only your friends can add you to a group.
 - **Inbox:** announcements from the server owner, plus automatic notices when the rules change
 - **Account switcher:** keep several accounts on several servers and hop between them
-- Profiles with avatars, banners, gradient profile colours, bios and custom statuses
+- Profiles with avatars, banners, gradient profile colours, bios and custom statuses. Your status clears itself
+  after an hour (or whenever you like) and nobody sees it while you're invisible.
+- **Private notes** on people, readable only by you
 
 ### Running a server
 - Roles and permissions with per-channel overrides, kicks, bans, timeouts and audit logs
@@ -160,6 +176,7 @@ Settings you can `config set`:
 | `customization_mode` | `on`, `allowlist`, `off` |
 | `user_search` | `off` (default: add friends by exact username), `staff`, `on` |
 | `announcements_admins` | `true`, `false` (the owner can always post) |
+| `link_embeds` | `true`, `false`. Fetch pages people link to and show a preview. Off means the server makes no outbound requests for messages. |
 | `max_accounts_per_client` | 0 (no limit) to 20. A courtesy limit for the account switcher, not enforced. |
 
 ## Backups
@@ -188,7 +205,7 @@ Open <http://127.0.0.1:8000/app/?server=http://localhost:8765>.
 Tests:
 ```sh
 cd server && pip install -r requirements-dev.txt && pytest
-node client/tests/markdown.test.mjs
+cd client && npm test          # markdown tokenizer + a check that every UI string exists
 ```
 
 [`docs/PROTOCOL.md`](docs/PROTOCOL.md) is the source of truth for the wire protocol. `client/js/protocol.js` is
@@ -198,13 +215,7 @@ generated from `server/nightcord/protocol.py` by `python server/tools/gen_client
 ## Work in progress
 
 Things that might happen one day:
-- Slash commands (`/shrug`, `/roll`, `/8ball`…)
-- Polls
-- Saved messages
-- Private notes on people's profiles
-- A keyboard shortcut cheat sheet
-- Voice and video that actually carry audio
-- Link previews
+- Voice and video that actually carry audio (voice channels are presence-only placeholders today)
 
 ## License
 

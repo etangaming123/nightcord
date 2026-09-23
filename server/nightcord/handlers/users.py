@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
+import datetime as dt
 import logging
 import re
 
+from aiohttp import web
+
 from .. import perks
 from .. import protocol as P
+from ..db import iso_in
 from ..ids import new_id
 from ..protocol import ProtocolError
 from . import handles
@@ -44,10 +49,24 @@ async def broadcast_user(ctx, user: dict) -> None:
 
 @handles(P.USER_PROFILE)
 async def profile(ctx, conn, payload):
-    profile = ctx.db.profile(P.req_id(payload, "user_id"))
+    profile = ctx.db.profile(P.req_id(payload, "user_id"), viewer_id=conn.user_id)
     if profile is None:
         raise ProtocolError(P.NOT_FOUND, "User not found")
-    return {"user": profile, "status": ctx.hub.status_of(profile["user_id"])}
+    note = ctx.db.get_user_note(conn.user_id, profile["user_id"]) if conn.user_id else None
+    return {"user": profile, "status": ctx.hub.status_of(profile["user_id"]), "note": note}
+
+
+def _status_expiry(option: str | None) -> str | None:
+    """When a custom status set now should clear itself. "today" is the end of
+    the current UTC day — the server doesn't know the user's zone."""
+    if option in (None, "never"):
+        return None
+    if option == "today":
+        tomorrow = dt.datetime.now(dt.timezone.utc).date() + dt.timedelta(days=1)
+        return dt.datetime.combine(tomorrow, dt.time(), dt.timezone.utc).isoformat(
+            timespec="milliseconds"
+        ).replace("+00:00", "Z")
+    return iso_in(P.CUSTOM_STATUS_DURATIONS[option])
 
 
 @handles(P.USER_UPDATE)
@@ -59,6 +78,13 @@ async def update(ctx, conn, payload):
             if val is not None:
                 val = P.opt_text(payload, key, limit)
             fields[key] = val or None
+    if "custom_status" in payload:
+        # Setting or clearing the text always settles the expiry too, so a
+        # leftover one can't clear a status the user has since replaced.
+        option = P.opt_enum(payload, "custom_status_clear_after", tuple(P.CUSTOM_STATUS_DURATIONS))
+        fields["custom_status_expires_at"] = _status_expiry(option) if fields["custom_status"] else None
+    elif "custom_status_clear_after" in payload:
+        raise ProtocolError(P.BAD_REQUEST, "'custom_status_clear_after' needs a 'custom_status'")
     if "dm_privacy" in payload:
         if payload["dm_privacy"] not in P.DM_PRIVACY:
             raise ProtocolError(P.BAD_REQUEST, f"'dm_privacy' must be one of {P.DM_PRIVACY}")
@@ -246,3 +272,32 @@ async def search(ctx, conn, payload):
     if not query:
         return {"users": []}
     return {"users": ctx.db.search_users(query, exclude=conn.user_id)}
+
+
+# --- custom statuses that clear themselves ------------------------------------
+
+STATUS_SWEEP_EVERY = 30
+
+
+async def clear_expired_statuses(ctx) -> int:
+    """Drops custom statuses whose time is up and tells everyone who'd see them."""
+    cleared = 0
+    for user_id in ctx.db.expired_status_user_ids():
+        user = ctx.db.update_profile(user_id, {"custom_status": None, "custom_status_expires_at": None})
+        cleared += 1
+        await broadcast_user(ctx, user)
+    return cleared
+
+
+async def status_sweeper(app: "web.Application") -> None:
+    from ..app import CTX_KEY
+
+    ctx = app[CTX_KEY]
+    while True:
+        await asyncio.sleep(STATUS_SWEEP_EVERY)
+        try:
+            await clear_expired_statuses(ctx)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("custom status sweep failed")

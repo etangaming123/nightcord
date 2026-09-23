@@ -1,6 +1,6 @@
 # Nightcord Protocol
 
-Version: `0.8`
+Version: `0.13`
 
 This document is the single source of truth for the wire format between the
 Nightcord client (GitHub Pages, vanilla JS) and a Nightcord server (Python).
@@ -21,6 +21,11 @@ Each protocol version arrived with one commit on `main`, named in the middle col
 | 0.6 | Friends, blocking and message requests | Friends and friend requests, one-sided blocking, per-user DM privacy with message requests, group DMs limited to friends, and user search as a server setting (off by default). |
 | 0.7 | Announcements inbox | A server-wide announcements inbox with per-account read state, and automatic entries when the Terms or Privacy Policy change. |
 | 0.8 | Account switcher | `max_accounts_per_client`, an advisory server setting for clients that keep several accounts. |
+| 0.13 | Status privacy and expiry | A custom status is hidden from everyone else while you're offline or invisible, and can be set to clear itself after 30m, 1h, 4h or at the end of the day. |
+| 0.12 | Message tools | `message.forward` (a snapshot, not a reference), and `read_state.ack` learning to move backwards so a message can be marked unread. |
+| 0.11 | Saved messages and private notes | A private bookmark list (`saved.*`) filtered by live permissions, and a note you can keep on someone that only you can read (`user.note.set`). |
+| 0.10 | Polls and slash commands | Polls with per-answer counts, `poll.vote`, `poll.end` and a sweeper that closes expired ones; server-rolled `/roll`, `/8ball`, `/coinflip` and `/choose` stored on the message so results can't be faked. |
+| 0.9 | Link embeds | The server fetches pages people link to and stores a preview on the message (`embeds`), with an SSRF-guarded fetcher, an image proxy so viewers' addresses never reach third parties, `message.embeds.suppress`, and a `link_embeds` server setting. |
 
 ---
 
@@ -119,6 +124,13 @@ Besides `/ws`, the server answers:
   after an hour. Uploading needs no customisation perks; using an image
   may (§8d).
 - `GET /media/{media_id}` — a stored image. Public and immutable.
+- `GET /proxy/{signature}/{url}` — one image from a link preview (§4
+  Embed). `url` is the remote image's URL, base64url-encoded; `signature`
+  is HMAC-SHA256 over it with a per-server secret, so this can't be used as
+  an open proxy. The server fetches it with the same guards as a preview
+  (public addresses only, `image/*` only, 8 MB cap) and keeps the bytes for
+  a week. No authentication: an embed's images are as public as the message
+  they're on.
 
 ---
 
@@ -191,11 +203,22 @@ profile banner image and `profile_colors` (or null) the two colours of a
 gradient profile card.
 The user's own view (`auth.ok`'s `user`, `user.updated` sent to
 themselves) adds `bio`, `created_at`, `presence`
-(`online | idle | dnd | invisible`, their chosen status), `muted_until`
+(`online | idle | dnd | invisible`, their chosen status),
+`custom_status_expires_at` (ISO8601 or null), `muted_until`
 (ISO8601, `"permanent"` or null; §8c), `legal_version` (the documents
 they accepted, §8b) and `dm_privacy` (`everyone | requests | friends`,
 default `requests`; §5 Message requests). `user.profile` returns `PublicUser` plus `bio` and
 `created_at`.
+
+**`custom_status` is only sent to other people while you're around.** A
+`PublicUser` serialised for anyone else reads `custom_status: null`
+whenever that user's status is `offline` — really offline, or invisible.
+Your own view always shows it, so it's still there when you come back.
+Setting one may carry `custom_status_clear_after`: `30m`, `1h`, `4h`,
+`today` (the end of the current **UTC** day — the server doesn't know your
+zone) or `never` (the default). The server clears it when the time comes
+and sends `user.updated`. Changing or clearing the text always settles the
+expiry too, so an old one can't clear a status you've since replaced.
 
 A `deleted` user's profile fields are cleared and their `username` is a
 placeholder; clients show "Deleted User". Their messages stay.
@@ -232,7 +255,8 @@ Password is never sent to the client; the server stores only a bcrypt hash.
   },
   "user_search": "off | staff | on",
   "announcements_admins": false,
-  "max_accounts_per_client": 0
+  "max_accounts_per_client": 0,
+  "link_embeds": true
 }
 ```
 Defaults: `guild_creation: "on"`, `account_creation: "on"`,
@@ -249,7 +273,10 @@ username either way. `announcements_admins` (default false) lets server
 admins post announcements as well as the owner. `max_accounts_per_client`
 (default 0 = no limit, up to 20) is advisory: clients with an account
 switcher stop offering "Add account" for this server once they hold that
-many; the server doesn't enforce it.
+many; the server doesn't enforce it. `link_embeds` (default true) decides
+whether the server fetches pages people link to and builds previews (§4
+Embed); with it off the server makes no outbound requests for messages at
+all, and `/proxy` stops serving anything new.
 
 ### Guild
 ```json
@@ -377,6 +404,11 @@ only ever sent to users who have `VIEW_CHANNEL` in it.
   "reactions": [{ "emoji": "string", "user_ids": ["string"] }],
   "type": "default | member_join | member_leave | pin",
   "pinned": false,
+  "embeds": ["Embed"],
+  "embeds_suppressed": false,
+  "command": "Command | null",
+  "poll": "Poll | null",
+  "forward": "Forward | null",
   "attachments": ["Attachment"],
   "stickers": [{ "sticker_id": "string", "name": "string", "animated": false, "guild_id": "string" }]
 }
@@ -391,6 +423,99 @@ with empty `content`; `author` is the user they're about (who joined,
 left or pinned). A `pin` message's `reply_to_id` is the pinned message.
 System messages can't be edited, pinned or searched; they can be reacted
 to and deleted with `MANAGE_MESSAGES`.
+
+### Command
+```json
+{ "name": "roll | 8ball | coinflip | choose", "args": "2d6+3", "result": { } }
+```
+A slash command whose *result* the server produced, so nobody can type a
+lucky roll by hand. `message.send` takes `command: { name, args }` and the
+server fills in `result`; clients show it with a small "used /roll" header
+above the message. `content` may be empty when a command is attached.
+
+`result` by name:
+
+| name | `result` |
+|---|---|
+| `roll` | `{ notation: "2d6+3", rolls: [5, 1], modifier: 3, total: 9 }` — `NdM`, `dM` or `NdM±K`, at most 20 dice of 2–1000 sides |
+| `8ball` | `{ answer: "Reply hazy, try again." }` — `args` is the question |
+| `coinflip` | `{ side: "heads" \| "tails" }` |
+| `choose` | `{ options: ["a", "b"], picked: "b" }` — `args` is the options separated by `\|`, 2 to 20 of them |
+
+Everything else a client calls a slash command (`/shrug`, `/me`, `/spoiler`,
+`/nick`, `/poll`, …) is the client rewriting your own text or opening a
+dialog, and never reaches the server as a command.
+
+### Poll
+```json
+{
+  "question": "string",
+  "multi": false,
+  "expires_at": "ISO8601",
+  "ended_at": "ISO8601 | null",
+  "total_votes": 0,
+  "answers": [
+    { "answer_id": 1, "text": "string", "emoji": "string | null", "count": 0, "user_ids": ["string"] }
+  ]
+}
+```
+`message.send` takes `poll: { question, answers: [{ text, emoji? }], multi?,
+duration? }` — 2 to 10 answers, `duration` one of `1h`, `4h`, `8h`, `1d`
+(the default), `3d`, `1w`. `content` may be empty when a poll is attached.
+A message's poll can't be added, removed or edited afterwards.
+
+`answer_id` counts from 1 in the order the answers were given. Votes are
+public: `user_ids` lists who picked each answer, in the order they voted.
+`multi: false` polls take one answer per person.
+
+A poll closes when `expires_at` passes (the server sweeps for this) or when
+`poll.end` is called; `ended_at` is set either way and voting stops.
+
+### Forward
+```json
+{
+  "message_id": "string",
+  "channel_id": "string",
+  "guild_id": "string | null",
+  "source": "#general · My Guild",
+  "author": "PublicUser",
+  "sent_at": "ISO8601",
+  "content": "string",
+  "attachments": [{ "filename": "string", "content_type": "string", "size": 0 }]
+}
+```
+A copy of another message, carried along with the one that forwarded it.
+It is a **snapshot**: editing or deleting the original leaves the forward
+exactly as it was, and the attachments are listed by name only — no
+download URLs, because whoever reads the forward may not be allowed the
+files. `message_id` and `channel_id` are there so a client can offer to
+jump, which will simply fail for a reader who can't see the source.
+
+`message.forward` needs `VIEW_CHANNEL` on the source and `SEND_MESSAGES`
+on the target; the DM rules of §5 Message requests apply to the target
+like any other message. The forwarding message may carry `content` of its
+own as a note.
+
+### Saved message
+A message you bookmarked. Saving is private: nobody is told, and the
+message itself is untouched. `saved.list` returns ordinary `Message`
+objects with `saved_at`, `cursor` and `guild_id` added, newest saved first.
+Page with `before`, which takes a `cursor` (the timestamp alone would skip
+messages saved in the same millisecond).
+
+The list is filtered against **live** permissions on every read: a saved
+message in a channel you can no longer `VIEW_CHANNEL` and `READ_HISTORY`
+is left out rather than leaked, and one whose message was deleted is gone
+(the row cascades). `saved.remove` works even for a message you can no
+longer see, so nothing gets stuck.
+
+### User note
+```json
+{ "user_id": "string", "note": "string | null" }
+```
+A private note you keep on someone — up to 256 characters, visible only to
+you. `user.profile.result` carries your note about that person as `note`;
+`user.note.set` with an empty or null `note` deletes it.
 
 ### Attachment
 ```json
@@ -407,6 +532,43 @@ to and deleted with `MANAGE_MESSAGES`.
 `url` is relative to the server's https origin (§2 HTTP). Clients show
 `image/*` inline, play `video/*` and `audio/*` inline, open `text/plain`
 in a viewer, and offer everything else as a download.
+
+### Embed
+```json
+{
+  "kind": "link | image | video",
+  "url": "https://…",
+  "title": "string | null",
+  "description": "string | null",
+  "site_name": "string | null",
+  "author": "string | null",
+  "color": "#rrggbb | null",
+  "image": "/proxy/… | null",
+  "thumbnail": "/proxy/… | null"
+}
+```
+A preview the server built for a link somebody posted. The server reads at
+most 5 links per message — skipping code spans, spoilers and the `<url>`
+"no preview" forms of §4 Message — fetches each page and keeps `og:*`,
+`twitter:*`, `<title>`, `<meta name="description">` and `theme-color`.
+
+A URL that answers with an image is a `kind: "image"` embed; a YouTube
+watch, `youtu.be` or shorts link is a `kind: "video"` card with the video's
+thumbnail. Nothing is ever embedded as an iframe.
+
+`image` and `thumbnail` are **always** paths on this server
+(`/proxy/{signature}/{url}`, §2 HTTP), never third-party URLs: a link in a
+message must not be usable to collect every reader's IP address. The server
+fetches the real image once and caches it.
+
+Previews arrive after the message: `message.new` carries `embeds: []`, and
+a `message.updated` follows with them filled in. That update does **not**
+set `edited_at`, so it isn't shown as an edit. Editing a message clears its
+previews and looks again.
+
+`message.embeds.suppress` hides them (author, or `MANAGE_MESSAGES` in a
+guild); `embeds_suppressed` then stays true and `embeds` reads empty.
+Embeds are off entirely when the server's `link_embeds` setting is false.
 
 ### Media
 ```json
@@ -445,11 +607,31 @@ Its image is `GET /media/{sticker_id}`; clients show it at up to 160 px.
 `max_uses: 0` means unlimited; `expires_at: null` never expires. Codes
 are 8 characters and case-insensitive.
 
-Content is plain text with a small markdown subset rendered by clients:
-`**bold**`, `*italic*`, `__underline__`, `~~strike~~`, `` `code` ``,
-```` ```code blocks``` ````, `> quotes`, `||spoilers||` and links. Mentions
-are written `<@user_id>` and `@everyone`, custom emoji `<:name:id>` (§4
-Emoji). The server never renders HTML.
+Content is plain text with a small markdown subset rendered by clients. The
+server never renders HTML and never rewrites content; every rule below is a
+client-side display convention, so an older client just shows the raw text.
+
+Inline: `**bold**`, `*italic*`, `__underline__`, `~~strike~~`, `` `code` ``,
+`||spoilers||`.
+
+Blocks: ```` ```code blocks``` ````, `> quotes` (and `>>> ` for the rest of
+the message), `# `/`## `/`### ` headings, `-# ` subtext, and `- `/`* `/`1. `
+lists with one level of nesting (two or more leading spaces).
+
+Links: a bare `https://…` URL, `[label](https://…)` for a masked one, and
+`<https://…>` or `[label](<https://…>)` for a link the server should not
+build a preview for (§4 Embed). A trailing `)` counts as part of a bare URL
+only when the URL opened one itself.
+
+References: mentions `<@user_id>` and `@everyone`, channels `<#channel_id>`,
+custom emoji `<:name:id>` / `<a:name:id>` (§4 Emoji), and timestamps
+`<t:unix_seconds>` or `<t:unix_seconds:style>` where style is one of
+`t` `T` `d` `D` `f` `F` `R` (short/long time, short/long date, short/long
+date and time, relative). Clients render timestamps in the reader's own time
+zone; `R` counts up on its own. A `<#id>` whose channel the reader can't see
+is shown as a dead chip.
+
+A backslash escapes any of `` * _ ~ ` | \ < > @ # [ ] : - ``.
 
 ### Read state
 ```json
@@ -603,8 +785,8 @@ Server audit `action` values: `user.status`, `user.reset_password`,
 | type | direction | payload |
 |---|---|---|
 | `user.profile` | C→S | `{ user_id }` |
-| `user.profile.result` | S→C | `{ user: PublicUser + { bio, created_at }, status }` |
-| `user.update` | C→S | `{ display_name?, bio?, avatar_color?, custom_status?, banner_media_id?, profile_colors?, dm_privacy? }` — `null` or `""` clears a field. `banner_media_id` is a `banner` upload (needs `profile_banner`, and `animated_media` if animated); `profile_colors` needs `profile_colors` (§8d) |
+| `user.profile.result` | S→C | `{ user: PublicUser + { bio, created_at }, status, note }` — `note` is your own private note about them (§4 User note) |
+| `user.update` | C→S | `{ display_name?, bio?, avatar_color?, custom_status?, custom_status_clear_after?, banner_media_id?, profile_colors?, dm_privacy? }` — `null` or `""` clears a field. `custom_status_clear_after` is `30m \| 1h \| 4h \| today \| never` and only goes with a `custom_status` (§4 User). `banner_media_id` is a `banner` upload (needs `profile_banner`, and `animated_media` if animated); `profile_colors` needs `profile_colors` (§8d) |
 | `user.update.result` | S→C | `{ user }` (self view) |
 | `user.avatar.set` | C→S | `{ data_b64 }` — base64 image, or `null` to remove; or `{ media_id }` — an `avatar` upload (animated needs `animated_media`, §8d) |
 | `user.avatar.set.result` | S→C | `{ user }` (self view) |
@@ -807,7 +989,7 @@ A banned user can't rejoin by invite or public list (`banned`).
 | `channel.pins.result` | S→C | `{ messages: [Message] }` — most recently pinned first |
 | `channel.delete` | C→S | `{ channel_id }` — needs `MANAGE_CHANNELS`; deletes its messages too. Deleting a category moves its channels to the top level (synced ones keep the category's overwrites) |
 | `channel.delete.result` | S→C | `{}` |
-| `channel.ack` | C→S | `{ channel_id, message_id }` — mark read up to `message_id` and clear mentions |
+| `channel.ack` | C→S | `{ channel_id, message_id, unread?: bool }` — mark read up to `message_id` and clear mentions. `unread: true` does the opposite: the marker is put just *before* `message_id`, so it and everything after it are new again. That's the only way the marker ever moves backwards, and it leaves the mention count alone |
 | `channel.ack.result` | S→C | `{ read_state: ReadState }` |
 | `channel.created` | S→C | `Channel` — event to users who can view it |
 | `channel.updated` | S→C | `Channel` — event to users who can view it |
@@ -903,6 +1085,25 @@ the Terms or Privacy Policy. Read state is one `last_read_id` per account.
 | `message.pin.result` | S→C | `{}` |
 | `message.unpin` | C→S | `{ message_id }` — same permission; sends `message.updated` |
 | `message.unpin.result` | S→C | `{}` |
+| `message.embeds.suppress` | C→S | `{ message_id, suppressed?: bool }` — hide or restore a message's link previews (§4 Embed). The author, or `MANAGE_MESSAGES` in a guild. Defaults to hiding |
+| `message.embeds.suppress.result` | S→C | `{ message }` |
+| `poll.vote` | C→S | `{ message_id, answer_ids: [int] }` — replaces your votes; `[]` takes them back. `poll_ended` once it's closed |
+| `poll.vote.result` | S→C | `{ poll }` |
+| `poll.end` | C→S | `{ message_id }` — close a poll early. Its author, or `MANAGE_MESSAGES` in a guild |
+| `poll.end.result` | S→C | `{ poll }` |
+| `poll.updated` | S→C | `{ message_id, channel_id, guild_id, poll }` — to everyone who can see the channel, after a vote or a close |
+| `message.forward` | C→S | `{ message_id, channel_id, content? }` — copy a message you can see into a channel you can send in (§4 Forward) |
+| `message.forward.result` | S→C | `{ message_id, message }` |
+| `saved.list` | C→S | `{ before?: cursor, limit?: 1-50 }` — your saved messages, newest saved first (§4 Saved message). `before` is the previous page's `next` |
+| `saved.list.result` | S→C | `{ messages, has_more, next, count }` |
+| `saved.add` | C→S | `{ message_id }` — bookmark a message you can see. At most 500 |
+| `saved.add.result` | S→C | `{ message_id, saved: true, count }` |
+| `saved.remove` | C→S | `{ message_id }` |
+| `saved.remove.result` | S→C | `{ message_id, saved: false, count }` |
+| `saved.updated` | S→C | `{ message_id, saved, count }` — to your **other** connections, so every window agrees |
+| `user.note.set` | C→S | `{ user_id, note }` — your private note about someone (§4 User note). Empty or null deletes it |
+| `user.note.set.result` | S→C | `{ user_id, note }` |
+| `user.note.updated` | S→C | `{ user_id, note }` — to your other connections |
 | `message.search` | C→S | `{ guild_id \| channel_id, query?, author_id?, has?: "file"\|"image"\|"video"\|"link", pinned?, before?, after?, offset? }` — at least one filter. Searches text channels where you have `READ_HISTORY` (or one channel / DM); words match as prefixes, newest first, 25 per page |
 | `message.search.result` | S→C | `{ messages: [Message + guild_id], total }` |
 | `message.new` | S→C | `Message` + `guild_id` — to everyone who can view the channel (including the sender) |
@@ -1181,7 +1382,8 @@ server-side failure; safe to retry), `setup_required`,
 `blocked` (one of you blocked the other), `dm_not_allowed` (their DM
 privacy doesn't let you message them), `request_pending` (your message
 request hasn't been accepted yet), `already_friends`, `not_friends` (group
-DMs only take your friends).
+DMs only take your friends), `embeds_disabled` (this server doesn't build
+link previews), `poll_ended` (that poll has closed).
 This list will grow — append here rather than inventing undocumented codes.
 
 ---
@@ -1190,7 +1392,6 @@ This list will grow — append here rather than inventing undocumented codes.
 
 Documented so the schema leaves room, without being built yet:
 
-- Link embeds / previews
 - Per-member channel overwrites
 - Voice/video audio (voice channels are placeholders, §5 Voice)
 - Server-wide emoji packs (emoji belong to guilds)

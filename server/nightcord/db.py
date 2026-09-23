@@ -47,6 +47,9 @@ DEFAULT_SERVER_CONFIG = {
     "announcements_admins": False,
     # Advisory: how many accounts one client should keep for this server (0 = no limit).
     "max_accounts_per_client": 0,
+    # Fetch pages people link to and show a preview (PROTOCOL.md §4 Embed).
+    # Off means the server never makes outbound requests for messages.
+    "link_embeds": True,
 }
 
 STAFF_LEVELS = {"none": 0, "moderator": 1, "admin": 2, "owner": 3}
@@ -279,6 +282,66 @@ MIGRATIONS: list[str] = [
         edited_at        TEXT
     )
     """,
+    # 6 — link embeds (PROTOCOL.md §4 Embed).
+    """
+    ALTER TABLE messages ADD COLUMN embeds TEXT NOT NULL DEFAULT '[]';
+    ALTER TABLE messages ADD COLUMN embeds_suppressed INTEGER NOT NULL DEFAULT 0
+    """,
+    # 7 — slash commands and polls (PROTOCOL.md §4 Message, Poll).
+    """
+    ALTER TABLE messages ADD COLUMN command TEXT;
+    CREATE TABLE polls (
+        message_id  INTEGER PRIMARY KEY REFERENCES messages(message_id) ON DELETE CASCADE,
+        question    TEXT NOT NULL,
+        multi       INTEGER NOT NULL DEFAULT 0,
+        expires_at  TEXT NOT NULL,
+        ended_at    TEXT
+    );
+    CREATE INDEX polls_open ON polls(expires_at) WHERE ended_at IS NULL;
+    CREATE TABLE poll_answers (
+        message_id  INTEGER NOT NULL REFERENCES polls(message_id) ON DELETE CASCADE,
+        answer_id   INTEGER NOT NULL,
+        text        TEXT NOT NULL,
+        emoji       TEXT,
+        PRIMARY KEY (message_id, answer_id)
+    );
+    CREATE TABLE poll_votes (
+        message_id  INTEGER NOT NULL REFERENCES polls(message_id) ON DELETE CASCADE,
+        answer_id   INTEGER NOT NULL,
+        user_id     TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        voted_at    TEXT NOT NULL,
+        PRIMARY KEY (message_id, answer_id, user_id)
+    );
+    CREATE INDEX poll_votes_by_user ON poll_votes(user_id)
+    """,
+    # 8 — saved messages and private notes about people.
+    """
+    CREATE TABLE saved_messages (
+        user_id     TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        message_id  INTEGER NOT NULL REFERENCES messages(message_id) ON DELETE CASCADE,
+        saved_at    TEXT NOT NULL,
+        PRIMARY KEY (user_id, message_id)
+    );
+    CREATE INDEX saved_by_message ON saved_messages(message_id);
+    CREATE TABLE user_notes (
+        user_id     TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        target_id   TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        note        TEXT NOT NULL,
+        updated_at  TEXT NOT NULL,
+        PRIMARY KEY (user_id, target_id)
+    );
+    CREATE INDEX user_notes_by_target ON user_notes(target_id)
+    """,
+    # 9 — forwarded messages (PROTOCOL.md §4 Forward).
+    """
+    ALTER TABLE messages ADD COLUMN forward TEXT
+    """,
+    # 10 — custom statuses that clear themselves.
+    """
+    ALTER TABLE users ADD COLUMN custom_status_expires_at TEXT;
+    CREATE INDEX users_status_expiry ON users(custom_status_expires_at)
+        WHERE custom_status_expires_at IS NOT NULL
+    """,
 ]
 
 MIGRATION_2 = """
@@ -398,6 +461,11 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+def saved_cursor(saved_at: str, message_id: str) -> str:
+    """Opaque page cursor for saved.list: the save time plus the message id."""
+    return f"{saved_at}|{message_id}"
+
+
 def _sid(v: int | None) -> str | None:
     return None if v is None else str(v)
 
@@ -411,14 +479,26 @@ def staff_level(row: sqlite3.Row) -> int:
     return STAFF_LEVELS[staff_role(row)]
 
 
-def _public_user(row: sqlite3.Row) -> dict:
+def _visible_custom_status(row: sqlite3.Row, status_of) -> str | None:
+    """A custom status is part of being around: someone who is offline or
+    invisible doesn't broadcast one (PROTOCOL.md §4 User). `status_of` is the
+    Hub's view of who's here, or None outside a running server (the CLI, a
+    backup), where nothing is hidden."""
+    if not row["custom_status"]:
+        return None
+    if status_of is not None and status_of(row["user_id"]) == "offline":
+        return None
+    return row["custom_status"]
+
+
+def _public_user(row: sqlite3.Row, status_of=None) -> dict:
     return {
         "user_id": row["user_id"],
         "username": row["username"],
         "display_name": row["display_name"],
         "avatar_id": row["avatar_id"],
         "avatar_color": row["avatar_color"],
-        "custom_status": row["custom_status"],
+        "custom_status": _visible_custom_status(row, status_of),
         "is_server_owner": bool(row["is_server_owner"]),
         "server_role": staff_role(row),
         "deleted": row["deleted_at"] is not None,
@@ -431,6 +511,9 @@ def _public_user(row: sqlite3.Row) -> dict:
 def _self_user(row: sqlite3.Row) -> dict:
     return {
         **_public_user(row),
+        # You always see your own status, even while invisible.
+        "custom_status": row["custom_status"],
+        "custom_status_expires_at": row["custom_status_expires_at"],
         "bio": row["bio"],
         "created_at": row["created_at"],
         "presence": row["presence_pref"],
@@ -482,6 +565,7 @@ class Database:
         self.conn.execute("PRAGMA busy_timeout = 5000")
         self._migrate()
         self._file_secret: str | None = None
+        self._status_of = None
 
     def _migrate(self) -> None:
         version = self.conn.execute("PRAGMA user_version").fetchone()[0]
@@ -505,6 +589,14 @@ class Database:
                 self.conn.execute("ROLLBACK")
                 raise
         self.has_fts = self._one("SELECT 1 FROM sqlite_master WHERE name = 'messages_fts'") is not None
+
+    def set_status_source(self, fn) -> None:
+        """Tell the serializer who is online, so custom statuses can be hidden
+        from everyone else while someone is offline or invisible."""
+        self._status_of = fn
+
+    def _pub(self, row: sqlite3.Row) -> dict:
+        return _public_user(row, self._status_of)
 
     def close(self) -> None:
         self.conn.close()
@@ -571,7 +663,7 @@ class Database:
 
     def public_user(self, user_id: str) -> dict | None:
         row = self.get_user_row(user_id)
-        return _public_user(row) if row else None
+        return self._pub(row) if row else None
 
     def public_users(self, user_ids: Iterable[str]) -> dict[str, dict]:
         ids = list(set(user_ids))
@@ -580,14 +672,18 @@ class Database:
             chunk = ids[i : i + 500]
             marks = ",".join("?" * len(chunk))
             for row in self._all(f"SELECT * FROM users WHERE user_id IN ({marks})", *chunk):
-                out[row["user_id"]] = _public_user(row)
+                out[row["user_id"]] = self._pub(row)
         return out
 
-    def profile(self, user_id: str) -> dict | None:
+    def profile(self, user_id: str, viewer_id: str | None = None) -> dict | None:
         row = self.get_user_row(user_id)
         if row is None:
             return None
-        return {**_public_user(row), "bio": row["bio"], "created_at": row["created_at"]}
+        out = {**self._pub(row), "bio": row["bio"], "created_at": row["created_at"]}
+        # Looking at your own profile shows your own status, invisible or not.
+        if viewer_id == user_id:
+            out["custom_status"] = row["custom_status"]
+        return out
 
     def create_user(
         self,
@@ -611,6 +707,13 @@ class Database:
             return None
         return self.get_user(user_id)
 
+    def expired_status_user_ids(self) -> list[str]:
+        rows = self._all(
+            "SELECT user_id FROM users WHERE custom_status_expires_at IS NOT NULL AND custom_status_expires_at <= ?",
+            now_iso(),
+        )
+        return [r["user_id"] for r in rows]
+
     def set_password_hash(self, user_id: str, password_hash: str, *, keep_token: str | None = None) -> None:
         """Changes the password and revokes every session except keep_token's."""
         with self._tx():
@@ -622,8 +725,8 @@ class Database:
 
     def update_profile(self, user_id: str, fields: dict) -> dict:
         allowed = {
-            "display_name", "bio", "avatar_color", "custom_status", "avatar_id", "presence_pref",
-            "server_role", "muted_until", "legal_version", "perks", "banner_id", "profile_colors",
+            "display_name", "bio", "avatar_color", "custom_status", "custom_status_expires_at", "avatar_id",
+            "presence_pref", "server_role", "muted_until", "legal_version", "perks", "banner_id", "profile_colors",
             "dm_privacy",
         }
         with self._tx():
@@ -650,7 +753,7 @@ class Database:
             r["user_id"],
         )["n"]
         return {
-            **_public_user(r),
+            **self._pub(r),
             "status": r["status"],
             "created_at": r["created_at"],
             "note": r["note"],
@@ -699,7 +802,7 @@ class Database:
             self._exec(
                 "UPDATE users SET username = ?, username_lower = ?, password_hash = '!', status = 'deleted', "
                 "deleted_at = ?, display_name = NULL, bio = NULL, avatar_id = NULL, avatar_color = NULL, "
-                "custom_status = NULL, note = NULL, server_role = 'none', muted_until = NULL, perks = 0, banner_id = NULL, "
+                "custom_status = NULL, custom_status_expires_at = NULL, note = NULL, server_role = 'none', muted_until = NULL, perks = 0, banner_id = NULL, "
                 "profile_colors = NULL WHERE user_id = ?",
                 f"deleted-{user_id}", f"deleted-{user_id}", now_iso(), user_id,
             )
@@ -709,6 +812,9 @@ class Database:
             self._exec("DELETE FROM notify_prefs WHERE user_id = ?", user_id)
             self._exec("DELETE FROM read_states WHERE user_id = ?", user_id)
             self._exec("DELETE FROM relationships WHERE user_id = ? OR other_id = ?", user_id, user_id)
+            self._exec("DELETE FROM poll_votes WHERE user_id = ?", user_id)
+            self._exec("DELETE FROM saved_messages WHERE user_id = ?", user_id)
+            self._exec("DELETE FROM user_notes WHERE user_id = ? OR target_id = ?", user_id, user_id)
         return {"avatar_id": row["avatar_id"], "banner_id": row["banner_id"], "attachment_ids": attachment_ids}
 
     def search_users(self, query: str, *, exclude: str, limit: int = 20) -> list[dict]:
@@ -719,7 +825,7 @@ class Database:
             "ORDER BY username_lower LIMIT ?",
             exclude, like, like, limit,
         )
-        return [_public_user(r) for r in rows]
+        return [self._pub(r) for r in rows]
 
     def set_user_status(self, user_id: str, status: str) -> bool:
         cur = self._exec(
@@ -1563,6 +1669,7 @@ class Database:
             f"SELECT * FROM attachments WHERE message_id IN ({marks}) ORDER BY attachment_id", *ids
         ):
             attachments.setdefault(a["message_id"], []).append(self._attachment(a))
+        polls = self._polls(ids)
         out = []
         for r in rows:
             reply = replies.get(r["reply_to_id"]) if r["reply_to_id"] is not None else None
@@ -1584,6 +1691,11 @@ class Database:
                 "reactions": reactions.get(r["message_id"], []),
                 "type": r["type"],
                 "pinned": r["pinned_at"] is not None,
+                "embeds": [] if r["embeds_suppressed"] else json.loads(r["embeds"] or "[]"),
+                "embeds_suppressed": bool(r["embeds_suppressed"]),
+                "command": json.loads(r["command"]) if r["command"] else None,
+                "forward": json.loads(r["forward"]) if r["forward"] else None,
+                "poll": polls.get(r["message_id"]),
                 "attachments": attachments.get(r["message_id"], []),
                 "stickers": [
                     stickers.get(sid) or {"sticker_id": sid, "deleted": True} for sid in sticker_ids[r["message_id"]]
@@ -1640,6 +1752,10 @@ class Database:
             for r in self._all("SELECT attachment_id FROM attachments WHERE message_id = ?", message_id)
         ]
 
+    def message_attachments(self, message_id: int) -> list[dict]:
+        rows = self._all("SELECT * FROM attachments WHERE message_id = ? ORDER BY attachment_id", message_id)
+        return [self._attachment(a) for a in rows]
+
     def stale_attachment_ids(self, older_than_iso: str) -> list[str]:
         rows = self._all(
             "SELECT attachment_id FROM attachments WHERE message_id IS NULL AND created_at < ?", older_than_iso
@@ -1670,15 +1786,30 @@ class Database:
         type_: str = "default",
         attachment_ids: list[str] | None = None,
         sticker_ids: list[str] | None = None,
+        command: dict | None = None,
+        poll: dict | None = None,
+        forward: dict | None = None,
     ) -> dict:
         message_id = int(new_id())
         with self._tx():
             self._exec(
                 "INSERT INTO messages(message_id, channel_id, author_user_id, content, sent_at, "
-                "reply_to_id, mentions, mention_everyone, type, sticker_ids) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "reply_to_id, mentions, mention_everyone, type, sticker_ids, command, forward) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 message_id, channel_id, author_user_id, content, now_iso(),
                 reply_to_id, json.dumps(mentions or []), int(mention_everyone), type_, json.dumps(sticker_ids or []),
+                json.dumps(command) if command else None, json.dumps(forward) if forward else None,
             )
+            if poll:
+                self._exec(
+                    "INSERT INTO polls(message_id, question, multi, expires_at) VALUES (?,?,?,?)",
+                    message_id, poll["question"], int(poll["multi"]), poll["expires_at"],
+                )
+                for i, answer in enumerate(poll["answers"], start=1):
+                    self._exec(
+                        "INSERT INTO poll_answers(message_id, answer_id, text, emoji) VALUES (?,?,?,?)",
+                        message_id, i, answer["text"], answer.get("emoji"),
+                    )
             for aid in attachment_ids or []:
                 self._exec("UPDATE attachments SET message_id = ? WHERE attachment_id = ?", message_id, aid)
             self._exec("UPDATE channels SET last_message_id = ? WHERE channel_id = ?", message_id, channel_id)
@@ -1702,6 +1833,143 @@ class Database:
             "UPDATE messages SET content = ?, edited_at = ?, mentions = ?, mention_everyone = ? "
             "WHERE message_id = ?",
             content, now_iso(), json.dumps(mentions), int(mention_everyone), message_id,
+        )
+        return self.get_message(message_id)
+
+    # --- polls (PROTOCOL.md §4 Poll) ---------------------------------------
+
+    def _polls(self, message_ids: list[int]) -> dict[int, dict]:
+        """{message_id: Poll} with per-answer counts and voter ids."""
+        if not message_ids:
+            return {}
+        marks = ",".join("?" * len(message_ids))
+        rows = self._all(f"SELECT * FROM polls WHERE message_id IN ({marks})", *message_ids)
+        if not rows:
+            return {}
+        ids = [r["message_id"] for r in rows]
+        pmarks = ",".join("?" * len(ids))
+        answers: dict[int, list[dict]] = {}
+        for a in self._all(
+            f"SELECT * FROM poll_answers WHERE message_id IN ({pmarks}) ORDER BY message_id, answer_id", *ids
+        ):
+            answers.setdefault(a["message_id"], []).append(
+                {"answer_id": a["answer_id"], "text": a["text"], "emoji": a["emoji"], "user_ids": []}
+            )
+        by_answer = {(m, a["answer_id"]): a for m, lst in answers.items() for a in lst}
+        for v in self._all(
+            f"SELECT message_id, answer_id, user_id FROM poll_votes WHERE message_id IN ({pmarks}) "
+            "ORDER BY voted_at, rowid",
+            *ids,
+        ):
+            target = by_answer.get((v["message_id"], v["answer_id"]))
+            if target is not None:
+                target["user_ids"].append(v["user_id"])
+        out = {}
+        for r in rows:
+            items = answers.get(r["message_id"], [])
+            out[r["message_id"]] = {
+                "question": r["question"],
+                "multi": bool(r["multi"]),
+                "expires_at": r["expires_at"],
+                "ended_at": r["ended_at"],
+                "total_votes": sum(len(a["user_ids"]) for a in items),
+                "answers": [{**a, "count": len(a["user_ids"])} for a in items],
+            }
+        return out
+
+    def get_poll(self, message_id: int) -> dict | None:
+        return self._polls([message_id]).get(message_id)
+
+    def poll_row(self, message_id: int) -> sqlite3.Row | None:
+        return self._one("SELECT * FROM polls WHERE message_id = ?", message_id)
+
+    def poll_answer_ids(self, message_id: int) -> list[int]:
+        return [r["answer_id"] for r in self._all(
+            "SELECT answer_id FROM poll_answers WHERE message_id = ? ORDER BY answer_id", message_id
+        )]
+
+    def set_poll_votes(self, message_id: int, user_id: str, answer_ids: list[int]) -> None:
+        """Replaces this user's votes; an empty list clears them."""
+        with self._tx():
+            self._exec("DELETE FROM poll_votes WHERE message_id = ? AND user_id = ?", message_id, user_id)
+            for answer_id in answer_ids:
+                self._exec(
+                    "INSERT INTO poll_votes(message_id, answer_id, user_id, voted_at) VALUES (?,?,?,?)",
+                    message_id, answer_id, user_id, now_iso(),
+                )
+
+    def end_poll(self, message_id: int) -> bool:
+        return self._exec(
+            "UPDATE polls SET ended_at = ? WHERE message_id = ? AND ended_at IS NULL", now_iso(), message_id
+        ).rowcount > 0
+
+    def expired_poll_ids(self) -> list[int]:
+        rows = self._all("SELECT message_id FROM polls WHERE ended_at IS NULL AND expires_at <= ?", now_iso())
+        return [r["message_id"] for r in rows]
+
+    # --- saved messages and private notes (PROTOCOL.md §4) ------------------
+
+    def save_message(self, user_id: str, message_id: int) -> bool:
+        """True when it wasn't already saved."""
+        return self._exec(
+            "INSERT OR IGNORE INTO saved_messages(user_id, message_id, saved_at) VALUES (?,?,?)",
+            user_id, message_id, now_iso(),
+        ).rowcount > 0
+
+    def unsave_message(self, user_id: str, message_id: int) -> bool:
+        return self._exec(
+            "DELETE FROM saved_messages WHERE user_id = ? AND message_id = ?", user_id, message_id
+        ).rowcount > 0
+
+    def saved_count(self, user_id: str) -> int:
+        return self._one("SELECT COUNT(*) AS n FROM saved_messages WHERE user_id = ?", user_id)["n"]
+
+    def is_saved(self, user_id: str, message_id: int) -> bool:
+        return self._one(
+            "SELECT 1 FROM saved_messages WHERE user_id = ? AND message_id = ?", user_id, message_id
+        ) is not None
+
+    def saved_messages(self, user_id: str, *, before: str | None = None, limit: int = 50) -> list[dict]:
+        """Newest saved first. `before` is a cursor from saved_cursor(); paging
+        on the timestamp alone would skip rows saved in the same millisecond.
+        Each row carries saved_at and its cursor."""
+        at, _, mid = (before or "").partition("|")
+        rows = self._all(
+            "SELECT s.saved_at, m.* FROM saved_messages s JOIN messages m ON m.message_id = s.message_id "
+            "WHERE s.user_id = ? AND (s.saved_at < ? OR (s.saved_at = ? AND s.message_id < ?)) "
+            "ORDER BY s.saved_at DESC, s.message_id DESC LIMIT ?",
+            user_id, at or "9999", at or "9999", int(mid) if mid.isdigit() else 2**63 - 1, limit,
+        )
+        saved_at = {r["message_id"]: r["saved_at"] for r in rows}
+        out = self._messages(rows)
+        for m in out:
+            m["saved_at"] = saved_at[int(m["message_id"])]
+            m["cursor"] = saved_cursor(m["saved_at"], m["message_id"])
+        return out
+
+    def get_user_note(self, user_id: str, target_id: str) -> str | None:
+        row = self._one("SELECT note FROM user_notes WHERE user_id = ? AND target_id = ?", user_id, target_id)
+        return row["note"] if row else None
+
+    def set_user_note(self, user_id: str, target_id: str, note: str | None) -> str | None:
+        if not note:
+            self._exec("DELETE FROM user_notes WHERE user_id = ? AND target_id = ?", user_id, target_id)
+            return None
+        self._exec(
+            "INSERT INTO user_notes(user_id, target_id, note, updated_at) VALUES (?,?,?,?) "
+            "ON CONFLICT(user_id, target_id) DO UPDATE SET note = excluded.note, updated_at = excluded.updated_at",
+            user_id, target_id, note, now_iso(),
+        )
+        return note
+
+    def set_embeds(self, message_id: int, embeds: list[dict]) -> dict | None:
+        """Fills in link previews without touching edited_at (PROTOCOL.md §4 Embed)."""
+        self._exec("UPDATE messages SET embeds = ? WHERE message_id = ?", json.dumps(embeds), message_id)
+        return self.get_message(message_id)
+
+    def suppress_embeds(self, message_id: int, suppressed: bool) -> dict | None:
+        self._exec(
+            "UPDATE messages SET embeds_suppressed = ? WHERE message_id = ?", int(suppressed), message_id
         )
         return self.get_message(message_id)
 
@@ -1871,13 +2139,22 @@ class Database:
 
     # --- read state ----------------------------------------------------------
 
-    def ack(self, user_id: str, channel_id: str, message_id: int) -> dict:
-        self._exec(
-            "INSERT INTO read_states(user_id, channel_id, last_read_id, mention_count) VALUES (?,?,?,0) "
-            "ON CONFLICT(user_id, channel_id) DO UPDATE SET "
-            "last_read_id = MAX(last_read_id, excluded.last_read_id), mention_count = 0",
-            user_id, channel_id, message_id,
-        )
+    def ack(self, user_id: str, channel_id: str, message_id: int, *, backward: bool = False) -> dict:
+        """Marks read up to message_id. `backward` is "mark unread": it lets the
+        marker move back down the channel, which a normal ack never does."""
+        if backward:
+            self._exec(
+                "INSERT INTO read_states(user_id, channel_id, last_read_id, mention_count) VALUES (?,?,?,0) "
+                "ON CONFLICT(user_id, channel_id) DO UPDATE SET last_read_id = excluded.last_read_id",
+                user_id, channel_id, message_id,
+            )
+        else:
+            self._exec(
+                "INSERT INTO read_states(user_id, channel_id, last_read_id, mention_count) VALUES (?,?,?,0) "
+                "ON CONFLICT(user_id, channel_id) DO UPDATE SET "
+                "last_read_id = MAX(last_read_id, excluded.last_read_id), mention_count = 0",
+                user_id, channel_id, message_id,
+            )
         return self.read_state(user_id, channel_id)
 
     def bump_mentions(self, channel_id: str, user_ids: Iterable[str]) -> None:
@@ -2281,7 +2558,7 @@ class Database:
         self._exec("DELETE FROM stickers WHERE sticker_id = ?", sticker_id)
 
     def perk_users(self) -> list[dict]:
-        return [_public_user(r) for r in self._all("SELECT * FROM users WHERE perks = 1 ORDER BY username_lower")]
+        return [self._pub(r) for r in self._all("SELECT * FROM users WHERE perks = 1 ORDER BY username_lower")]
 
     # --- audit log -----------------------------------------------------------
 

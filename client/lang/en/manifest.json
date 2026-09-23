@@ -37,5 +37,14 @@
   "ui/stickers",
   "ui/legal",
   "ui/images",
-  "ui/markdown"
+  "ui/markdown",
+  "ui/links",
+  "ui/embeds",
+  "ui/commands",
+  "ui/polls",
+  "ui/saved",
+  "ui/messageMenu",
+  "ui/quote",
+  "ui/format",
+  "ui/shortcuts"
 ]

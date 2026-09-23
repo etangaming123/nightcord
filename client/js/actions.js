@@ -3,32 +3,38 @@
 
 import { req } from "./api.js";
 import { playSound } from "./notify.js";
+import { addReminder, cancelReminder, listReminders, restoreReminders } from "./reminders.js";
 import { ERR, LIMITS, PERMS, T } from "./protocol.js";
 import { invalidate } from "./render.js";
 import {
-  can, channelTree, currentChannel, currentGuild, ensureReadState, isDm, isGuildOwner, isStaff, isUnread, markRead,
-  memberById, nameOf, pref, relationKind, rememberUser, resetMessages, sortChannels, staffLevel, state, userById,
+  can, channelTree, currentChannel, currentGuild, ensureReadState, isDm, isGuildOwner, isIncomingRequest, isStaff,
+  isUnread, markRead, memberById, nameOf, pref, relationKind, rememberUser, resetMessages, sortChannels, sortDms,
+  staffLevel, state, userById,
 } from "./state.js";
 import * as store from "./storage.js";
 import { clearPending, readyAttachments } from "./uploads.js";
 import { adminModeration } from "./ui/admin.js";
 import { channelSettings } from "./ui/channelSettings.js";
 import { flashMessage, isNearBottom, renderTyping } from "./ui/chat.js";
-import { clearDraft, focusComposer, fromWire, toWire } from "./ui/composer.js";
+import { clearDraft, focusComposer, fromWire, insertIntoComposer, toWire } from "./ui/composer.js";
 import * as dialogs from "./ui/dialogs.js";
 import { $, displayName, h, idGt } from "./ui/dom.js";
 import { openEmojiPicker } from "./ui/emoji.js";
 import { guildSettings } from "./ui/guildSettings.js";
 import { render as renderMarkdown } from "./ui/markdown.js";
+import { pollDialog } from "./ui/polls.js";
 import { uploadImage } from "./ui/images.js";
-import { closeFullscreen, closeModal, confirmModal, fullscreenOpen, openMenu, openModal, openPopover, refreshFullscreen, toast } from "./ui/modals.js";
+import { closeFullscreen, closeModal, closePopover, confirmModal, formModal, fullscreenOpen, openMenu, openModal, openPopover, refreshFullscreen, toast } from "./ui/modals.js";
 import { inviteDialog, invitePreview } from "./ui/invites.js";
 import { openAccountSwitcher } from "./ui/accounts.js";
 import { openPins } from "./ui/pins.js";
+import { openSaved } from "./ui/saved.js";
+import { forwardDialog, messageLink, messageMenu } from "./ui/messageMenu.js";
 import { copyText, openProfile } from "./ui/profile.js";
 import { openSearch } from "./ui/search.js";
 import { userSettings } from "./ui/settings.js";
 import { openSwitcher } from "./ui/switcher.js";
+import { shortcutSheet } from "./ui/shortcutSheet.js";
 import { scopedT } from "./strings.js";
 
 const t = scopedT("actions");
@@ -43,6 +49,12 @@ export async function loadAll() {
     req(T.GUILD_LIST), req(T.DM_LIST), req(T.READ_STATE_LIST), req(T.NOTIFY_PREFS_GET), req(T.FRIEND_LIST),
     req(T.ANNOUNCEMENT_LIST),
   ]);
+  // The bookmark list is private and usually small; knowing the ids up front
+  // is what lets the toolbar show 🔖 filled in.
+  req(T.SAVED_LIST, { limit: 50 }).then(({ messages }) => {
+    state.saved = new Set(messages.map((m) => m.message_id));
+    invalidate("chat");
+  }).catch(() => {});
   state.relationships = new Map(f.relationships.map((rel) => [rel.user.user_id, rel]));
   f.relationships.forEach((rel) => rememberUser(rel.user));
   setAnnouncements(a);
@@ -325,7 +337,9 @@ export function markChannelRead(channelId) {
   if (!rs?.last_message_id) return;
   markRead(channelId, rs.last_message_id);
   req(T.CHANNEL_ACK, { channel_id: channelId, message_id: rs.last_message_id }).catch(() => {});
-  invalidate("rail", "sidebar", "title");
+  // Marking read on purpose takes the NEW divider and the bar with it.
+  if (state.channelId === channelId) state.unreadMarker = null;
+  invalidate("rail", "sidebar", "title", "chat");
 }
 
 // --- messages --------------------------------------------------------------------
@@ -374,10 +388,10 @@ function startSlowmode(channel, seconds) {
   invalidate("composer");
 }
 
-export async function sendMessage(content, reply) {
+export async function sendMessage(content, reply, extras = {}) {
   const channelId = state.channelId;
   const channel = currentChannel();
-  const payload = { channel_id: channelId, content };
+  const payload = { channel_id: channelId, content, ...extras };
   if (reply) {
     payload.reply_to_id = reply.message_id;
     payload.mention_reply = state.replyPing;
@@ -477,7 +491,7 @@ export function pickReaction(m, anchor) {
   openEmojiPicker(anchor, (emoji) => {
     const mine = m.reactions?.find((r) => sameEmoji(r.emoji, emoji))?.user_ids.includes(state.user.user_id);
     if (!mine) react(m, emoji);
-  }, { placement: "left" });
+  }, { placement: "left", key: `react:${m.message_id}` });
 }
 
 export async function sendSticker(sticker) {
@@ -506,7 +520,7 @@ export async function emojiInfo(emoji, anchor) {
   const body = h("div", { class: "emoji-info" },
     h("img", { class: "cemoji huge", src: anchor.src, alt: `:${emoji.name}:` }),
     h("div", {}, h("strong", {}, `:${emoji.name}:`), h("p", { class: "muted small" }, tc("loading"))));
-  openPopover(anchor, body, { placement: "top" });
+  if (!openPopover(anchor, body, { placement: "top", key: `emoji:${emoji.id}` })) return;
   try {
     const info = await req(T.EMOJI_INFO, { emoji_id: emoji.id });
     const note = info.is_member
@@ -552,8 +566,258 @@ export async function jumpTo(messageId, channelId = state.channelId, guildId = u
   await openChannel(channelId, { around: messageId });
 }
 
-export const pinMessage = (m) => req(T.MESSAGE_PIN, { message_id: m.message_id }).then(() => toast(t("message_pinned")), fail);
-export const unpinMessage = (m) => req(T.MESSAGE_UNPIN, { message_id: m.message_id }).then(() => toast(t("message_unpinned")), fail);
+// Resolve true once the message really was (un)pinned, so callers that redraw
+// a list (the pins panel) only do so when something changed.
+function pinAction(m, skipConfirm, { type, title, body, confirmLabel, done }) {
+  const run = () => req(type, { message_id: m.message_id }).then(() => { toast(t(done)); return true; });
+  if (skipConfirm) return run().catch((e) => { fail(e); return false; });
+  return new Promise((resolve) => {
+    confirmModal({
+      title: t(title),
+      message: t(body),
+      confirmLabel: t(confirmLabel),
+      danger: false,
+      onConfirm: () => run().then(() => resolve(true)),
+    });
+  });
+}
+
+// --- keyboard navigation (client/js/shortcuts.js) -------------------------------
+
+// The channels you can actually open here, in sidebar order: a guild's text
+// channels, or your conversations on Home.
+function navigableChannels() {
+  if (state.view === "home") return sortDms([...state.dms.values()]).filter((c) => !isIncomingRequest(c));
+  const tree = channelTree();
+  return [...tree.loose, ...tree.categories.flatMap((c) => c.channels)].filter((c) => c.kind === "text");
+}
+
+function stepThrough(list, currentId, delta) {
+  if (!list.length) return null;
+  const i = list.findIndex((c) => c.channel_id === currentId);
+  if (i < 0) return list[delta > 0 ? 0 : list.length - 1];
+  return list[(i + delta + list.length) % list.length];
+}
+
+export function stepChannel(delta) {
+  const next = stepThrough(navigableChannels(), state.channelId, delta);
+  if (next) openChannel(next.channel_id);
+}
+
+export function stepUnread(delta) {
+  const unread = navigableChannels().filter((c) => isUnread(c.channel_id));
+  if (!unread.length) { toast(t("nothing_unread")); return; }
+  const next = stepThrough(unread, state.channelId, delta);
+  if (next) openChannel(next.channel_id);
+}
+
+// Home counts as the first stop, the way the rail reads.
+const railStops = () => [null, ...state.guilds.keys()];
+
+export function stepGuild(delta) {
+  const stops = railStops();
+  const here = state.view === "home" ? null : state.guildId;
+  const i = stops.indexOf(here);
+  const next = stops[((i < 0 ? 0 : i) + delta + stops.length) % stops.length];
+  if (next === null) openHome();
+  else openGuild(next);
+}
+
+export function openGuildAt(index) {
+  const id = [...state.guilds.keys()][index];
+  if (id) openGuild(id);
+}
+
+// Esc with nothing else open marks this channel read; Shift+Esc the guild.
+export function markCurrentRead({ guild = false } = {}) {
+  if (guild && state.guildId) { markGuildRead(state.guildId); return true; }
+  if (!guild && state.channelId && isUnread(state.channelId)) { markChannelRead(state.channelId); return true; }
+  return false;
+}
+
+export const openComposerEmoji = () => $("#composer .emoji-btn")?.click();
+export const openComposerUpload = () => $("#composer .attach-btn")?.click();
+export const showShortcuts = () => shortcutSheet();
+
+// --- message tools (PROTOCOL.md §4 Forward, §5 read_state.ack) -------------------
+
+export const showMessageMenu = (m, anchor) => messageMenu(m, anchor, actions);
+export const forwardMessage = (m) => forwardDialog(m, actions, { formModal });
+export const linkToMessage = (m) => messageLink(m, serverParam);
+export const toastText = (text) => toast(text);
+
+export async function sendForward(m, channelId, note) {
+  const res = await req(T.MESSAGE_FORWARD, { message_id: m.message_id, channel_id: channelId, content: note || undefined });
+  if (state.channelId === channelId && addMessage(res.message)) {
+    state.scrollTo = "bottom";
+    invalidate("chat");
+  }
+  return res.message_id;
+}
+
+// Mark this message, and everything after it, unread.
+export function markUnreadFrom(m) {
+  const channelId = m.channel_id || state.channelId;
+  req(T.CHANNEL_ACK, { channel_id: channelId, message_id: m.message_id, unread: true })
+    .then(({ read_state: rs }) => {
+      state.readStates.set(channelId, rs);
+      if (state.channelId === channelId) state.unreadMarker = rs.last_read_id;
+      invalidate("rail", "sidebar", "title", "chat");
+      toast(t("marked_unread"));
+    })
+    .catch(fail);
+}
+
+// --- saved messages and private notes (PROTOCOL.md §4) ---------------------------
+
+export const isSaved = (m) => state.saved.has(m.message_id);
+
+export async function saveMessage(m) {
+  const { count } = await req(T.SAVED_ADD, { message_id: m.message_id });
+  state.saved.add(m.message_id);
+  invalidate("chat");
+  toast(t("saved_message", { count }));
+}
+
+export async function unsaveMessage(m) {
+  await req(T.SAVED_REMOVE, { message_id: m.message_id });
+  state.saved.delete(m.message_id);
+  invalidate("chat");
+}
+
+export function toggleSaved(m) {
+  (isSaved(m) ? unsaveMessage(m) : saveMessage(m)).catch(fail);
+}
+
+// From saved.updated on another connection of this account.
+export function applySaved({ message_id: id, saved }) {
+  if (saved) state.saved.add(id);
+  else state.saved.delete(id);
+  invalidate("chat");
+}
+
+export const showSaved = (anchor) => openSaved(anchor, actions);
+
+export const setUserNote = (userId, note) => req(T.USER_NOTE_SET, { user_id: userId, note })
+  .then((res) => { applyUserNote(res); return res.note; });
+
+export function applyUserNote({ user_id: userId, note }) {
+  if (note) state.notes.set(userId, note);
+  else state.notes.delete(userId);
+}
+
+export const userNote = (userId) => state.notes.get(userId) ?? null;
+
+// --- polls (PROTOCOL.md §4 Poll) -------------------------------------------------
+
+export function votePoll(m, answerIds) {
+  req(T.POLL_VOTE, { message_id: m.message_id, answer_ids: answerIds })
+    .then(({ poll }) => { applyPoll(m.message_id, poll); })
+    .catch(fail);
+}
+
+export function endPoll(m) {
+  return req(T.POLL_END, { message_id: m.message_id })
+    .then(({ poll }) => { applyPoll(m.message_id, poll); })
+    .catch(fail);
+}
+
+export function applyPoll(messageId, poll) {
+  const m = state.messages.find((x) => x.message_id === messageId);
+  if (!m) return false;
+  m.poll = poll;
+  invalidate("chat");
+  return true;
+}
+
+// --- client-only slash commands (ui/commands.js) ---------------------------------
+
+// "20m", "2h30m", "90" (minutes) -> milliseconds, or null.
+export function parseDuration(text) {
+  const m = /^(?:(\d{1,3})\s*d)?\s*(?:(\d{1,3})\s*h)?\s*(?:(\d{1,4})\s*m(?:in)?)?\s*(?:(\d{1,4})\s*s)?$/i
+    .exec(String(text || "").trim());
+  if (!m || !m.slice(1).some(Boolean)) {
+    const bare = /^\d{1,4}$/.exec(String(text || "").trim());
+    return bare ? Number(bare[0]) * 60000 : null;
+  }
+  const ms = (Number(m[1] || 0) * 86400 + Number(m[2] || 0) * 3600 + Number(m[3] || 0) * 60 + Number(m[4] || 0)) * 1000;
+  return ms > 0 ? ms : null;
+}
+
+function setReminder(args) {
+  const [when, ...rest] = String(args || "").split(/\s+/);
+  const ms = parseDuration(when);
+  const text = rest.join(" ").trim();
+  if (!ms || !text) { toast(t("remind_usage"), { error: true }); return; }
+  const reminder = addReminder(text, ms);
+  toast(t("remind_set", { text, when: new Date(reminder.at).toLocaleTimeString() }));
+}
+
+// /time [HH:MM] -> a <t:unix:t> the reader sees in their own zone.
+function insertTimestamp(args) {
+  const now = new Date();
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(args || "").trim());
+  if (m) {
+    now.setHours(Number(m[1]), Number(m[2]), 0, 0);
+    if (now.getTime() < Date.now() - 12 * 3600 * 1000) now.setDate(now.getDate() + 1);
+  } else if (args.trim()) {
+    toast(t("time_usage"), { error: true });
+    return;
+  }
+  insertIntoComposer(`<t:${Math.floor(now.getTime() / 1000)}:t> `);
+}
+
+export function runCommand(action, args) {
+  if (action === "poll") { composePoll(); return; }
+  if (action === "remind") { setReminder(args); return; }
+  if (action === "time") { insertTimestamp(args); return; }
+  if (action === "nick") {
+    if (state.view !== "guild" || !memberById(state.user.user_id)) { toast(t("nick_needs_guild"), { error: true }); return; }
+    if (!can("CHANGE_NICKNAME")) { toast(t("nick_not_allowed"), { error: true }); return; }
+    const nickname = String(args || "").trim();
+    if (!nickname) { changeNickname(state.user.user_id); return; }
+    req(T.MEMBER_NICKNAME_SET, { guild_id: state.guildId, user_id: state.user.user_id, nickname })
+      .then((res) => { upsertMember(res.member); toast(t("nickname_set", { nickname })); })
+      .catch(fail);
+  }
+}
+
+// The /poll dialog, and sending what it collected.
+export const composePoll = () => pollDialog(
+  (poll) => sendMessage("", null, { poll }),
+  { formModal, openEmojiPicker },
+);
+
+// Link previews (PROTOCOL.md §4 Embed): the author, or anyone who can
+// manage messages here, may hide them.
+export function canSuppressEmbeds(m) {
+  if (!m.embeds?.length || !state.connected) return false;
+  const channel = currentChannel();
+  if (!channel) return false;
+  return m.author?.user_id === state.user?.user_id || (!isDm(channel) && can("MANAGE_MESSAGES", channel));
+}
+
+export function suppressEmbeds(m) {
+  req(T.MESSAGE_EMBEDS_SUPPRESS, { message_id: m.message_id, suppressed: true })
+    .then((res) => { if (updateMessage(res.message)) invalidate("chat"); })
+    .catch(fail);
+}
+
+// A <#channel_id> chip: switch to that channel wherever it lives.
+export async function openChannelById(channelId) {
+  closePopover();
+  if (state.dms.has(channelId)) { await openHome(channelId); return; }
+  const here = state.channels.find((c) => c.channel_id === channelId);
+  if (here) { await openChannel(channelId); return; }
+  toast(t("channel_not_here"), { error: true });
+}
+
+export const pinMessage = (m, skipConfirm = false) => pinAction(m, skipConfirm, {
+  type: T.MESSAGE_PIN, title: "pin_title", body: "pin_body", confirmLabel: "pin_confirm", done: "message_pinned",
+});
+export const unpinMessage = (m, skipConfirm = false) => pinAction(m, skipConfirm, {
+  type: T.MESSAGE_UNPIN, title: "unpin_title", body: "unpin_body", confirmLabel: "unpin_confirm", done: "message_unpinned",
+});
 export const showPins = (anchor) => openPins(anchor, actions);
 export const showSearch = (initial) => openSearch(actions, initial);
 export const showSwitcher = () => openSwitcher(actions);
@@ -642,9 +906,12 @@ export function statusMenu(anchor) {
     "-",
     {
       label: state.user.custom_status ? t("edit_custom_status") : t("set_custom_status"), icon: "💬",
-      onClick: () => dialogs.customStatusDialog(state.user.custom_status, async (text) => {
-        setSelf((await req(T.USER_UPDATE, { custom_status: text || null })).user);
-      }),
+      onClick: () => dialogs.customStatusDialog(state.user.custom_status, async (text, clearAfter) => {
+        setSelf((await req(T.USER_UPDATE, {
+          custom_status: text || null,
+          custom_status_clear_after: text ? clearAfter : undefined,
+        })).user);
+      }, { expiresAt: state.user.custom_status_expires_at }),
     },
     state.user.custom_status ? {
       label: t("clear_custom_status"), icon: "✕",
@@ -652,7 +919,7 @@ export function statusMenu(anchor) {
     } : null,
     { label: t("edit_profile"), icon: "✎", onClick: () => openUserSettings("profile") },
     { label: t("copy_user_id"), icon: "🆔", onClick: () => copyText(state.user.user_id, t("copied_user_id")) },
-  ], { placement: "top" });
+  ], { placement: "top", key: "status" });
 }
 
 export const openUserSettings = (section) => userSettings(actions, section);
@@ -686,10 +953,18 @@ export async function updateGuild(patch) {
 
 export const createInvite = async (opts = {}) => (await req(T.GUILD_INVITE_CREATE, { guild_id: state.guildId, ...opts })).invite;
 
+// The ?server= value for a shareable link. Plain ws:// keeps its scheme —
+// without it the client would try wss:// and fail (connection.js defaults to
+// https); wss:// is the default, so it's left off.
+export function serverParam() {
+  if (!state.url) return "";
+  const url = new URL(state.url);
+  return url.protocol === "ws:" ? `ws://${url.host}` : url.host;
+}
+
 // A link that opens this client, connects to this server and shows the invite.
 export function inviteLink(code) {
-  const server = new URL(state.url).host;
-  return `${location.origin}${location.pathname}?server=${encodeURIComponent(server)}&invite=${encodeURIComponent(code)}`;
+  return `${location.origin}${location.pathname}?server=${encodeURIComponent(serverParam())}&invite=${encodeURIComponent(code)}`;
 }
 
 export const openInviteDialog = () => inviteDialog(actions);
@@ -782,7 +1057,7 @@ export async function guildMenu(g, anchor) {
     "-",
     { label: t("copy_guild_id"), icon: "🆔", onClick: () => copyText(g.guild_id, t("copied_guild_id")) },
     isGuildOwner(g) ? null : { label: g.ghost ? t("leave_ghost") : t("leave_guild"), icon: "⇥", danger: true, onClick: () => leaveGuild(g) },
-  ], { placement: anchor instanceof Element ? "bottom" : "right" });
+  ], { placement: anchor instanceof Element ? "bottom" : "right", key: `guild:${g.guild_id}` });
 }
 
 // --- channels ---------------------------------------------------------------------
@@ -894,7 +1169,7 @@ export function channelMenu(c, anchor) {
     manage ? { label: isCat ? t("delete_category") : t("delete_channel"), icon: "🗑", danger: true, onClick: () => dialogs.deleteChannelDialog(c, () => req(T.CHANNEL_DELETE, { channel_id: c.channel_id })) } : null,
     "-",
     { label: t("copy_channel_id"), icon: "🆔", onClick: () => copyText(c.channel_id, t("copied_channel_id")) },
-  ], { placement: "right" });
+  ], { placement: "right", key: `channel:${c.channel_id}` });
 }
 
 // --- voice (placeholder: presence only, no audio yet) ------------------------------
@@ -1014,7 +1289,7 @@ export function dmMenu(ch, anchor) {
     ch.kind === "group_dm" ? { label: t("add_people"), icon: "＋", onClick: () => addToGroup(ch) } : null,
     "-",
     { label: ch.kind === "dm" ? t("close_conversation") : t("leave_group"), icon: "✕", danger: ch.kind !== "dm", onClick: () => leaveDm(ch) },
-  ], { placement: "right" });
+  ], { placement: "right", key: `dm:${ch.channel_id}` });
 }
 
 // --- message requests (PROTOCOL.md §5 Message requests) ------------------------------
@@ -1028,7 +1303,19 @@ export async function acceptRequest(ch) {
   }
 }
 
-export async function declineRequest(ch) {
+export function declineRequest(ch, skipConfirm = false) {
+  if (skipConfirm) return doDeclineRequest(ch);
+  const other = ch.recipients?.find((u) => u.user_id !== state.user.user_id);
+  confirmModal({
+    title: t("decline_request_title"),
+    message: t("decline_request_body", { name: nameOf(userById(other?.user_id) || other || {}, null) }),
+    confirmLabel: t("decline_request_confirm"),
+    onConfirm: () => doDeclineRequest(ch),
+  });
+  return undefined;
+}
+
+async function doDeclineRequest(ch) {
   try {
     await req(T.DM_REQUEST_DECLINE, { channel_id: ch.channel_id });
     state.dms.delete(ch.channel_id);
@@ -1257,7 +1544,7 @@ export function memberMenu(userId, anchor) {
     ...(staffItems(userId).length ? ["-", { heading: t("server_staff_heading") }, ...staffItems(userId)] : []),
     "-",
     { label: t("copy_user_id"), icon: "🆔", onClick: () => copyText(userId, t("copied_user_id")) },
-  ], { placement: "left" });
+  ], { placement: "left", key: `member:${userId}` });
 }
 
 // --- session -----------------------------------------------------------------------
@@ -1277,6 +1564,13 @@ export const actions = {
   openGuild, openHome, openDm, openChannel, loadOlder, loadNewer, jumpToPresent, seenBottom,
   sendMessage, typing, reply, cancelReply, rerenderComposer, startEdit, cancelEdit, saveEdit, deleteMessage,
   react, unreact, pickReaction, jumpTo, showTopic, pinMessage, unpinMessage, showPins, showSearch, showSwitcher,
+  openChannelById, canSuppressEmbeds, suppressEmbeds, votePoll, endPoll, composePoll, runCommand,
+  isSaved, saveMessage, unsaveMessage, toggleSaved, showSaved, setUserNote, userNote, applyUserNote,
+  listReminders, cancelReminder,
+  showMessageMenu, forwardMessage, sendForward, markUnreadFrom, linkToMessage, copyText, toastText,
+  markChannelRead, markGuildRead,
+  stepChannel, stepUnread, stepGuild, openGuildAt, markCurrentRead, openComposerEmoji, openComposerUpload,
+  showShortcuts,
   inviteLink, openInviteDialog, openInvite, createInvite, setGuildIcon, setGuildIconMedia,
   reorderChannels, sidebarOrder, toggleCategory, isCollapsed, joinVoice, leaveVoice, setVoiceFlags,
   changeNickname, staffItems, nameOf,

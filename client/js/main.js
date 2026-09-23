@@ -6,27 +6,35 @@ import { ackCurrent, actions, loadAll, openInvite, restoreView, setSessionHooks 
 import { req } from "./api.js";
 import { Connection, NightcordError, certTrustUrl, normalizeServerUrl } from "./connection.js";
 import { resync, wireEvents } from "./events.js";
-import { applyPrefs } from "./prefs.js";
+import { applyPrefs, getPrefs } from "./prefs.js";
+import { restoreReminders } from "./reminders.js";
 import { ERR, LIMITS, PROTOCOL_VERSION, T } from "./protocol.js";
 import { checkForUpdate } from "./update-check.js";
+import { handleShortcut, shouldFocusComposer } from "./shortcuts.js";
 import { flush, invalidate, setActions } from "./render.js";
 import { currentChannel, resetServerState, state } from "./state.js";
 import * as store from "./storage.js";
 import { $, add, clear, h, setAvatarBase } from "./ui/dom.js";
 import { clearPending } from "./uploads.js";
-import { setupDropZone } from "./ui/composer.js";
+import { focusComposer, setupDropZone } from "./ui/composer.js";
 import { legalLinks, legalUpdateModal, renderLegalTabs, showLegalModal } from "./ui/legal.js";
 import { closeSearch, searchOpen } from "./ui/search.js";
-import { closeFullscreen, closeModal, closePopover, openModal, toast } from "./ui/modals.js";
+import { parseMessageLink, setMessageLinkHandler, setupLinkGuard } from "./ui/links.js";
+import { closeFullscreen, closeModal, closePopover, confirmAction, fullscreenOpen, modalOpen, openModal, popoverOpen, toast } from "./ui/modals.js";
 import { loadStrings, scopedT } from "./strings.js";
 
 const t = scopedT("main");
 const tc = scopedT("common");
 
 const IDLE_AFTER_MS = 10 * 60 * 1000;
+// Three hours of use with no real break. It's a parody app; it can afford one
+// joke that's also good advice.
+const GRASS_AFTER_MS = 3 * 60 * 60 * 1000;
+const GRASS_SNOOZE_MS = 60 * 60 * 1000;
 const BANNED_CLOSE = 4003;
 
 let pendingInvite = null; // ?invite=CODE, opened once logged in
+let pendingJump = null; // ?jump=…/…/…, a message link opened once logged in
 let addingAccount = false; // on the login screen to add another account (not replace one)
 
 setActions(actions);
@@ -40,14 +48,27 @@ function showScreen(which) {
   if (which !== "app") document.title = t("brand");
 }
 
-function showConnect({ error = null, prefill = "" } = {}) {
+// prefill: what to put back in the address box (only after a real failure,
+// so cancelling never rewrites what the user typed).
+// tab: force a tab; left out, whichever tab is showing stays put.
+function showConnect({ error = null, prefill = null, tab = null } = {}) {
   showScreen("connect");
   const servers = store.getServers();
   const list = clear($("#saved-servers"));
   servers.forEach((s, i) => {
     const remove = h("button", {
       class: "icon-btn", type: "button", title: t("forget_server"), "aria-label": t("forget_server_aria", { label: s.label }),
-      on: { click: (e) => { e.stopPropagation(); store.removeServer(s.url); showConnect(); } },
+      on: {
+        click: (e) => {
+          e.stopPropagation();
+          confirmAction(e, {
+            title: t("forget_server_title", { label: s.label }),
+            message: t("forget_server_body"),
+            confirmLabel: t("forget_server"),
+            onConfirm: () => { store.removeServer(s.url); showConnect(); },
+          });
+        },
+      },
     }, "×");
     add(list, h("li", {
       class: "saved-server", tabindex: "0", role: "button",
@@ -56,18 +77,31 @@ function showConnect({ error = null, prefill = "" } = {}) {
         keydown: (e) => { if (e.key === "Enter") connectTo(s.url); },
       },
     }, h("div", { class: "meta" },
-      h("div", { class: "name" }, s.label, i === 0 && servers.length > 1 ? h("span", { class: "pill" }, t("last_used_badge")) : ""),
+      h("div", { class: "name" }, h("span", {}, s.label), i === 0 && servers.length > 1 ? h("span", { class: "pill" }, t("last_used_badge")) : ""),
       h("div", { class: "url" }, s.url,
         store.getAccounts(s.url).length ? ` · ${t("account_count", { count: store.getAccounts(s.url).length })}` : "")), remove));
   });
   $("#saved-empty").hidden = servers.length > 0;
   const form = $("#connect-form");
-  if (prefill) form.address.value = prefill.replace(/^(https?|wss?):\/\//i, "");
+  // Keep an explicit ws:// or wss:// — the scheme chip only stands in for https.
+  if (prefill) form.address.value = /^wss?:\/\//i.test(prefill) ? prefill : prefill.replace(/^https?:\/\//i, "");
   updateScheme();
+  setSavedBusy(false);
   const box = $("#connect-error");
   box.hidden = !error;
   if (error) clear(box, error);
-  setConnectTab(prefill || servers.length === 0 ? "new" : "saved");
+  // Neither panel showing yet: this is the first draw, so pick a sensible tab.
+  if (tab) setConnectTab(tab);
+  else if ($("#tab-new").hidden && $("#tab-saved").hidden) setConnectTab(servers.length ? "saved" : "new");
+}
+
+// Saved-server cards can't be clicked while a connection is being set up.
+function setSavedBusy(busy) {
+  $("#tab-saved").classList.toggle("busy", busy);
+  for (const card of $("#saved-servers").querySelectorAll(".saved-server")) {
+    card.setAttribute("aria-disabled", String(busy));
+    card.tabIndex = busy ? -1 : 0;
+  }
 }
 
 function setConnectTab(which) {
@@ -125,17 +159,24 @@ function ipWarning(url) {
   });
 }
 
+// One connection attempt at a time: a second click (or a saved card while the
+// form is still trying) would leave the first socket dangling.
+let connecting = false;
+
 // addAccount: go to the login screen even if this server has saved accounts.
-async function connectTo(input, { addAccount = false } = {}) {
+// fromForm: the address came from the New server box, so a failure is worth
+// putting back there; a saved card or a boot-time reconnect never rewrites it.
+async function connectTo(input, { addAccount = false, fromForm = false } = {}) {
+  if (connecting) return;
   let url;
   try {
     url = normalizeServerUrl(input);
   } catch (e) {
-    showConnect({ error: e.message, prefill: input });
+    showConnect({ error: e.message, prefill: fromForm ? input : null, tab: "new" });
     return;
   }
   if (!store.isTrusted(url) && !(await ipWarning(url))) {
-    showConnect({ prefill: input });
+    showConnect();
     return;
   }
   store.setTrusted(url);
@@ -149,12 +190,14 @@ async function connectTo(input, { addAccount = false } = {}) {
   let cancelled = false;
   const onCancel = () => { cancelled = true; conn.close(); };
   conn.on(T.ERROR, (p) => { if (p.code === ERR.IP_BANNED) banned = p.message; });
+  connecting = true;
+  setSavedBusy(true);
   button.disabled = true;
   button.textContent = t("connecting");
   status.hidden = !button.hidden; // only show the status text when the Connect button itself is on the other tab
   status.textContent = t("connecting");
   cancelBtn.hidden = false;
-  cancelBtn.addEventListener("click", onCancel);
+  cancelBtn.onclick = onCancel; // assigned, not added: never stacks up
   const hintTimer = setTimeout(() => { hint.hidden = false; }, 6000);
   try {
     await conn.open();
@@ -164,15 +207,18 @@ async function connectTo(input, { addAccount = false } = {}) {
   } catch (e) {
     conn.close();
     state.conn = null;
-    if (cancelled) showConnect({ prefill: input });
-    else showConnect({ error: banned ? banned : connectError(url, e), prefill: input });
+    // Cancelling is not a failure: leave the box and the tab exactly as they were.
+    if (cancelled) showConnect();
+    else showConnect({ error: banned ? banned : connectError(url, e), prefill: fromForm ? input : null });
     return;
   } finally {
+    connecting = false;
+    setSavedBusy(false);
     button.disabled = false;
     button.textContent = t("connect");
     status.hidden = true;
     cancelBtn.hidden = true;
-    cancelBtn.removeEventListener("click", onCancel);
+    cancelBtn.onclick = null;
     clearTimeout(hintTimer);
     hint.hidden = true;
   }
@@ -399,6 +445,7 @@ async function enterApp({ session_token, user, legal_update_required }) {
   state.users.set(user.user_id, user);
   state.connected = true;
   applyPrefs(); // themes depend on this server's customisation settings
+  restoreReminders(); // /remind survives a reload (client/js/reminders.js)
   showScreen("app");
   invalidate();
   flush();
@@ -413,6 +460,11 @@ async function enterApp({ session_token, user, legal_update_required }) {
     const code = pendingInvite;
     pendingInvite = null;
     openInvite(code);
+  }
+  if (pendingJump) {
+    const jump = pendingJump;
+    pendingJump = null;
+    actions.jumpTo(jump.messageId, jump.channelId, jump.guildId);
   }
 }
 
@@ -545,6 +597,10 @@ function wireConnection(conn) {
 // --- auto-idle ---
 
 let lastInput = Date.now();
+// When the current unbroken stretch started. Going idle counts as a break.
+let activeSince = Date.now();
+let grassDue = Date.now() + GRASS_AFTER_MS;
+let grassOpen = false;
 
 function markActive() {
   lastInput = Date.now();
@@ -560,7 +616,35 @@ function checkIdle() {
     state.afk = true;
     req(T.PRESENCE_SET, { afk: true }).catch(() => {});
     invalidate("sidebar");
+    // A real break: the clock starts again when they come back.
+    activeSince = Date.now();
+    grassDue = Date.now() + GRASS_AFTER_MS;
   }
+  checkGrass();
+}
+
+function checkGrass() {
+  if (grassOpen || state.afk || !state.user || !getPrefs().touchGrass) return;
+  if (Date.now() < grassDue || modalOpen()) return;
+  grassOpen = true;
+  const hours = Math.max(1, Math.round((Date.now() - activeSince) / 3600000));
+  const close = (snooze) => {
+    grassOpen = false;
+    closeModal();
+    grassDue = Date.now() + snooze;
+    activeSince = Date.now();
+  };
+  openModal({
+    title: t("grass_title"),
+    content: h("div", { class: "stack" },
+      h("p", {}, t("grass_body", { hours })),
+      h("p", { class: "muted small" }, t("grass_note"))),
+    actions: [
+      h("button", { class: "btn", type: "button", on: { click: () => close(GRASS_SNOOZE_MS) } }, t("grass_snooze")),
+      h("button", { class: "btn primary", type: "button", on: { click: () => close(GRASS_AFTER_MS) } }, t("grass_done")),
+    ],
+    onClose: () => close(GRASS_SNOOZE_MS),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -582,12 +666,20 @@ async function boot() {
   matchMedia("(prefers-color-scheme: light)").addEventListener?.("change", applyPrefs);
   $("#connect-form").addEventListener("submit", (e) => {
     e.preventDefault();
-    connectTo(e.currentTarget.address.value);
+    connectTo(e.currentTarget.address.value, { fromForm: true });
   });
   $("#connect-form").address.addEventListener("input", updateScheme);
   $("#tab-btn-new").addEventListener("click", () => setConnectTab("new"));
   $("#tab-btn-saved").addEventListener("click", () => setConnectTab("saved"));
   $("#saved-empty-cta").addEventListener("click", () => setConnectTab("new"));
+  $("#whats-this").addEventListener("click", () => {
+    const ts = scopedT("shell");
+    openModal({
+      title: t("whats_this_title"),
+      content: h("p", {}, ts("whats_this_body")),
+      actions: [h("button", { class: "btn primary", type: "button", on: { click: closeModal } }, tc("close"))],
+    });
+  });
   $("#connect-localhost").addEventListener("click", () => {
     const input = $("#connect-form").address;
     input.value = "localhost:8765";
@@ -602,7 +694,7 @@ async function boot() {
   $("#legal-decline").addEventListener("click", () => {
     disconnect();
     store.setLastServer(null);
-    showConnect({ error: t("must_accept_rules") });
+    showConnect({ error: t("must_accept_rules"), tab: "saved" });
   });
   $("#auth-form").addEventListener("submit", submitAuth);
   $("#setup-form").addEventListener("submit", submitSetup);
@@ -626,25 +718,41 @@ async function boot() {
   setInterval(checkIdle, 30 * 1000);
   window.addEventListener("focus", () => { markActive(); ackCurrent(); });
   document.addEventListener("visibilitychange", () => { if (!document.hidden) ackCurrent(); });
-  // Escape closes the search panel / reply bar / inline edit even when focus is elsewhere.
+  // One handler for the whole shortcut table (client/js/shortcuts.js), plus
+  // the Escape ladder, which has to know what else is open.
   document.addEventListener("keydown", (e) => {
-    if (!state.user || $("#app").hidden) return;
-    const mod = e.ctrlKey || e.metaKey;
-    if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); actions.showSwitcher(); return; }
-    if (mod && e.key.toLowerCase() === "f" && !e.shiftKey && currentChannel()) { e.preventDefault(); actions.showSearch(); return; }
-    if (e.key !== "Escape" || e.defaultPrevented) return;
-    if (searchOpen()) closeSearch();
-    else if (state.editingId) actions.cancelEdit();
-    else if (state.replyTo) actions.cancelReply();
+    if (!state.user || $("#app").hidden || e.defaultPrevented) return;
+    if (e.key === "Escape") {
+      if (modalOpen() || popoverOpen() || fullscreenOpen()) return; // they close themselves
+      if (searchOpen()) { closeSearch(); return; }
+      if (state.editingId) { actions.cancelEdit(); return; }
+      if (state.replyTo) { actions.cancelReply(); return; }
+      // Nothing left to close: Esc marks read, Shift+Esc the whole guild.
+      if (actions.markCurrentRead({ guild: e.shiftKey })) e.preventDefault();
+      return;
+    }
+    if (handleShortcut(e, actions)) return;
+    // Start typing anywhere and the message box takes it.
+    if (shouldFocusComposer(e) && currentChannel()) focusComposer();
   });
   setupDropZone();
+  setupLinkGuard();
+  // A message link pasted into a message opens in place, if it's this server.
+  setMessageLinkHandler((jump) => {
+    if (!state.user) return false;
+    if (jump.server && state.url && jump.server !== new URL(state.url).host) return false;
+    actions.jumpTo(jump.messageId, jump.channelId, jump.guildId);
+    return true;
+  });
 
   // ?server=host:port lets a server operator share a direct link;
-  // &invite=CODE opens that guild invite once logged in.
+  // &invite=CODE opens that guild invite once logged in;
+  // &jump=<guild|@me>/<channel>/<message> opens a message link.
   const params = new URLSearchParams(location.search);
   const param = params.get("server");
   pendingInvite = params.get("invite");
-  if (param || pendingInvite) history.replaceState(null, "", location.pathname);
+  pendingJump = parseMessageLink(location.href);
+  if (param || pendingInvite || pendingJump) history.replaceState(null, "", location.pathname);
   const last = store.getLastServer();
   showConnect();
   if (param) connectTo(param);

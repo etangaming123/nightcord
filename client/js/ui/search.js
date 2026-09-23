@@ -114,8 +114,9 @@ function resultRow(m, actions) {
   return h("div", {
     class: "search-hit", role: "button", tabindex: "0", title: t("jump_to_message"),
     on: {
-      click: () => actions.jumpTo(m.message_id, m.channel_id, m.guild_id),
-      keydown: (e) => { if (e.key === "Enter") actions.jumpTo(m.message_id, m.channel_id, m.guild_id); },
+      // A link (or a spoiler) inside the preview keeps its own click.
+      click: (e) => { if (!e.target.closest("a, .md-spoiler, button")) actions.jumpTo(m.message_id, m.channel_id, m.guild_id); },
+      keydown: (e) => { if (e.key === "Enter" && e.target === e.currentTarget) actions.jumpTo(m.message_id, m.channel_id, m.guild_id); },
     },
   },
   ch ? h("div", { class: "hit-channel muted small" }, `#${ch.name}`) : null,

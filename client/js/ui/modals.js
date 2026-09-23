@@ -42,7 +42,8 @@ export function openModal({ title, subtitle, content, actions = [], onClose, wid
   document.addEventListener("keydown", onKey, true);
   current = { backdrop, onKey, restoreFocus: document.activeElement };
   $("#modal-root").append(backdrop);
-  const first = modal.querySelector("input:not([type=checkbox]), textarea, select, button.primary");
+  // First field to fill in, else the button that says yes (so Enter confirms).
+  const first = modal.querySelector("input:not([type=checkbox]), textarea, select, button.primary, button[type=submit]");
   (first || modal).focus?.();
   return modal;
 }
@@ -77,38 +78,115 @@ export function formModal({ title, subtitle, fields, submitLabel, danger = false
   });
 }
 
-export function confirmModal({ title, message, confirmLabel, danger = true, onConfirm, fields = [] }) {
+// code: true adds a random 4-digit number that has to be typed back before
+// the button works — for things that can't be undone (deleting a guild or an
+// account). Otherwise Enter on the focused button is enough.
+export function confirmModal({ title, message, confirmLabel, danger = true, onConfirm, fields = [], code = false }) {
   confirmLabel ??= tc("confirm");
-  return formModal({ title, subtitle: message, fields, submitLabel: confirmLabel, danger, onSubmit: onConfirm });
+  if (!code) return formModal({ title, subtitle: message, fields, submitLabel: confirmLabel, danger, onSubmit: onConfirm });
+  const wanted = String(Math.floor(1000 + Math.random() * 9000));
+  const input = h("input", {
+    name: "confirm_code", inputmode: "numeric", autocomplete: "off", spellcheck: "false",
+    maxLength: 4, class: "mono code-input", "aria-label": t("type_code_aria", { code: wanted }),
+  });
+  const field = h("label", {},
+    t("type_code_label"), h("span", { class: "code-display inline" }, wanted), input);
+  const modal = formModal({
+    title,
+    subtitle: message,
+    fields: [...fields, field],
+    submitLabel: confirmLabel,
+    danger,
+    onSubmit: (fd, form) => {
+      if (input.value.trim() !== wanted) throw new Error(t("code_mismatch"));
+      return onConfirm(fd, form);
+    },
+  });
+  const submit = modal.querySelector("button[type=submit]");
+  submit.disabled = true;
+  input.addEventListener("input", () => { submit.disabled = input.value.trim() !== wanted; });
+  input.focus();
+  return modal;
+}
+
+// Shift+click skips the question, the way deleting a message already does.
+export function confirmAction(event, opts) {
+  if (!event?.shiftKey) return confirmModal(opts);
+  Promise.resolve(opts.onConfirm()).catch((e) => toast(e.message || String(e), { error: true }));
+  return null;
 }
 
 // --- popovers & menus ------------------------------------------------------
 
-let popover = null;
+// Popovers form a stack: one opened from inside another (Friend ▾ inside a
+// profile card, ⋯ inside the account switcher) sits on top of its parent
+// instead of replacing it. A `key` makes a trigger toggle: clicking it again
+// while its own popover is open closes it rather than reopening it.
+let stack = [];
+let wired = false;
 
-export function closePopover() {
-  if (!popover) return;
-  popover.el.remove();
-  document.removeEventListener("mousedown", popover.onDown, true);
-  document.removeEventListener("keydown", popover.onKey, true);
-  window.removeEventListener("resize", popover.onResize);
-  popover.onClose?.();
-  popover = null;
+function unwire() {
+  if (!wired) return;
+  document.removeEventListener("mousedown", onDocDown, true);
+  document.removeEventListener("keydown", onDocKey, true);
+  window.removeEventListener("resize", onDocResize);
+  wired = false;
 }
 
-// anchor: an element, or {x, y} (e.g. a contextmenu event position).
-export function openPopover(anchor, content, { cls = "", placement = "right", onClose } = {}) {
-  // Measure first: the anchor may live inside the popover being replaced.
-  if (anchor instanceof Element) {
-    const r = anchor.getBoundingClientRect();
-    if (popover?.el.contains(anchor)) anchor = { x: r.left, y: r.top, rect: r };
+// depth 0 closes everything; depth n keeps the bottom n levels.
+export function closePopover(depth = 0) {
+  while (stack.length > depth) {
+    const p = stack.pop();
+    p.el.remove();
+    p.onClose?.();
   }
-  closePopover();
+  if (!stack.length) unwire();
+}
+
+export const popoverOpen = () => stack.length > 0;
+
+// The deepest level that should survive a click on `node`: a level survives
+// when the click landed inside it or on the trigger that opened a level above.
+function keepLevel(node) {
+  let keep = 0;
+  for (let i = 0; i < stack.length; i++) {
+    if (stack[i].el.contains(node) || stack[i].anchor?.contains?.(node)) keep = i + 1;
+  }
+  return keep;
+}
+
+function onDocDown(e) {
+  const keep = keepLevel(e.target);
+  if (keep < stack.length) closePopover(keep);
+}
+
+function onDocKey(e) {
+  if (e.key !== "Escape" || !stack.length) return;
+  e.stopPropagation();
+  closePopover(stack.length - 1);
+}
+
+const onDocResize = () => closePopover();
+
+// anchor: an element, or {x, y} (e.g. a contextmenu event position).
+// key: identifies the trigger, so clicking it again closes its popover.
+// Returns the popover element, or null when the call toggled one shut.
+export function openPopover(anchor, content, { cls = "", placement = "right", onClose, key = null } = {}) {
+  if (key) {
+    const open = stack.findIndex((p) => p.key === key);
+    if (open >= 0) { closePopover(open); return null; }
+  }
+  const anchorEl = anchor instanceof Element ? anchor : null;
+  // Opened from inside another popover: stack on top of it. Anything else
+  // replaces whatever was open.
+  let parent = 0;
+  for (let i = 0; i < stack.length; i++) if (anchorEl && stack[i].el.contains(anchorEl)) parent = i + 1;
+  closePopover(parent);
   const el = h("div", { class: `popover ${cls}`, role: "dialog" }, content);
   $("#popover-root").append(el);
   const place = () => {
-    const r = anchor instanceof Element ? anchor.getBoundingClientRect()
-      : anchor.rect || { left: anchor.x, right: anchor.x, top: anchor.y, bottom: anchor.y, width: 0, height: 0 };
+    const r = anchorEl ? anchorEl.getBoundingClientRect()
+      : { left: anchor.x, right: anchor.x, top: anchor.y, bottom: anchor.y, width: 0, height: 0 };
     const w = el.offsetWidth;
     const hgt = el.offsetHeight;
     const vw = window.innerWidth;
@@ -127,21 +205,20 @@ export function openPopover(anchor, content, { cls = "", placement = "right", on
     el.style.top = `${y}px`;
   };
   place();
-  const onDown = (e) => {
-    if (!el.contains(e.target) && !(anchor instanceof Element && anchor.contains(e.target))) closePopover();
-  };
-  const onKey = (e) => {
-    if (e.key === "Escape") { e.stopPropagation(); closePopover(); }
-  };
-  const onResize = () => closePopover();
-  setTimeout(() => document.addEventListener("mousedown", onDown, true));
-  document.addEventListener("keydown", onKey, true);
-  window.addEventListener("resize", onResize);
-  popover = { el, onDown, onKey, onResize, onClose, place };
+  if (!wired) {
+    // setTimeout: the click that opened this popover must not close it again.
+    setTimeout(() => {
+      if (stack.length) document.addEventListener("mousedown", onDocDown, true);
+    });
+    document.addEventListener("keydown", onDocKey, true);
+    window.addEventListener("resize", onDocResize);
+    wired = true;
+  }
+  stack.push({ el, anchor: anchorEl, key, onClose, place });
   return el;
 }
 
-export const repositionPopover = () => popover?.place();
+export const repositionPopover = () => stack[stack.length - 1]?.place();
 
 // items: [{ label, onClick, danger?, checked?, disabled?, hint? } | "-" | { heading }]
 export function openMenu(anchor, items, opts = {}) {
@@ -153,7 +230,7 @@ export function openMenu(anchor, items, opts = {}) {
     add(list, h("button", {
       class: `menu-item ${item.danger ? "danger" : ""}`, type: "button", role: "menuitem",
       disabled: item.disabled,
-      on: { click: () => { closePopover(); item.onClick?.(); } },
+      on: { click: (e) => { closePopover(); item.onClick?.(e); } },
     },
     item.icon ? h("span", { class: "menu-icon", "aria-hidden": "true" }, item.icon) : null,
     h("span", { class: "menu-label" }, item.label),
@@ -161,6 +238,7 @@ export function openMenu(anchor, items, opts = {}) {
     item.hint ? h("span", { class: "menu-hint" }, item.hint) : null));
   }
   const el = openPopover(anchor, list, { placement: "bottom", ...opts, cls: `menu-pop ${opts.cls || ""}` });
+  if (!el) return null;
   el.querySelector(".menu-item:not([disabled])")?.focus();
   list.addEventListener("keydown", (e) => {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
@@ -198,19 +276,50 @@ export function openFullscreen({ sections, initial, onClose, title }) {
       body,
       h("button", { class: "fs-close", type: "button", title: t("close_esc_title"), "aria-label": tc("close"), on: { click: closeFullscreen } }, "✕")));
   let active = null;
-  const show = (id) => {
-    const section = sections.find((s) => s.id === id);
+  // Named form controls the user has touched since this section was drawn.
+  // A re-render (an upload finishing, an event arriving) must not wipe them.
+  let touched = new Set();
+  content.addEventListener("input", (e) => {
+    const name = e.target?.name;
+    if (name) touched.add(name);
+  }, true);
+  const snapshot = () => {
+    const out = [];
+    for (const name of touched) {
+      for (const field of content.querySelectorAll(`[name="${CSS.escape(name)}"]`)) {
+        if (field.type === "file" || field.type === "password") continue;
+        out.push([name, field.type === "checkbox" || field.type === "radio" ? field.checked : field.value, field.value]);
+      }
+    }
+    return out;
+  };
+  const restore = (saved) => {
+    for (const [name, value, raw] of saved) {
+      const fields = [...content.querySelectorAll(`[name="${CSS.escape(name)}"]`)];
+      const field = fields.length > 1 ? fields.find((f) => f.value === raw) : fields[0];
+      if (!field) continue;
+      if (field.type === "checkbox" || field.type === "radio") field.checked = value;
+      else field.value = value;
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  };
+  const show = (id, { keepEdits = false } = {}) => {
+    // sections may hold nulls (an entry that doesn't apply to this build/role).
+    const section = sections.find((s) => s?.id === id);
     if (!section) return;
+    const saved = keepEdits && id === active ? snapshot() : null;
+    if (!saved) touched = new Set();
     active = id;
     for (const btn of nav.querySelectorAll(".fs-tab")) btn.setAttribute("aria-current", btn.dataset.id === id ? "page" : "false");
     clear(content, h("h2", { class: "fs-title" }, section.title || section.label));
     const inner = h("div", { class: "fs-section" });
     add(content, inner);
     el.classList.remove("nav-open");
-    Promise.resolve(section.render(inner, { show })).catch((e) => {
-      add(inner, h("div", { class: "error-box" }, e.message || String(e)));
-    });
-    body.scrollTop = 0;
+    Promise.resolve(section.render(inner, { show })).then(
+      () => saved && restore(saved),
+      (e) => add(inner, h("div", { class: "error-box" }, e.message || String(e))),
+    );
+    if (!saved) body.scrollTop = 0;
   };
   for (const s of sections) {
     if (!s) continue;
@@ -226,7 +335,7 @@ export function openFullscreen({ sections, initial, onClose, title }) {
     }
   }
   const onKey = (e) => {
-    if (e.key === "Escape" && !modalOpen() && !popover) closeFullscreen();
+    if (e.key === "Escape" && !modalOpen() && !popoverOpen()) closeFullscreen();
   };
   document.addEventListener("keydown", onKey);
   $("#fullscreen-root").append(el);
@@ -236,7 +345,8 @@ export function openFullscreen({ sections, initial, onClose, title }) {
 }
 
 export const fullscreenOpen = () => !!page;
-export const refreshFullscreen = () => page && page.show(page.active());
+// Redraws the open section, keeping anything the user has typed but not saved.
+export const refreshFullscreen = () => page && page.show(page.active(), { keepEdits: true });
 
 // --- toasts ----------------------------------------------------------------
 

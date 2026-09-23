@@ -16,6 +16,8 @@ const DEFAULTS = {
   customTheme: DEFAULT_CUSTOM,
   autoUpdateCheck: true, // standalone-only: ping GitHub's release API on load
   updateNotifier: true, // standalone-only: toast when an update is found
+  trustedDomains: [], // link hosts that skip the leaving-site dialog (ui/links.js)
+  touchGrass: true, // the parody nudge after hours of unbroken use (main.js)
 };
 
 let prefs = load();

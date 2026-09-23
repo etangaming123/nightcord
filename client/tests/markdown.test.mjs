@@ -40,12 +40,66 @@ assert.deepEqual(parse(">>> all\nof it"), [{ type: "quote", children: [t("all\no
 assert.deepEqual(parse("```\nno lang\n```"), [{ type: "codeblock", lang: null, text: "no lang" }]);
 
 // Every token is a known type and text is never interpreted as markup.
-const KNOWN = new Set(["text", "code", "codeblock", "bold", "italic", "underline", "strike", "spoiler", "mention", "everyone", "link", "quote", "emoji"]);
-const walk = (toks) => toks.forEach((x) => { assert.ok(KNOWN.has(x.type), x.type); if (x.children) walk(x.children); });
+const KNOWN = new Set(["text", "code", "codeblock", "bold", "italic", "underline", "strike", "spoiler", "mention",
+  "everyone", "link", "quote", "emoji", "heading", "subtext", "list", "channel", "timestamp", "paragraph", "hr"]);
+const walk = (toks) => toks.forEach((x) => {
+  assert.ok(KNOWN.has(x.type), x.type);
+  if (x.children) walk(x.children);
+  if (x.items) x.items.forEach(walk);
+});
 walk(parse("**__~~||*deep* `x` <@1> <:pan:2> https://a.b||~~__** > q\n> q2\n```x```"));
+walk(parse("# h\n-# sub\n- a\n  - b\n1. one\n<#7> <t:1> [x](https://a.b) <https://a.b>"));
+
+// --- block structure (messages, not just documents) ---
+assert.deepEqual(parse("# Big"), [{ type: "heading", level: 1, children: [t("Big")] }]);
+assert.deepEqual(parse("### Small"), [{ type: "heading", level: 3, children: [t("Small")] }]);
+assert.deepEqual(parse("#### Not a heading"), [t("#### Not a heading")]); // only 1-3 hashes
+assert.deepEqual(parse("#nospace"), [t("#nospace")]);
+assert.deepEqual(parse("-# quiet"), [{ type: "subtext", children: [t("quiet")] }]);
+assert.deepEqual(parse("- one\n- two"), [
+  { type: "list", ordered: false, items: [[t("one")], [t("two")]] },
+]);
+assert.deepEqual(parse("* star"), [{ type: "list", ordered: false, items: [[t("star")]] }]);
+assert.deepEqual(parse("1. a\n2. b"), [{ type: "list", ordered: true, items: [[t("a")], [t("b")]] }]);
+assert.deepEqual(parse("3. third"), [{ type: "list", ordered: true, start: 3, items: [[t("third")]] }]);
+// One level of nesting; anything deeper joins it.
+assert.deepEqual(parse("- a\n  - b\n- c"), [{
+  type: "list",
+  ordered: false,
+  items: [[t("a"), { type: "list", ordered: false, items: [[t("b")]] }], [t("c")]],
+}]);
+assert.deepEqual(parse("text\n- item\nafter"), [
+  t("text"), { type: "list", ordered: false, items: [[t("item")]] }, t("after"),
+]);
+assert.deepEqual(parse("\\# not a heading"), [t("# not a heading")]);
+
+// --- links ---
+assert.deepEqual(parseInline("[label](https://a.b)"), [
+  { type: "link", href: "https://a.b", children: [t("label")] },
+]);
+assert.deepEqual(parseInline("[label](<https://a.b>)"), [
+  { type: "link", href: "https://a.b", children: [t("label")], embed: false },
+]);
+assert.deepEqual(parseInline("<https://a.b>"), [{ type: "link", href: "https://a.b", embed: false }]);
+assert.deepEqual(parseInline("[x](javascript:alert(1))"), [t("[x](javascript:alert(1))")]);
+// Wikipedia-style brackets survive; a wrapping bracket doesn't.
+assert.equal(parseInline("https://en.wikipedia.org/wiki/Foo_(bar)")[0].href, "https://en.wikipedia.org/wiki/Foo_(bar)");
+assert.deepEqual(parseInline("(https://a.b)"), [t("("), { type: "link", href: "https://a.b" }, t(")")]);
+assert.deepEqual(parseInline("see https://a.b/c, then"), [
+  t("see "), { type: "link", href: "https://a.b/c" }, t(", then"),
+]);
+
+// --- timestamps and channel chips ---
+assert.deepEqual(parseInline("<t:1700000000>"), [{ type: "timestamp", at: 1700000000, style: "f" }]);
+assert.deepEqual(parseInline("<t:1700000000:R>"), [{ type: "timestamp", at: 1700000000, style: "R" }]);
+assert.deepEqual(parseInline("<t:12:Z>"), [t("<t:12:Z>")]); // unknown style stays text
+assert.deepEqual(parseInline("<#123>"), [{ type: "channel", id: "123" }]);
+assert.deepEqual(parseInline("<#abc>"), [t("<#abc>")]);
+assert.equal(plainText("go to <#1>", { channel: () => ({ name: "general" }) }), "go to #general");
 
 // Pathological input stays fast.
-for (const s of ["*".repeat(2000), "**".repeat(1000) + "x", "_".repeat(2000), "||".repeat(1000), "`".repeat(2000), "> ".repeat(1000)]) {
+for (const s of ["*".repeat(2000), "**".repeat(1000) + "x", "_".repeat(2000), "||".repeat(1000), "`".repeat(2000),
+  "> ".repeat(1000), "- ".repeat(1000), "#".repeat(2000), "[a](".repeat(500), "https://a.b/".repeat(200)]) {
   const start = performance.now();
   parse(s);
   assert.ok(performance.now() - start < 500, `slow parse: ${s.slice(0, 10)}…`);

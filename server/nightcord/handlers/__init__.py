@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Awaitable, Callable
 
 if TYPE_CHECKING:
+    import aiohttp
+
     from ..config import Config
     from ..db import Database
     from ..hub import Connection, Hub
@@ -27,6 +29,8 @@ class Ctx:
     login_throttle: "LoginThrottle"
     # sha256 of the one-time setup code while the server has no owner.
     setup_code_hash: str | None = None
+    # Shared outbound HTTP session for link embeds (app.py owns its lifetime).
+    http: "aiohttp.ClientSession | None" = None
 
 
 Handler = Callable[["Ctx", "Connection", dict], Awaitable[dict]]
@@ -46,7 +50,7 @@ def load_all() -> dict[str, Handler]:
     # Importing registers handlers via @handles.
     from . import (  # noqa: F401
         admin, announcements, auth, channels, dms, expressions, friends, guilds, legal, members, messages, notify,
-        presence, roles, server, users, voice,
+        polls, presence, roles, saved, server, users, voice,
     )
 
     return REGISTRY

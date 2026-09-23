@@ -21,7 +21,7 @@ export function stickerImg(sticker, { cls = "sticker" } = {}) {
 }
 
 // Opens the picker next to anchor; onPick(sticker) is called once.
-export function openStickerPicker(anchor, onPick, { placement = "top" } = {}) {
+export function openStickerPicker(anchor, onPick, { placement = "top", key = null } = {}) {
   const groups = usableStickerGroups();
   const search = h("input", { type: "search", placeholder: t("search_placeholder"), "aria-label": t("search_aria"), class: "emoji-search" });
   const grid = h("div", { class: "sticker-grid" });
@@ -48,7 +48,7 @@ export function openStickerPicker(anchor, onPick, { placement = "top" } = {}) {
   };
   search.addEventListener("input", draw);
   draw();
-  const el = openPopover(anchor, h("div", { class: "emoji-picker sticker-picker" }, search, grid), { placement, cls: "emoji-pop" });
-  search.focus();
+  const el = openPopover(anchor, h("div", { class: "emoji-picker sticker-picker" }, search, grid), { placement, cls: "emoji-pop", key });
+  if (el) search.focus();
   return el;
 }

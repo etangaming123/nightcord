@@ -1,0 +1,51 @@
+{
+  "single_label": "Poll",
+  "multi_label": "Poll · pick several",
+  "vote_count": {
+    "one": "1 vote",
+    "other": "{count} votes"
+  },
+  "closed": "Closed",
+  "closing": "Closing…",
+  "left_under_a_minute": "Less than a minute left",
+  "left_minutes": {
+    "one": "1 minute left",
+    "other": "{count} minutes left"
+  },
+  "left_hours": {
+    "one": "1 hour left",
+    "other": "{count} hours left"
+  },
+  "left_days": {
+    "one": "1 day left",
+    "other": "{count} days left"
+  },
+  "nobody_yet": "Nobody yet",
+  "someone": "someone",
+  "voters_and_more": {
+    "one": "{names} and 1 more",
+    "other": "{names} and {count} more"
+  },
+  "vote_to_see": "Vote to see the results",
+  "end_poll": "End poll",
+  "end_title": "End this poll?",
+  "end_body": "Voting stops and the results stay as they are.",
+  "dialog_title": "Create a poll",
+  "question_label": "Question",
+  "question_placeholder": "What are we having for lunch?",
+  "answers_label": "Answers",
+  "answer_placeholder": "Answer {n}",
+  "answer_emoji": "Pick an emoji",
+  "remove_answer": "Remove this answer",
+  "add_answer": "Add an answer",
+  "duration_label": "Open for",
+  "duration_1h": "1 hour",
+  "duration_4h": "4 hours",
+  "duration_8h": "8 hours",
+  "duration_1d": "1 day",
+  "duration_3d": "3 days",
+  "duration_1w": "1 week",
+  "multi_hint": "Let people pick more than one answer",
+  "send_poll": "Send poll",
+  "need_two_answers": "Fill in at least two answers."
+}

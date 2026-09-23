@@ -23,6 +23,8 @@ export const state = {
   notifyPrefs: new Map(), // target_id -> NotifyPref
   relationships: new Map(), // user_id -> { user, kind: friend|outgoing|incoming|blocked, since }
   announcements: { items: [], lastReadId: "0", unread: 0, hasMore: false },
+  saved: new Set(), // message ids this account bookmarked (PROTOCOL.md §4 Saved message)
+  notes: new Map(), // user_id -> your private note about them
 
   view: "guild", // guild | home
   homeTab: "online", // Friends page tab: online | all | pending | blocked | requests | inbox | add
@@ -55,6 +57,7 @@ export function resetServerState() {
   Object.assign(state, {
     conn: null, url: null, info: null, user: null, connected: false,
     users: new Map(), presences: new Map(), guilds: new Map(), dms: new Map(),
+    saved: new Set(), notes: new Map(),
     readStates: new Map(), notifyPrefs: new Map(), relationships: new Map(),
     announcements: { items: [], lastReadId: "0", unread: 0, hasMore: false },
     view: "guild", guildId: null, channels: [], roles: [], members: [], channelId: null,
@@ -142,6 +145,20 @@ export function statusOf(userId) {
 // --- guild / channel -------------------------------------------------------
 
 export const currentGuild = () => (state.view === "guild" ? state.guilds.get(state.guildId) || null : null);
+
+// Any channel this client knows: the open guild's, or a DM.
+export function channelById(id) {
+  return state.channels.find((c) => c.channel_id === id) || state.dms.get(id) || null;
+}
+
+// A custom status is only shown while someone is around. The server already
+// strips it from what it sends about an offline or invisible user; this stops
+// a copy we cached while they were online from lingering.
+export function customStatusOf(user) {
+  if (!user?.custom_status) return null;
+  if (user.user_id === state.user?.user_id) return user.custom_status;
+  return statusOf(user.user_id) === "offline" ? null : user.custom_status;
+}
 
 export function currentChannel() {
   if (state.view === "home") return state.dms.get(state.channelId) || null;

@@ -10,13 +10,22 @@ import { adminSections } from "./admin.js";
 import { add, avatar, clear, displayName, fmtDate, fmtDateTime, h } from "./dom.js";
 import { cropImage } from "./cropper.js";
 import { pickImage, uploadImage } from "./images.js";
+import { renderInline } from "./markdown.js";
+import { untrustDomain } from "./links.js";
 import { profileBanner, profileThemeAttrs } from "./names.js";
-import { closeFullscreen, confirmModal, openFullscreen, refreshFullscreen, toast } from "./modals.js";
+import { closeFullscreen, confirmAction, confirmModal, openFullscreen, refreshFullscreen, toast } from "./modals.js";
 import { scopedT } from "../strings.js";
 
 const t = scopedT("ui/settings");
+const tl = scopedT("ui/links");
+
+// Profile toggles that aren't form controls, so a redraw (after an avatar or
+// banner upload) can't read them back off the page. Cleared when the settings
+// page is opened afresh or the profile is saved.
+let profileDraft = null;
 
 export function userSettings(actions, initial) {
+  profileDraft = null;
   openFullscreen({
     title: t("title_user_settings"),
     initial,
@@ -27,8 +36,8 @@ export function userSettings(actions, initial) {
       { id: "privacy", label: t("section_privacy"), render: (el) => privacy(el, actions) },
       { id: "devices", label: t("section_devices"), render: (el) => devices(el, actions) },
       { heading: t("heading_app_settings") },
-      { id: "appearance", label: t("section_appearance"), render: appearance },
-      { id: "notifications", label: t("section_notifications"), render: notifications },
+      { id: "appearance", label: t("section_appearance"), render: (el) => appearance(el, actions) },
+      { id: "notifications", label: t("section_notifications"), render: (el) => notifications(el, actions) },
       globalThis.__NIGHTCORD_BUILD_VERSION__
         ? { id: "local-options", label: t("section_local_options"), render: localOptions }
         : null,
@@ -84,6 +93,7 @@ function privacy(el, actions) {
         h("input", { type: "radio", name: "dm_privacy", value: v, checked: current === v, on: { change: () => save(v) } }),
         h("span", {}, h("strong", {}, label), h("span", { class: "muted small block" }, hint))))),
     h("p", { class: "muted small" }, t("dm_privacy_note")),
+    trustedDomainList(),
     h("div", { class: "section-label" }, t("blocked_heading", { count: blocked.length })),
     blocked.length
       ? h("div", { class: "list" }, blocked.map((r) => h("div", { class: "list-row" },
@@ -91,6 +101,30 @@ function privacy(el, actions) {
         h("span", { class: "grow" }, displayName(r.user), " ", h("span", { class: "muted small" }, r.user.username)),
         h("button", { class: "btn small", type: "button", on: { click: async () => { await actions.unblockUser(r.user.user_id); refreshFullscreen(); } } }, t("unblock")))))
       : h("p", { class: "muted small" }, t("blocked_none")));
+}
+
+// Link domains this device stops asking about (ui/links.js).
+function trustedDomainList() {
+  const domains = getPrefs().trustedDomains || [];
+  return h("div", {},
+    h("div", { class: "section-label" }, tl("trusted_heading")),
+    h("p", { class: "muted small" }, tl("trusted_note")),
+    domains.length
+      ? h("div", { class: "list" }, domains.map((d) => h("div", { class: "list-row" },
+        h("span", { class: "list-icon", "aria-hidden": "true" }, "🔗"),
+        h("span", { class: "grow mono" }, d),
+        h("button", {
+          class: "btn small", type: "button",
+          on: {
+            click: (e) => confirmAction(e, {
+              title: tl("forget_domain_title", { host: d }),
+              message: tl("forget_domain_body"),
+              confirmLabel: tl("forget_domain", { host: d }),
+              onConfirm: () => { untrustDomain(d); refreshFullscreen(); },
+            }),
+          },
+        }, t("remove")))))
+      : h("p", { class: "muted small" }, tl("trusted_none")));
 }
 
 // --- My Account --------------------------------------------------------------
@@ -174,35 +208,38 @@ export const blobToBase64 = (blob) => new Promise((resolve, reject) => {
 
 function profile(el, actions) {
   const me = state.user;
+  profileDraft ??= { useColor: !!me.avatar_color, themeOn: !!me.profile_colors };
+  const draft = profileDraft;
   const preview = h("div", { class: "profile-preview" });
   const form = h("form", { class: "stack narrow" });
   const colorInput = h("input", { type: "color", name: "avatar_color", value: me.avatar_color || "#884499" });
-  let useColor = !!me.avatar_color;
   const themeLocked = lockedReason("profile_colors");
   const bannerLocked = lockedReason("profile_banner");
-  let themeOn = !!me.profile_colors;
-  const theme1 = h("input", { type: "color", value: me.profile_colors?.[0] || "#5b21b6", "aria-label": t("profile_colour_top") });
-  const theme2 = h("input", { type: "color", value: me.profile_colors?.[1] || "#db2777", "aria-label": t("profile_colour_bottom") });
+  const theme1 = h("input", { type: "color", name: "profile_color_1", value: me.profile_colors?.[0] || "#5b21b6", "aria-label": t("profile_colour_top") });
+  const theme2 = h("input", { type: "color", name: "profile_color_2", value: me.profile_colors?.[1] || "#db2777", "aria-label": t("profile_colour_bottom") });
   const drawPreview = () => {
     const fd = new FormData(form);
-    const draft = {
+    const shown = {
       ...state.user,
       display_name: String(fd.get("display_name") || "").trim() || null,
       custom_status: String(fd.get("custom_status") || "").trim() || null,
-      avatar_color: useColor ? colorInput.value : null,
-      profile_colors: themeOn && !themeLocked ? [theme1.value, theme2.value] : null,
+      avatar_color: draft.useColor ? colorInput.value : null,
+      profile_colors: draft.themeOn && !themeLocked ? [theme1.value, theme2.value] : null,
     };
-    const attrs = profileThemeAttrs(draft, "profile-preview", { live: false });
+    const attrs = profileThemeAttrs(shown, "profile-preview", { live: false });
     preview.className = attrs.class;
     preview.style.cssText = attrs.style || "";
     clear(preview,
-      profileBanner(draft, { live: false }),
-      h("div", { class: "profile-avatar" }, avatar(draft, { size: "xl", status: "online" })),
+      profileBanner(shown, { live: false }),
+      h("div", { class: "profile-avatar" }, avatar(shown, { size: "xl", status: "online" })),
       h("div", { class: "profile-card" },
-        h("div", { class: "profile-name" }, displayName(draft)),
-        h("div", { class: "profile-username" }, draft.username),
-        draft.custom_status ? h("div", { class: "profile-status" }, draft.custom_status) : null,
-        String(fd.get("bio") || "").trim() ? h("div", { class: "profile-section" }, h("div", { class: "profile-section-title" }, t("about_me_label")), h("p", { class: "profile-bio" }, String(fd.get("bio")).trim())) : null));
+        h("div", { class: "profile-name" }, displayName(shown)),
+        h("div", { class: "profile-username" }, shown.username),
+        shown.custom_status ? h("div", { class: "profile-status" }, shown.custom_status) : null,
+        String(fd.get("bio") || "").trim()
+          ? h("div", { class: "profile-section" }, h("div", { class: "profile-section-title" }, t("about_me_label")),
+            h("p", { class: "profile-bio" }, renderInline(String(fd.get("bio")).trim(), { user: () => null })))
+          : null));
   };
   const busy = async (btn, work, ok) => {
     btn.disabled = true;
@@ -246,7 +283,14 @@ function profile(el, actions) {
         h("button", { class: "btn primary", type: "button", on: { click: changeAvatar } }, t("change_avatar")),
         me.avatar_id ? h("button", {
           class: "btn", type: "button",
-          on: { click: (e) => busy(e.currentTarget, async () => actions.setSelf((await actions.req(T.USER_AVATAR_SET, { data_b64: null })).user)) },
+          on: {
+            click: (e) => confirmAction(e, {
+              title: t("remove_avatar_title"),
+              message: t("remove_avatar_body"),
+              confirmLabel: t("remove"),
+              onConfirm: () => busy(e.currentTarget, async () => actions.setSelf((await actions.req(T.USER_AVATAR_SET, { data_b64: null })).user)),
+            }),
+          },
         }, t("remove")) : null),
       userCan("animated_media") ? h("p", { class: "muted small" }, t("animated_avatar_note")) : null),
     h("label", {}, t("display_name_label"), h("input", { name: "display_name", maxLength: LIMITS.DISPLAY_NAME_MAX, value: me.display_name || "", placeholder: me.username })),
@@ -258,15 +302,22 @@ function profile(el, actions) {
           h("button", { class: "btn", type: "button", on: { click: changeBanner } }, me.banner_id ? t("change_banner") : t("upload_banner")),
           me.banner_id ? h("button", {
             class: "btn", type: "button",
-            on: { click: (e) => busy(e.currentTarget, async () => actions.setSelf((await actions.req(T.USER_UPDATE, { banner_media_id: null })).user)) },
+            on: {
+              click: (e) => confirmAction(e, {
+                title: t("remove_banner_title"),
+                message: t("remove_banner_body"),
+                confirmLabel: t("remove"),
+                onConfirm: () => busy(e.currentTarget, async () => actions.setSelf((await actions.req(T.USER_UPDATE, { banner_media_id: null })).user)),
+              }),
+            },
           }, t("remove")) : null,
           h("span", { class: "muted small" }, t("wide_images_note")))),
     h("div", { class: "field" },
       h("span", { class: "field-label" }, t("banner_colour_label")),
       h("div", { class: "row" }, colorInput,
         h("label", { class: "check" }, h("input", {
-          type: "checkbox", checked: !useColor, class: "default-color",
-          on: { change: (e) => { useColor = !e.currentTarget.checked; drawPreview(); } },
+          type: "checkbox", checked: !draft.useColor, class: "default-color",
+          on: { change: (e) => { draft.useColor = !e.currentTarget.checked; drawPreview(); } },
         }), t("default_checkbox")))),
     h("div", { class: "field" },
       h("span", { class: "field-label" }, t("profile_colours_label")),
@@ -274,25 +325,33 @@ function profile(el, actions) {
         ? h("div", { class: "locked-note" }, "🔒 ", themeLocked)
         : h("div", { class: "row" },
           h("label", { class: "check" }, h("input", {
-            type: "checkbox", checked: themeOn, on: { change: (e) => { themeOn = e.currentTarget.checked; drawPreview(); } },
+            type: "checkbox", checked: draft.themeOn, on: { change: (e) => { draft.themeOn = e.currentTarget.checked; drawPreview(); } },
           }), t("use_checkbox")),
           theme1, theme2, h("span", { class: "muted small" }, t("profile_colours_note")))),
     h("label", {}, t("custom_status_label"), h("input", { name: "custom_status", maxLength: LIMITS.CUSTOM_STATUS_MAX, value: me.custom_status || "" })),
     h("label", {}, t("about_me_label"), h("textarea", { name: "bio", rows: 3, maxLength: LIMITS.BIO_MAX }, me.bio || "")),
     h("div", {}, h("button", { class: "btn primary", type: "submit" }, t("save_profile"))),
   );
-  colorInput.addEventListener("input", () => { useColor = true; form.querySelector(".default-color").checked = false; drawPreview(); });
-  for (const input of [theme1, theme2]) input.addEventListener("input", () => { themeOn = true; form.querySelector(".check input:not(.default-color)").checked = true; drawPreview(); });
+  colorInput.addEventListener("input", () => { draft.useColor = true; form.querySelector(".default-color").checked = false; drawPreview(); });
+  for (const input of [theme1, theme2]) {
+    input.addEventListener("input", () => {
+      draft.themeOn = true;
+      const box = form.querySelector(".check input:not(.default-color)");
+      if (box) box.checked = true;
+      drawPreview();
+    });
+  }
   form.addEventListener("input", drawPreview);
   formRow(form, async (fd) => {
     const patch = {
       display_name: String(fd.get("display_name")).trim() || null,
       bio: String(fd.get("bio")).trim() || null,
       custom_status: String(fd.get("custom_status")).trim() || null,
-      avatar_color: useColor ? colorInput.value : null,
+      avatar_color: draft.useColor ? colorInput.value : null,
     };
-    if (!themeLocked) patch.profile_colors = themeOn ? [theme1.value, theme2.value] : null;
+    if (!themeLocked) patch.profile_colors = draft.themeOn ? [theme1.value, theme2.value] : null;
     const res = await actions.req(T.USER_UPDATE, patch);
+    profileDraft = null;
     actions.setSelf(res.user);
   }, { okText: t("profile_saved") });
   add(el, h("div", { class: "split" }, form, h("div", {}, h("div", { class: "field-label" }, t("preview_label")), preview)));
@@ -320,21 +379,50 @@ async function devices(el, actions) {
         h("span", { class: "sub" }, t("device_last_active", { lastActive: fmtDateTime(s.last_seen), signedIn: fmtDate(s.created_at) }))),
       s.current ? null : h("button", {
         class: "btn", type: "button",
-        on: { click: async () => { await actions.req(T.USER_SESSIONS_REVOKE, { session_id: s.session_id }); refreshFullscreen(); } },
+        on: {
+          click: (e) => confirmAction(e, {
+            title: t("log_out_device_title"),
+            message: t("log_out_device_body", { device: describeAgent(s.user_agent) }),
+            confirmLabel: t("log_out"),
+            onConfirm: async () => {
+              try {
+                await actions.req(T.USER_SESSIONS_REVOKE, { session_id: s.session_id });
+                refreshFullscreen();
+              } catch (err) {
+                toast(err.message, { error: true });
+              }
+            },
+          }),
+        },
       }, t("log_out"))));
   }
   add(el, list);
   if (sessions.length > 1) {
     add(el, h("button", {
       class: "btn danger", type: "button",
-      on: { click: async () => { await actions.req(T.USER_SESSIONS_REVOKE, { session_id: "others" }); toast(t("logged_out_other_devices")); refreshFullscreen(); } },
+      on: {
+        click: (e) => confirmAction(e, {
+          title: t("log_out_all_title"),
+          message: t("log_out_all_body", { count: sessions.length - 1 }),
+          confirmLabel: t("log_out_all_other_devices"),
+          onConfirm: async () => {
+            try {
+              await actions.req(T.USER_SESSIONS_REVOKE, { session_id: "others" });
+              toast(t("logged_out_other_devices"));
+              refreshFullscreen();
+            } catch (err) {
+              toast(err.message, { error: true });
+            }
+          },
+        }),
+      },
     }, t("log_out_all_other_devices")));
   }
 }
 
 // --- Appearance & notifications (this device) -------------------------------
 
-function appearance(el) {
+function appearance(el, actions) {
   const p = getPrefs();
   const radio = (name, value, label, current, onChange) => h("label", { class: "radio-card" },
     h("input", { type: "radio", name, value, checked: current === value, on: { change: () => onChange(value) } }), label);
@@ -366,6 +454,11 @@ function appearance(el) {
     h("label", { class: "check" }, h("input", {
       type: "checkbox", checked: p.compact, on: { change: (e) => setPrefs({ compact: e.currentTarget.checked }) },
     }), t("compact_message_layout")),
+    h("h3", {}, t("shortcuts_heading")),
+    h("p", { class: "muted small" }, t("shortcuts_note")),
+    h("div", {}, h("button", {
+      class: "btn", type: "button", on: { click: () => actions.showShortcuts() },
+    }, t("shortcuts_button"))),
   );
 }
 
@@ -414,7 +507,7 @@ function themeEditor() {
   return box;
 }
 
-function notifications(el) {
+function notifications(el, actions) {
   const p = getPrefs();
   const supported = "Notification" in window;
   const perm = supported ? Notification.permission : "unsupported";
@@ -440,7 +533,30 @@ function notifications(el) {
       type: "checkbox", checked: p.sound, on: { change: (e) => setPrefs({ sound: e.currentTarget.checked }) },
     }), t("play_sound_notifications")),
     h("p", { class: "muted small" }, t("dnd_note")),
+    h("label", { class: "check" }, h("input", {
+      type: "checkbox", checked: p.touchGrass, on: { change: (e) => setPrefs({ touchGrass: e.currentTarget.checked }) },
+    }), h("span", {}, t("touch_grass_label"), h("span", { class: "muted small block" }, t("touch_grass_hint")))),
+    reminderList(actions),
   );
+}
+
+// /remind, kept on this device for this account (client/js/reminders.js).
+function reminderList(actions) {
+  const reminders = actions.listReminders();
+  return h("div", {},
+    h("h3", {}, t("reminders_heading")),
+    h("p", { class: "muted small" }, t("reminders_note")),
+    reminders.length
+      ? h("div", { class: "list" }, reminders.map((r) => h("div", { class: "list-row" },
+        h("span", { class: "list-icon", "aria-hidden": "true" }, "⏰"),
+        h("span", { class: "meta" },
+          h("span", { class: "name" }, r.text),
+          h("span", { class: "sub" }, fmtDateTime(new Date(r.at).toISOString()))),
+        h("button", {
+          class: "btn small", type: "button",
+          on: { click: () => { actions.cancelReminder(r.id); refreshFullscreen(); } },
+        }, t("cancel_reminder")))))
+      : h("p", { class: "muted small" }, t("reminders_none")));
 }
 
 // --- Local Options (standalone build only) ------------------------------------

@@ -14,5 +14,6 @@
   "no_emoji_found": "No emoji found",
   "frequently_used": "Frequently used",
   "custom_emoji_from": ":{name}: from {guild}",
-  "custom_emoji_hover": ":{name}: — {guild}"
+  "custom_emoji_hover": ":{name}: — {guild}",
+  "group_flags": "Flags"
 }

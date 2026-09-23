@@ -170,6 +170,7 @@ def cmd_config(db: Database, cfg: Config, action: str, key: str | None, value: s
         "customization_mode": {"off", "allowlist", "on"},
         "user_search": {"off", "staff", "on"},
         "announcements_admins": {"true", "false"},
+        "link_embeds": {"true", "false"},
     }
     if key == "server_name" and value and value.strip():
         db.set_server_config({"server_name": value.strip()[:64]})

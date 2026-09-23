@@ -1,6 +1,8 @@
 {
   "forget_server": "Forget this server",
   "forget_server_aria": "Forget {label}",
+  "forget_server_title": "Forget {label}?",
+  "forget_server_body": "This device stops remembering the server and any accounts saved for it. Nothing on the server itself changes.",
   "could_not_connect": "Could not connect.",
   "self_signed_before": "If this server uses a self-signed certificate, open ",
   "self_signed_after": " once, accept the certificate warning, then try again.",
@@ -36,7 +38,15 @@
   "please_log_in_again": "Please log in again",
   "must_accept_rules": "You need to accept a server's rules to join it.",
   "brand": "Nightcord",
-
-  "account_count": { "one": "{count} account", "other": "{count} accounts" },
-  "adding_account": "Log in with another account. Your other accounts stay saved on this device."
+  "account_count": {
+    "one": "{count} account",
+    "other": "{count} accounts"
+  },
+  "adding_account": "Log in with another account. Your other accounts stay saved on this device.",
+  "whats_this_title": "What is Nightcord?",
+  "grass_title": "Touch grass",
+  "grass_body": "You've been here {hours} hours straight. Outside is still there.",
+  "grass_note": "You can turn this off in Settings → Notifications.",
+  "grass_snooze": "Snooze 1 hour",
+  "grass_done": "I have touched grass"
 }

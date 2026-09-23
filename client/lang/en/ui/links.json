@@ -1,0 +1,15 @@
+{
+  "leaving_title": "You're going to {host}",
+  "leaving_host": "{host}",
+  "leaving_note": "Nightcord doesn't check where links go. Only follow ones you trust.",
+  "mismatch_warning": "The link says “{label}”, but it goes somewhere else.",
+  "proceed": "Proceed",
+  "go_back": "Go back",
+  "trust_domain": "Trust {host}",
+  "trusted_heading": "Trusted link domains",
+  "trusted_none": "None yet. Choose “Trust” in the leaving-site dialog to add one.",
+  "trusted_note": "Links to these domains open straight away, without asking. Kept on this device only.",
+  "forget_domain": "Forget {host}",
+  "forget_domain_title": "Stop trusting {host}?",
+  "forget_domain_body": "Links to it will ask again before opening."
+}

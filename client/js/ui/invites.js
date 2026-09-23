@@ -4,7 +4,7 @@
 import { LIMITS, T } from "../protocol.js";
 import { can, currentGuild, state } from "../state.js";
 import { add, avatar, avatarUrl, clear, displayName, fmtDateTime, h, imageEl, initials, mayAnimate } from "./dom.js";
-import { closeModal, openModal, toast } from "./modals.js";
+import { closeModal, confirmAction, openModal, toast } from "./modals.js";
 import { copyText } from "./profile.js";
 import { scopedT } from "../strings.js";
 
@@ -119,17 +119,26 @@ export async function invitesTab(el, actions) {
         h("button", {
           class: "btn danger", type: "button",
           on: {
-            click: async (e) => {
+            click: (e) => {
               const btn = e.currentTarget;
-              btn.disabled = true;
-              try {
-                await actions.req(T.GUILD_INVITE_REVOKE, { invite_code: inv.code });
-                btn.closest(".list-row").remove();
-                toast(t("invite_revoked_toast"));
-              } catch (err) {
-                btn.disabled = false;
-                toast(err.message, { error: true });
-              }
+              const row = btn.closest(".list-row");
+              const revoke = async () => {
+                btn.disabled = true;
+                try {
+                  await actions.req(T.GUILD_INVITE_REVOKE, { invite_code: inv.code });
+                  row.remove();
+                  toast(t("invite_revoked_toast"));
+                } catch (err) {
+                  btn.disabled = false;
+                  throw err;
+                }
+              };
+              confirmAction(e, {
+                title: t("revoke_invite_title", { code: inv.code }),
+                message: t("revoke_invite_body"),
+                confirmLabel: t("revoke_btn"),
+                onConfirm: revoke,
+              });
             },
           },
         }, t("revoke_btn")))));
