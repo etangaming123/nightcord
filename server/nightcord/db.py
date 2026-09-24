@@ -21,6 +21,7 @@ from typing import Any, Iterable
 from . import files as F
 from .ids import new_id
 from .permissions import DEFAULT_EVERYONE, OWNER_RANK
+from .protocol import BADGE_VERIFIED
 
 SESSION_TTL_SECONDS = 30 * 24 * 3600
 
@@ -342,6 +343,27 @@ MIGRATIONS: list[str] = [
     CREATE INDEX users_status_expiry ON users(custom_status_expires_at)
         WHERE custom_status_expires_at IS NOT NULL
     """,
+    # 11 — badges the server owner uploads and hands out (PROTOCOL.md §4 Badge).
+    """
+    CREATE TABLE badges (
+        badge_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        animated INTEGER NOT NULL DEFAULT 0,
+        inline INTEGER NOT NULL DEFAULT 1,
+        created_by TEXT,
+        created_at TEXT NOT NULL
+    );
+    CREATE TABLE user_badges (
+        user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        badge_id TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        granted_by TEXT,
+        granted_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, badge_id)
+    );
+    CREATE INDEX user_badges_badge ON user_badges(badge_id)
+    """,
 ]
 
 MIGRATION_2 = """
@@ -491,6 +513,26 @@ def _visible_custom_status(row: sqlite3.Row, status_of) -> str | None:
     return row["custom_status"]
 
 
+def _verified_badge() -> dict:
+    return {
+        "id": BADGE_VERIFIED,
+        "name": "Verified",
+        "description": "Verified by the server owner",
+        "image": None,
+        "inline": True,
+    }
+
+
+def _badge(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["badge_id"],
+        "name": row["name"],
+        "description": row["description"],
+        "image": f"a_{row['badge_id']}" if row["animated"] else row["badge_id"],
+        "inline": bool(row["inline"]),
+    }
+
+
 def _public_user(row: sqlite3.Row, status_of=None) -> dict:
     return {
         "user_id": row["user_id"],
@@ -595,8 +637,10 @@ class Database:
         from everyone else while someone is offline or invisible."""
         self._status_of = fn
 
-    def _pub(self, row: sqlite3.Row) -> dict:
-        return _public_user(row, self._status_of)
+    def _pub(self, row: sqlite3.Row, badges: list[dict] | None = None) -> dict:
+        if badges is None:
+            badges = self.badges_of([row["user_id"]])[row["user_id"]]
+        return {**_public_user(row, self._status_of), "badges": badges}
 
     def close(self) -> None:
         self.conn.close()
@@ -659,7 +703,7 @@ class Database:
     def get_user(self, user_id: str) -> dict | None:
         """The user's own view of their account (auth.ok `user`)."""
         row = self.get_user_row(user_id)
-        return _self_user(row) if row else None
+        return {**_self_user(row), "badges": self.badges_of([user_id])[user_id]} if row else None
 
     def public_user(self, user_id: str) -> dict | None:
         row = self.get_user_row(user_id)
@@ -671,8 +715,9 @@ class Database:
         for i in range(0, len(ids), 500):
             chunk = ids[i : i + 500]
             marks = ",".join("?" * len(chunk))
+            badges = self.badges_of(chunk)
             for row in self._all(f"SELECT * FROM users WHERE user_id IN ({marks})", *chunk):
-                out[row["user_id"]] = self._pub(row)
+                out[row["user_id"]] = self._pub(row, badges[row["user_id"]])
         return out
 
     def profile(self, user_id: str, viewer_id: str | None = None) -> dict | None:
@@ -815,6 +860,7 @@ class Database:
             self._exec("DELETE FROM poll_votes WHERE user_id = ?", user_id)
             self._exec("DELETE FROM saved_messages WHERE user_id = ?", user_id)
             self._exec("DELETE FROM user_notes WHERE user_id = ? OR target_id = ?", user_id, user_id)
+            self._exec("DELETE FROM user_badges WHERE user_id = ?", user_id)
         return {"avatar_id": row["avatar_id"], "banner_id": row["banner_id"], "attachment_ids": attachment_ids}
 
     def search_users(self, query: str, *, exclude: str, limit: int = 20) -> list[dict]:
@@ -2368,6 +2414,79 @@ class Database:
         return self._exec("DELETE FROM device_bans WHERE device_id = ?", device_id).rowcount > 0
 
     # --- server audit log ------------------------------------------------------
+
+    # --- badges ------------------------------------------------------------
+
+    def badges_of(self, user_ids: Iterable[str]) -> dict[str, list[dict]]:
+        """Public badge list per user, in the order the owner arranged them."""
+        ids = list(user_ids)
+        out: dict[str, list[dict]] = {u: [] for u in ids}
+        for i in range(0, len(ids), 500):
+            chunk = ids[i : i + 500]
+            marks = ",".join("?" * len(chunk))
+            for r in self._all(
+                "SELECT ub.user_id, ub.badge_id, b.name, b.description, b.animated, b.inline FROM user_badges ub "
+                f"LEFT JOIN badges b ON b.badge_id = ub.badge_id WHERE ub.user_id IN ({marks}) ORDER BY ub.position",
+                *chunk,
+            ):
+                if r["badge_id"] == BADGE_VERIFIED:
+                    out[r["user_id"]].append(_verified_badge())
+                elif r["name"] is not None:
+                    out[r["user_id"]].append(_badge(r))
+        return out
+
+    def list_badges(self) -> list[dict]:
+        rows = self._all("SELECT * FROM badges ORDER BY created_at, badge_id")
+        return [_verified_badge(), *[_badge(r) for r in rows]]
+
+    def get_badge(self, badge_id: str) -> dict | None:
+        if badge_id == BADGE_VERIFIED:
+            return _verified_badge()
+        row = self._one("SELECT * FROM badges WHERE badge_id = ?", badge_id)
+        return _badge(row) if row else None
+
+    def count_badges(self) -> int:
+        return self._one("SELECT COUNT(*) AS n FROM badges")["n"]
+
+    def create_badge(self, badge_id: str, name: str, description: str | None, animated: bool, inline: bool, creator_id: str) -> dict:
+        self._exec(
+            "INSERT INTO badges(badge_id, name, description, animated, inline, created_by, created_at) VALUES (?,?,?,?,?,?,?)",
+            badge_id, name, description, int(animated), int(inline), creator_id, now_iso(),
+        )
+        return self.get_badge(badge_id)
+
+    def update_badge(self, badge_id: str, fields: dict) -> dict:
+        if fields:
+            cols = ", ".join(f"{k} = ?" for k in fields)
+            self._exec(f"UPDATE badges SET {cols} WHERE badge_id = ?", *fields.values(), badge_id)
+        return self.get_badge(badge_id)
+
+    def delete_badge(self, badge_id: str) -> list[str]:
+        """Removes a custom badge and every grant of it; returns who held it."""
+        holders = [r["user_id"] for r in self._all("SELECT user_id FROM user_badges WHERE badge_id = ?", badge_id)]
+        with self._tx():
+            self._exec("DELETE FROM user_badges WHERE badge_id = ?", badge_id)
+            self._exec("DELETE FROM badges WHERE badge_id = ?", badge_id)
+        return holders
+
+    def badge_holders(self, badge_id: str) -> list[str]:
+        return [r["user_id"] for r in self._all("SELECT user_id FROM user_badges WHERE badge_id = ?", badge_id)]
+
+    def set_user_badges(self, user_id: str, badge_ids: list[str], granted_by: str) -> None:
+        """Replaces the user's badges with `badge_ids`, in that order."""
+        have = {r["badge_id"]: (r["granted_by"], r["granted_at"]) for r in self._all(
+            "SELECT badge_id, granted_by, granted_at FROM user_badges WHERE user_id = ?", user_id)}
+        with self._tx():
+            self._exec("DELETE FROM user_badges WHERE user_id = ?", user_id)
+            for pos, bid in enumerate(badge_ids):
+                by, at = have.get(bid, (granted_by, now_iso()))
+                self._exec(
+                    "INSERT INTO user_badges(user_id, badge_id, position, granted_by, granted_at) VALUES (?,?,?,?,?)",
+                    user_id, bid, pos, by, at,
+                )
+
+    def user_badge_ids(self, user_id: str) -> list[str]:
+        return [r["badge_id"] for r in self._all("SELECT badge_id FROM user_badges WHERE user_id = ? ORDER BY position", user_id)]
 
     def add_server_audit(self, actor: str, action: str, target_id: str | None = None, details: dict | None = None) -> None:
         self._exec(

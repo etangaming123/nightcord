@@ -6,7 +6,7 @@ import { STAFF_LABEL, can, customStatusOf, memberById, memberRoles, state, statu
 import { add, avatar, clear, displayName, fmtDate, h, statusLabel } from "./dom.js";
 import { closePopover, confirmAction, openMenu, openPopover, repositionPopover, toast } from "./modals.js";
 import { renderInline } from "./markdown.js";
-import { nameAttrs, profileBanner, profileThemeAttrs, roleIconOf, roleSwatch } from "./names.js";
+import { badgeEl, badgeEls, nameAttrs, profileBanner, profileThemeAttrs, roleIconOf, roleSwatch } from "./names.js";
 import { scopedT } from "../strings.js";
 
 const t = scopedT("ui/profile");
@@ -39,11 +39,13 @@ export function openProfile(userId, anchor, actions, { placement = "right" } = {
       profileBanner(user),
       h("div", { class: "profile-avatar" }, avatar(user, { size: "xl", status })),
       h("div", { class: "profile-card" },
-        h("div", member ? nameAttrs(user.user_id, "profile-name") : { class: "profile-name" }, member?.nickname || displayName(user)),
+        h("div", member ? nameAttrs(user.user_id, "profile-name") : { class: "profile-name" }, member?.nickname || displayName(user), badgeEls(user)),
         h("div", { class: "profile-username" }, member?.nickname ? `${displayName(user)} · ${user.username}` : user.username,
           STAFF_LABEL[user.server_role] ? h("span", { class: `tag staff ${user.server_role}` }, STAFF_LABEL[user.server_role].toUpperCase()) : null),
         customStatusOf(user) ? h("div", { class: "profile-status" }, customStatusOf(user)) : null,
         h("div", { class: "muted small" }, statusLabel(status)),
+        user.badges?.length ? section(t("badges_heading"), h("div", { class: "badge-list" }, user.badges.map((b) =>
+          h("span", { class: "badge-chip", title: b.description || null }, badgeEl(b), b.name)))) : null,
         extra.bio ? section(t("about_me"), h("p", { class: "profile-bio" },
           renderInline(extra.bio, { user: userById, meId: state.user?.user_id }))) : null,
         section(t("member_since_heading"), h("p", {},

@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-PROTOCOL_VERSION = "0.13"
+PROTOCOL_VERSION = "0.14"
 
 # --- Message types -----------------------------------------------------------
 
@@ -79,6 +79,18 @@ ADMIN_LEGAL_SET = "admin.legal.set"
 ADMIN_LEGAL_SET_RESULT = "admin.legal.set.result"
 ADMIN_USERS_SET_PERKS = "admin.users.set_perks"
 ADMIN_USERS_SET_PERKS_RESULT = "admin.users.set_perks.result"
+ADMIN_USERS_SET_BADGES = "admin.users.set_badges"
+ADMIN_USERS_SET_BADGES_RESULT = "admin.users.set_badges.result"
+
+# Badges (server owner only)
+BADGE_LIST = "badge.list"
+BADGE_LIST_RESULT = "badge.list.result"
+BADGE_CREATE = "badge.create"
+BADGE_CREATE_RESULT = "badge.create.result"
+BADGE_UPDATE = "badge.update"
+BADGE_UPDATE_RESULT = "badge.update.result"
+BADGE_DELETE = "badge.delete"
+BADGE_DELETE_RESULT = "badge.delete.result"
 
 # Users
 USER_PROFILE = "user.profile"
@@ -496,6 +508,12 @@ MAX_MUTE_SECONDS = 365 * 24 * 3600
 EMOJI_NAME_RE = re.compile(r"^[A-Za-z0-9_]{2,32}$")
 CUSTOM_EMOJI_RE = re.compile(r"^<(a?):([A-Za-z0-9_]{2,32}):(\d{1,20})>$")
 MAX_GUILD_EMOJI = 200
+MAX_BADGES = 50
+MAX_USER_BADGES = 8
+BADGE_NAME_MAX = 30
+BADGE_DESCRIPTION_MAX = 100
+# The built-in badge: no row, no image; clients draw it themselves.
+BADGE_VERIFIED = "verified"
 MAX_GUILD_STICKERS = 60
 STICKER_NAME_MAX = 30
 STICKER_DESCRIPTION_MAX = 100
@@ -512,6 +530,7 @@ MEDIA_KINDS = {
     "banner": (2 * 1024 * 1024, None),
     "guild_banner": (2 * 1024 * 1024, None),
     "role_icon": (256 * 1024, None),
+    "badge": (256 * 1024, 128),
 }
 CUSTOMIZATION_MODES = ("off", "allowlist", "on")
 CUSTOMIZATION_FEATURES = (

@@ -49,10 +49,12 @@ A web-based messaging app, built for selfhosting. A parody of Discord.
 - Profiles with avatars, banners, gradient profile colours, bios and custom statuses. Your status clears itself
   after an hour (or whenever you like) and nobody sees it while you're invisible.
 - **Private notes** on people, readable only by you
+- **Badges:** the server owner uploads their own and hands them out, plus a blue Verified check that's built in
 
 ### Running a server
 - Roles and permissions with per-channel overrides, kicks, bans, timeouts and audit logs
 - Server staff (admins and moderators), account approval, IP and device bans
+- Custom badges and a Verified badge you can give to anyone, shown next to their name or just on their profile
 - Terms of Service and Privacy Policy pages that people accept before joining
 - Server-wide switches for who can customise their profile, whether user search exists, and more
 - One-command backups

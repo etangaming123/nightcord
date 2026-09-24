@@ -23,7 +23,7 @@ def test_v3_database_upgrades(tmp_path):
     conn.close()
 
     d = Database(path)
-    assert d.conn.execute("PRAGMA user_version").fetchone()[0] == len(dbmod.MIGRATIONS) == 10
+    assert d.conn.execute("PRAGMA user_version").fetchone()[0] == len(dbmod.MIGRATIONS) == 11
     user = d.public_user("1")
     assert user["perks"] is False and user["banner_id"] is None and user["profile_colors"] is None
     assert d.get_guild("10")["banner_id"] is None

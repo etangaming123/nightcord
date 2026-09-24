@@ -5,6 +5,7 @@ import { guildCan, roleDisplay, userCan } from "../perks.js";
 import { state, userById } from "../state.js";
 import { h, imageEl } from "./dom.js";
 
+
 // CSS for a role colour or gradient ({ color, gradient } from roleDisplay).
 export function colorStyle({ color, gradient }) {
   if (gradient) return `--grad:linear-gradient(90deg, ${gradient.join(", ")}, ${gradient[0]})`;
@@ -34,6 +35,32 @@ export function roleIconOf(role) {
   }
   if (role.icon_emoji) return h("span", { class: "role-icon emoji", title: role.name, role: "img", "aria-label": role.name }, role.icon_emoji);
   return null;
+}
+
+// --- badges (PROTOCOL.md §4 Badge) --------------------------------------------------
+
+// White check on a blue diamond, drawn here because the built-in badge has no image.
+const VERIFIED_SVG = '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">'
+  + '<rect x="3.5" y="3.5" width="13" height="13" rx="3" fill="#1d9bf0" transform="rotate(40 10 10)"/>'
+  + '<path d="M6.3 10.4l2.5 2.5 4.9-5.3" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+// One badge as an icon. Custom badges follow the animated-media setting like avatars do.
+export function badgeEl(badge, { cls = "" } = {}) {
+  const label = badge.description ? `${badge.name}: ${badge.description}` : badge.name;
+  if (!badge.image) {
+    const el = h("span", { class: `user-badge badge-verified ${cls}`.trim(), title: label, role: "img", "aria-label": badge.name });
+    el.innerHTML = VERIFIED_SVG;
+    return el;
+  }
+  const img = imageEl(badge.image, { animate: true, alt: badge.name, cls: `user-badge ${cls}`.trim() });
+  if (img) img.title = label;
+  return img;
+}
+
+// The badges the owner wants shown next to a name, as an array of icons (h() flattens it).
+export function badgeEls(user) {
+  const fresh = (user && userById(user.user_id)) || user;
+  return (fresh?.badges || []).filter((b) => b.inline).map((b) => badgeEl(b));
 }
 
 // --- profile banners and colours (PROTOCOL.md §4 User, §8d) ---------------------

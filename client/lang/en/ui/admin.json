@@ -233,5 +233,13 @@
   "unban_device_title": "Lift this device ban?",
   "unban_device_body": "That device will be able to log in again.",
   "link_embeds_label": "Link previews",
-  "link_embeds_hint": "The server fetches pages people link to and shows a preview. Sites see this server's IP address, never the readers'. Turn it off and the server makes no outbound requests for messages."
+  "link_embeds_hint": "The server fetches pages people link to and shows a preview. Sites see this server's IP address, never the readers'. Turn it off and the server makes no outbound requests for messages.",
+  "tab_badges": "Badges",
+  "badges_label": "Badges…",
+  "badges_hint": "Give or take away badges",
+  "audit_badges_set": "Set their badges ({count})",
+  "audit_badges_cleared": "Took away all their badges",
+  "audit_badge_create": "Created the badge {name}",
+  "audit_badge_update": "Edited the badge {name}",
+  "audit_badge_delete": "Deleted the badge {name}"
 }

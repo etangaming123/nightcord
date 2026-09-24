@@ -8,6 +8,7 @@ import { STAFF_LABEL, staffLevel, state } from "../state.js";
 import { add, avatar, clear, displayName, fmtBytes, fmtDate, fmtDateTime, h, initials } from "./dom.js";
 import { renderDocument } from "./markdown.js";
 import { closeFullscreen, confirmAction, confirmModal, formModal, openMenu, openModal, refreshFullscreen, toast } from "./modals.js";
+import { badgesSection, giveBadgesDialog } from "./adminBadges.js";
 import { copyText } from "./profile.js";
 import { scopedT } from "../strings.js";
 
@@ -36,6 +37,7 @@ export function adminSections(actions) {
     lvl >= OWNER ? { id: "server", label: t("tab_server_settings"), render: (el) => serverSection(el, actions) } : null,
     lvl >= OWNER ? { id: "rules", label: t("tab_rules_privacy"), render: (el) => legalSection(el, actions) } : null,
     lvl >= ADMIN ? { id: "customization", label: t("tab_customisation"), render: (el) => customizationSection(el, actions) } : null,
+    lvl >= OWNER ? { id: "badges", label: t("tab_badges"), render: (el) => badgesSection(el, actions) } : null,
     { id: "accounts", label: t("tab_accounts"), badge: state.pendingAccounts, render: (el) => accountsSection(el, actions) },
     lvl >= OWNER || lvl >= ADMIN ? { id: "staff", label: t("tab_staff"), render: (el) => staffSection(el, actions) } : null,
     { id: "bans", label: t("tab_bans"), render: (el) => bansSection(el, actions) },
@@ -363,6 +365,7 @@ export function adminModeration(u, actions, after = () => {}) {
       },
     }) } : null,
     lvl >= ADMIN ? { label: u.perks ? t("remove_perks_label") : t("give_perks_btn"), icon: "✨", hint: t("give_perks_hint"), onClick: () => done(actions.req(T.ADMIN_USERS_SET_PERKS, { user_id: u.user_id, perks: !u.perks }).then(() => toast(u.perks ? t("perks_removed_toast2") : t("perks_given_toast2")))) } : null,
+    lvl >= OWNER && u.status === "active" ? { label: t("badges_label"), icon: "🏅", hint: t("badges_hint"), onClick: () => giveBadgesDialog(u, actions, after) } : null,
     lvl >= ADMIN ? { label: t("delete_account_label"), icon: "🗑", danger: true, onClick: () => deleteAccountDialog(u, () => done(actions.req(T.ADMIN_USERS_DELETE, { user_id: u.user_id }).then(() => toast(t("account_deleted_toast", { name }))))) } : null,
   ];
 }
@@ -553,6 +556,10 @@ async function guildsSection(el, actions) {
 // --- audit log ----------------------------------------------------------------------
 
 const AUDIT_TEXT = {
+  "user.badges": (d) => (d.badges?.length ? t("audit_badges_set", { count: d.badges.length }) : t("audit_badges_cleared")),
+  "badge.create": (d) => t("audit_badge_create", { name: d.name }),
+  "badge.update": (d) => t("audit_badge_update", { name: d.name }),
+  "badge.delete": (d) => t("audit_badge_delete", { name: d.name }),
   "user.status": (d) => (d.status === "active" ? t("audit_status_approved") : d.status === "disabled" ? t("audit_status_disabled") : d.status === "rejected" ? t("audit_status_rejected") : t("audit_status_other", { status: d.status })),
   "user.reset_password": () => t("audit_reset_password"),
   "user.mute": (d) => (d.until ? t("audit_muted") : t("audit_unmuted")),

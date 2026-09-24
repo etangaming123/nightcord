@@ -19,6 +19,7 @@ export const SHAPES = {
   emoji: { w: 128, h: 128, fit: "contain" },
   sticker: { w: 320, h: 320, fit: "contain" },
   role_icon: { w: 64, h: 64, fit: "contain" },
+  badge: { w: 128, h: 128, fit: "contain" },
 };
 
 const KEEPS_ANIMATION = new Set(["image/gif", "image/webp", "image/png"]);

@@ -24,5 +24,6 @@
   "remove_role_body": "Take {role} away from {name}?",
   "remove_role_confirm": "Remove role",
   "note_heading": "Note (only you can see this)",
-  "note_placeholder": "Anything you want to remember about them"
+  "note_placeholder": "Anything you want to remember about them",
+  "badges_heading": "Badges"
 }

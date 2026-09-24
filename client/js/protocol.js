@@ -2,7 +2,7 @@
 // server/nightcord/protocol.py — edit that file, then regenerate. Both follow
 // docs/PROTOCOL.md; server/tests/test_protocol_sync.py checks all three agree.
 
-export const PROTOCOL_VERSION = "0.13";
+export const PROTOCOL_VERSION = "0.14";
 
 export const T = Object.freeze({
   SETUP_CLAIM: "setup.claim",
@@ -61,6 +61,16 @@ export const T = Object.freeze({
   ADMIN_LEGAL_SET_RESULT: "admin.legal.set.result",
   ADMIN_USERS_SET_PERKS: "admin.users.set_perks",
   ADMIN_USERS_SET_PERKS_RESULT: "admin.users.set_perks.result",
+  ADMIN_USERS_SET_BADGES: "admin.users.set_badges",
+  ADMIN_USERS_SET_BADGES_RESULT: "admin.users.set_badges.result",
+  BADGE_LIST: "badge.list",
+  BADGE_LIST_RESULT: "badge.list.result",
+  BADGE_CREATE: "badge.create",
+  BADGE_CREATE_RESULT: "badge.create.result",
+  BADGE_UPDATE: "badge.update",
+  BADGE_UPDATE_RESULT: "badge.update.result",
+  BADGE_DELETE: "badge.delete",
+  BADGE_DELETE_RESULT: "badge.delete.result",
   USER_PROFILE: "user.profile",
   USER_PROFILE_RESULT: "user.profile.result",
   USER_UPDATE: "user.update",
@@ -407,11 +417,16 @@ export const LIMITS = Object.freeze({
   SYSTEM_LEAVE: 2,
   EMOJI_NAME_RE: /^[A-Za-z0-9_]{2,32}$/,
   MAX_GUILD_EMOJI: 200,
+  MAX_BADGES: 50,
+  MAX_USER_BADGES: 8,
+  BADGE_NAME_MAX: 30,
+  BADGE_DESCRIPTION_MAX: 100,
+  BADGE_VERIFIED: "verified",
   MAX_GUILD_STICKERS: 60,
   STICKER_NAME_MAX: 30,
   STICKER_DESCRIPTION_MAX: 100,
   MAX_ROLE_COLORS: 3,
-  MEDIA_KINDS: Object.freeze({emoji: Object.freeze({ maxBytes: 262144, maxDim: 256 }), sticker: Object.freeze({ maxBytes: 524288, maxDim: 320 }), avatar: Object.freeze({ maxBytes: 1048576, maxDim: null }), guild_icon: Object.freeze({ maxBytes: 1048576, maxDim: null }), banner: Object.freeze({ maxBytes: 2097152, maxDim: null }), guild_banner: Object.freeze({ maxBytes: 2097152, maxDim: null }), role_icon: Object.freeze({ maxBytes: 262144, maxDim: null })}),
+  MEDIA_KINDS: Object.freeze({emoji: Object.freeze({ maxBytes: 262144, maxDim: 256 }), sticker: Object.freeze({ maxBytes: 524288, maxDim: 320 }), avatar: Object.freeze({ maxBytes: 1048576, maxDim: null }), guild_icon: Object.freeze({ maxBytes: 1048576, maxDim: null }), banner: Object.freeze({ maxBytes: 2097152, maxDim: null }), guild_banner: Object.freeze({ maxBytes: 2097152, maxDim: null }), role_icon: Object.freeze({ maxBytes: 262144, maxDim: null }), badge: Object.freeze({ maxBytes: 262144, maxDim: 128 })}),
   CUSTOMIZATION_FEATURES: Object.freeze(["profile_banner", "profile_colors", "animated_media", "guild_banner", "gradient_roles", "role_icons", "client_themes"]),
   DM_PRIVACY: Object.freeze(["everyone", "requests", "friends"]),
   USER_SEARCH_MODES: Object.freeze(["off", "staff", "on"]),

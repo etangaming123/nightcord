@@ -1,6 +1,6 @@
 # Nightcord Protocol
 
-Version: `0.13`
+Version: `0.14`
 
 This document is the single source of truth for the wire format between the
 Nightcord client (GitHub Pages, vanilla JS) and a Nightcord server (Python).
@@ -21,6 +21,7 @@ Each protocol version arrived with one commit on `main`, named in the middle col
 | 0.6 | Friends, blocking and message requests | Friends and friend requests, one-sided blocking, per-user DM privacy with message requests, group DMs limited to friends, and user search as a server setting (off by default). |
 | 0.7 | Announcements inbox | A server-wide announcements inbox with per-account read state, and automatic entries when the Terms or Privacy Policy change. |
 | 0.8 | Account switcher | `max_accounts_per_client`, an advisory server setting for clients that keep several accounts. |
+| 0.14 | Badges | Badges the server owner uploads and hands out, plus a built-in Verified badge (`badge.*`, `admin.users.set_badges`, `PublicUser.badges`, the `badge` media kind). |
 | 0.13 | Status privacy and expiry | A custom status is hidden from everyone else while you're offline or invisible, and can be set to clear itself after 30m, 1h, 4h or at the end of the day. |
 | 0.12 | Message tools | `message.forward` (a snapshot, not a reference), and `read_state.ack` learning to move backwards so a message can be marked unread. |
 | 0.11 | Saved messages and private notes | A private bookmark list (`saved.*`) filtered by live permissions, and a note you can keep on someone that only you can read (`user.note.set`). |
@@ -112,7 +113,7 @@ Besides `/ws`, the server answers:
   their type; text files as `text/plain; charset=utf-8`; everything else
   (including SVG and HTML) as an `application/octet-stream` download.
 - `POST /media?kind=…` — upload one image for an emoji, sticker, avatar,
-  banner, guild icon, guild banner or role icon. Raw body, `Authorization:
+  banner, guild icon, guild banner, role icon or badge. Raw body, `Authorization:
   Bearer <session_token>` and CORS as for `/upload`. PNG (including APNG),
   JPEG, GIF and WebP only, checked from the bytes; size and dimension caps
   depend on `kind` (§4 Limits). Success: `200 { media: Media }`. Failure:
@@ -195,10 +196,11 @@ plain JSON numbers.
   "deleted": false,
   "perks": false,
   "banner_id": "string | null",
-  "profile_colors": ["#rrggbb", "#rrggbb"]
+  "profile_colors": ["#rrggbb", "#rrggbb"],
+  "badges": [Badge]
 }
 ```
-`perks` is the customisation allow-list flag (§8d). `banner_id` is the
+`badges` is the user's badges in the order the owner set (§4 Badge). `perks` is the customisation allow-list flag (§8d). `banner_id` is the
 profile banner image and `profile_colors` (or null) the two colours of a
 gradient profile card.
 The user's own view (`auth.ok`'s `user`, `user.updated` sent to
@@ -570,9 +572,22 @@ previews and looks again.
 guild); `embeds_suppressed` then stays true and `embeds` reads empty.
 Embeds are off entirely when the server's `link_embeds` setting is false.
 
+### Badge
+```json
+{ "id": "string", "name": "string", "description": "string | null", "image": "string | null", "inline": true }
+```
+A badge the server owner hands out. `image` is a media reference like an
+avatar's (`a_` prefix when animated; `GET /media/{id}`) or null for the
+built-in badge `id: "verified"`, which has no image: clients draw it as a
+white check on a blue diamond. Custom badge ids are their `media_id`.
+`inline` says whether clients show it as a small icon next to the user's
+name (`true`) or only on their profile (`false`); Verified is always
+inline. Badges are global to the server and only the server owner makes
+them or grants them (§5 Badges). Deleting a badge removes it from everyone.
+
 ### Media
 ```json
-{ "media_id": "string", "kind": "emoji | sticker | avatar | banner | guild_icon | guild_banner | role_icon",
+{ "media_id": "string", "kind": "emoji | sticker | avatar | banner | guild_icon | guild_banner | role_icon | badge",
   "content_type": "image/png | image/jpeg | image/gif | image/webp", "size": 0, "width": 0, "height": 0, "animated": false }
 ```
 
@@ -686,9 +701,10 @@ only mention counts.
 | `vanity_code` | 3–32 chars, `[a-z0-9-]` (stored lowercase) |
 | pins | at most 50 per channel |
 | legal documents | each up to 30000 chars of Markdown |
+| badges | at most 50 custom; `name` 1–30 chars; `description` up to 100; at most 8 per user; image ≤ 256 KB and ≤ 128×128 |
 | custom emoji | at most 200 per guild; `name` 2–32 chars `[A-Za-z0-9_]`, unique per guild (case-insensitive); image ≤ 256 KB and ≤ 256×256 |
 | stickers | at most 60 per guild; `name` 2–30 chars; `description` up to 100; one per message; image ≤ 512 KB and ≤ 320×320 |
-| `/media` images | avatar and guild icon ≤ 1 MB; banner and guild banner ≤ 2 MB; role icon ≤ 256 KB |
+| `/media` images | avatar and guild icon ≤ 1 MB; banner and guild banner ≤ 2 MB; role icon ≤ 256 KB; badge ≤ 256 KB |
 | `profile_colors` | exactly 2 colours |
 | role `colors` | 2–3 colours |
 
@@ -779,7 +795,25 @@ target's server role to be strictly below the actor's.
 Server audit `action` values: `user.status`, `user.reset_password`,
 `user.mute`, `user.delete`, `user.delete_self`, `staff.set`,
 `ip_ban.add`, `ip_ban.remove`, `device_ban.add`, `device_ban.remove`,
-`guild.delete`, `config.update`, `legal.update`, `user.perks`.
+`guild.delete`, `config.update`, `legal.update`, `user.perks`,
+`user.badges`, `badge.create`, `badge.update`, `badge.delete`.
+
+### Badges (server owner only)
+
+| Type | Dir | Payload |
+|---|---|---|
+| `badge.list` | C→S | `{}` — server owner. Every badge, the built-in Verified first |
+| `badge.list.result` | S→C | `{ badges: [Badge] }` |
+| `badge.create` | C→S | `{ name, description?, inline?, media_id }` — server owner; `media_id` is a `badge` upload and becomes the badge id; `inline` defaults to true |
+| `badge.create.result` | S→C | `{ badge: Badge }` |
+| `badge.update` | C→S | `{ badge_id, name?, description?, inline? }` — server owner; the built-in badge can't be changed |
+| `badge.update.result` | S→C | `{ badge: Badge }` |
+| `badge.delete` | C→S | `{ badge_id }` — server owner; removes it from everyone who had it |
+| `badge.delete.result` | S→C | `{}` |
+| `admin.users.set_badges` | C→S | `{ user_id, badge_ids: [string] }` — server owner. Replaces the user's badges, in display order |
+| `admin.users.set_badges.result` | S→C | `{ user: AdminUser }` |
+
+Changes reach everyone as `user.updated` for each affected user.
 
 ### Users
 | type | direction | payload |

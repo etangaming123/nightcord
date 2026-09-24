@@ -550,6 +550,16 @@ export async function createEmoji(file, name) {
 export const renameEmoji = (emojiId, name) => req(T.EMOJI_UPDATE, { emoji_id: emojiId, name });
 export const deleteEmoji = (emojiId) => req(T.EMOJI_DELETE, { emoji_id: emojiId });
 
+// Badges (PROTOCOL.md §5 Badges): the server owner only.
+export const listBadges = async () => (await req(T.BADGE_LIST, {})).badges;
+export async function createBadge(file, fields) {
+  const media = await uploadImage(file, "badge");
+  return (await req(T.BADGE_CREATE, { ...fields, media_id: media.media_id })).badge;
+}
+export const updateBadge = (badgeId, fields) => req(T.BADGE_UPDATE, { badge_id: badgeId, ...fields });
+export const deleteBadge = (badgeId) => req(T.BADGE_DELETE, { badge_id: badgeId });
+export const setUserBadges = (userId, badgeIds) => req(T.ADMIN_USERS_SET_BADGES, { user_id: userId, badge_ids: badgeIds });
+
 export async function createSticker(file, fields) {
   const media = await uploadImage(file, "sticker");
   return (await req(T.STICKER_CREATE, { guild_id: state.guildId, ...fields, media_id: media.media_id })).sticker;
@@ -1574,7 +1584,7 @@ export const actions = {
   inviteLink, openInviteDialog, openInvite, createInvite, setGuildIcon, setGuildIconMedia,
   reorderChannels, sidebarOrder, toggleCategory, isCollapsed, joinVoice, leaveVoice, setVoiceFlags,
   changeNickname, staffItems, nameOf,
-  sendSticker, emojiInfo, createEmoji, renameEmoji, deleteEmoji, createSticker, updateSticker, deleteSticker,
+  sendSticker, emojiInfo, createEmoji, renameEmoji, deleteEmoji, listBadges, createBadge, updateBadge, deleteBadge, setUserBadges, createSticker, updateSticker, deleteSticker,
   toggleNav, toggleMembers, refreshChrome, refreshChat: () => invalidate("chat"),
   req, rememberUser, setSelf, setServerInfo, messageUser, statusMenu,
   openProfile: openProfileAction,

@@ -102,7 +102,9 @@ def connect(server):
 @pytest.fixture
 async def owner(connect):
     c = await connect()
-    await c.login("owner", OWNER_PASSWORD)
+    res = await c.login("owner", OWNER_PASSWORD)
+    c.user, c.token = res["user"], res["session_token"]
+    c.uid = c.user["user_id"]
     return c
 
 

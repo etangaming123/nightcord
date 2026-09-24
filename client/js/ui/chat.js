@@ -16,7 +16,7 @@ import { $, add, avatar, clear, h, iconBtn, idGt } from "./dom.js";
 import { renderFriendsHeader, renderFriendsPage } from "./friends.js";
 import { QUICK_REACTIONS, customOf, emojiGlyph } from "./emoji.js";
 import { jumboCount, plainText, render as renderMarkdown } from "./markdown.js";
-import { nameAttrs, roleIconEl } from "./names.js";
+import { badgeEls, nameAttrs, roleIconEl } from "./names.js";
 import { stickerImg } from "./stickers.js";
 import { scopedT } from "../strings.js";
 
@@ -304,6 +304,7 @@ function messageNodes(m, prev, state, actions) {
       h("div", { class: "msg-head" },
         h("button", { ...nameAttrs(author?.user_id, "msg-author"), type: "button", on: { click: profile } }, displayName(author)),
         roleIconEl(author?.user_id),
+        badgeEls(author),
         STAFF_LABEL[author?.server_role] ? h("span", { class: `tag staff ${author.server_role}`, title: STAFF_LABEL[author.server_role] },
           { owner: "OWNER", admin: "ADMIN", moderator: "MOD" }[author.server_role]) : null,
         stamp(d)),

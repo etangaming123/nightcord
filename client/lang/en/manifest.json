@@ -26,6 +26,7 @@
   "ui/pins",
   "ui/search",
   "ui/admin",
+  "ui/adminBadges",
   "ui/guildSettings",
   "ui/channelSettings",
   "ui/invites",

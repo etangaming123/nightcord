@@ -5,7 +5,7 @@
 
 import { currentChannel, customStatusOf, hoistedRole, isDm, memberCanView, nameOf, statusOf, userById } from "../state.js";
 import { $, add, avatar, clear, displayName, h, statusLabel } from "./dom.js";
-import { nameAttrs, profileBanner, profileThemeAttrs, roleIconEl } from "./names.js";
+import { badgeEls, nameAttrs, profileBanner, profileThemeAttrs, roleIconEl } from "./names.js";
 import { scopedT } from "../strings.js";
 
 const t = scopedT("ui/members");
@@ -23,7 +23,8 @@ function row(state, actions, user, { crown = false, guild = false } = {}) {
   h("span", { class: "member-meta" },
     h("span", { class: "name-line" },
       h("span", guild ? nameAttrs(user.user_id, "name") : { class: "name" }, guild ? nameOf(user) : displayName(user)),
-      guild ? roleIconEl(user.user_id) : null),
+      guild ? roleIconEl(user.user_id) : null,
+      badgeEls(user)),
     customStatusOf(user) ? h("span", { class: "sub" }, customStatusOf(user)) : null),
   crown ? h("span", { class: "crown", title: t("guild_owner_title"), "aria-label": t("guild_owner_title") }, "♛") : null);
 }
@@ -35,7 +36,7 @@ function dmProfile(user, actions) {
     profileBanner(user),
     h("div", { class: "profile-avatar" }, avatar(user, { size: "xl", status })),
     h("div", { class: "profile-card" },
-      h("div", { class: "profile-name" }, displayName(user)),
+      h("div", { class: "profile-name" }, displayName(user), badgeEls(user)),
       h("div", { class: "profile-username" }, user.username),
       customStatusOf(user) ? h("div", { class: "profile-status" }, customStatusOf(user)) : null,
       h("div", { class: "muted small" }, statusLabel(status)),
