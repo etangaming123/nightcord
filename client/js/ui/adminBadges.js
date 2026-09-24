@@ -2,6 +2,7 @@
 // images and hands them out, and the built-in Verified badge is always there.
 
 import { LIMITS } from "../protocol.js";
+import { state } from "../state.js";
 import { clear, displayName, h, iconBtn } from "./dom.js";
 import { pickImage } from "./images.js";
 import { confirmModal, formModal, toast } from "./modals.js";
@@ -82,6 +83,8 @@ export async function badgesSection(el, actions) {
 
   el.append(
     h("p", { class: "muted" }, t("intro")),
+    h("div", { class: "row gap" },
+      h("button", { class: "btn", type: "button", on: { click: () => giveBadgesDialog(state.user, actions) } }, t("my_badges_btn"))),
     h("div", { class: "sticker-form stack" },
       h("div", { class: "row gap" }, preview, h("div", { class: "stack grow" }, nameIn, descIn)),
       h("label", { class: "check" }, inlineIn, h("span", {}, t("show_next_to_name_hint"))),

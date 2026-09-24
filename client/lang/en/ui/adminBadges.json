@@ -1,5 +1,5 @@
 {
-  "intro": "Badges are little icons you hand out. The built-in Verified badge is always here. Upload your own, then give them to people from Accounts → Manage → Badges.",
+  "intro": "Badges are little icons you hand out. The built-in Verified badge is always here. Upload your own, then give them to people from Accounts → Manage → Badges, or to yourself with the button below.",
   "choose_image": "Choose image",
   "choose_image_title": "Choose the badge image",
   "name_placeholder": "Badge name",
@@ -24,5 +24,6 @@
   "give_subtitle": "Pick up to {max}.",
   "save_btn": "Save",
   "profile_only": "profile only",
-  "badges_saved_toast": "Updated {name}'s badges"
+  "badges_saved_toast": "Updated {name}'s badges",
+  "my_badges_btn": "Choose my own badges"
 }
