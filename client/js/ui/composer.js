@@ -33,7 +33,8 @@ function candidates() {
 }
 
 // Custom emoji are typed as :name: and sent as <:name:id> (PROTOCOL.md §4 Emoji).
-const EMOJI_NAME_TOKEN = /(?<![<\w]|<a):([A-Za-z0-9_]{2,32}):(?!\d)/g;
+// + and - for Discord's :+1: :-1: :e-mail: and friends.
+const EMOJI_NAME_TOKEN = /(?<![<\w]|<a):([A-Za-z0-9_+-]{2,32}):(?!\d)/g;
 // Channels are typed as #name and sent as <#channel_id> (§4 Message).
 const CHANNEL_TOKEN = /(?<![\w<#])#([a-z0-9_-]{1,32})/g;
 
@@ -296,12 +297,18 @@ export function renderComposer(state, actions) {
       drawAc();
       return;
     }
-    const em = /(^|\s):([A-Za-z0-9_]{2,32})$/.exec(input.value.slice(0, pos));
+    const em = /(^|\s):([A-Za-z0-9_+-]{2,32})$/.exec(input.value.slice(0, pos));
     if (em) {
       const q = em[2].toLowerCase();
       const custom = searchEmojis(q, 8).map((e) => ({ ...e, custom: true }));
-      const unicode = UNICODE_EMOJI.filter((e) => e.words.split(" ").some((w) => w.startsWith(q)))
-        .slice(0, 10 - custom.length).map((e) => ({ emoji: e.emoji, name: e.words.split(" ")[0] }));
+      // Shortcode matches first (showing the alias that matched), then search words.
+      const byName = UNICODE_EMOJI.flatMap((e) => {
+        const name = e.names.find((n) => n.startsWith(q));
+        return name ? [{ emoji: e.emoji, name }] : [];
+      });
+      const byWord = UNICODE_EMOJI.filter((e) => !e.names.some((n) => n.startsWith(q)) && e.words.split(" ").some((w) => w.startsWith(q)))
+        .map((e) => ({ emoji: e.emoji, name: e.names[0] }));
+      const unicode = [...byName, ...byWord].slice(0, 10 - custom.length);
       ac = { kind: "emoji", query: em[2], start: pos - em[2].length - 1, items: [...custom, ...unicode], index: 0 };
       drawAc();
       return;
