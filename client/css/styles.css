@@ -187,6 +187,12 @@ textarea { resize: vertical; }
 .whats-this-body ul { margin: 8px 0; padding-left: 20px; display: grid; gap: 6px; }
 .whats-this-body a { color: var(--accent-text); }
 .connect-option { margin-top: 14px; color: var(--text-2); font-size: 13px; }
+.pw-field { position: relative; display: block; }
+.pw-field input { padding-right: 38px; }
+.pw-toggle { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); font-size: 15px; opacity: .7; }
+.pw-toggle[aria-pressed="true"] { opacity: 1; color: var(--accent-text); }
+.field-hint { display: block; margin-top: 4px; font-size: 12px; font-weight: 400; color: var(--muted); }
+.field-hint.bad { color: var(--danger-text); }
 .auth-notice { margin: 14px 0 10px; color: var(--text-2); }
 .auth-notice .btn.link { padding: 0; display: inline; }
 .card p { margin: 0 0 18px; }

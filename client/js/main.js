@@ -195,7 +195,7 @@ async function connectTo(input, { addAccount = false, fromForm = false } = {}) {
   button.disabled = true;
   button.textContent = t("connecting");
   status.hidden = !button.hidden; // only show the status text when the Connect button itself is on the other tab
-  status.textContent = t("connecting");
+  status.textContent = t("connecting_to", { host: new URL(url).host });
   cancelBtn.hidden = false;
   cancelBtn.onclick = onCancel; // assigned, not added: never stacks up
   const hintTimer = setTimeout(() => { hint.hidden = false; }, 6000);
@@ -390,6 +390,7 @@ function showAuth({ message = null, info = false } = {}) {
   form.password2.required = authMode === "register";
   form.password2.maxLength = LIMITS.PASSWORD_MAX_BYTES;
   if (confirmField.hidden) form.password2.value = "";
+  form.dispatchEvent(new Event("nightcord:authmode"));
   $("#auth-submit").textContent = { login: t("auth_submit_login"), register: t("auth_submit_register"), request: t("auth_submit_request") }[authMode];
 
   const links = legalLinks(state.info, openLegalDoc);
@@ -410,6 +411,35 @@ function showAuth({ message = null, info = false } = {}) {
   (form.username.value ? form.password : form.username).focus();
 }
 
+// Show/hide eyes on the password fields, plus live hints so mistakes show up
+// as you type rather than after Submit.
+function setupAuthFields(form) {
+  for (const input of form.querySelectorAll('input[type="password"]')) {
+    const eye = h("button", { class: "icon-btn pw-toggle", type: "button", title: t("show_password"), "aria-label": t("show_password"), "aria-pressed": "false" }, "👁");
+    eye.addEventListener("click", () => {
+      const show = input.type === "password";
+      input.type = show ? "text" : "password";
+      const label = t(show ? "hide_password" : "show_password");
+      eye.title = label;
+      eye.setAttribute("aria-label", label);
+      eye.setAttribute("aria-pressed", String(show));
+    });
+    const wrap = h("span", { class: "pw-field" });
+    input.replaceWith(wrap);
+    add(wrap, input, eye);
+  }
+  const usernameHint = $("#auth-username-hint");
+  const confirmHint = $("#auth-confirm-hint");
+  const check = () => {
+    const name = form.username.value.trim();
+    usernameHint.hidden = authMode === "login";
+    usernameHint.classList.toggle("bad", !!name && !LIMITS.USERNAME_RE.test(name));
+    confirmHint.hidden = authMode !== "register" || !form.password2.value || form.password2.value === form.password.value;
+  };
+  for (const field of [form.username, form.password, form.password2]) field.addEventListener("input", check);
+  form.addEventListener("nightcord:authmode", check);
+}
+
 async function submitAuth(e) {
   e.preventDefault();
   const form = e.currentTarget;
@@ -422,6 +452,7 @@ async function submitAuth(e) {
       throw new Error(t("username_requirements"));
     }
     if (authMode === "register" && password !== form.password2.value) {
+      form.password2.focus();
       throw new Error(t("passwords_dont_match"));
     }
     const device_id = store.getDeviceId(state.url);
@@ -736,6 +767,7 @@ async function boot() {
     showConnect({ error: t("must_accept_rules"), tab: "saved" });
   });
   $("#auth-form").addEventListener("submit", submitAuth);
+  setupAuthFields($("#auth-form"));
   $("#setup-form").addEventListener("submit", submitSetup);
   $("#setup-back").addEventListener("click", () => { setupStep = Math.max(0, setupStep - 1); showSetup(); });
   for (const id of ["#auth-back", "#setup-cancel", "#legal-back"]) {

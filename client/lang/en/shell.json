@@ -35,6 +35,8 @@
   "owner_account_intro": "Create the server-owner account. It manages accounts, server settings and can read any guild.",
   "username_label": "Username",
   "password_label": "Password",
+  "username_requirements_hint": "3–32 characters: letters, digits, _ . -",
+  "passwords_dont_match": "The passwords don't match.",
   "confirm_password_label": "Confirm password",
   "server_name_label": "Server name",
   "account_creation_label": "Who can create accounts?",
