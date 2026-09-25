@@ -2,7 +2,7 @@
 // server/nightcord/protocol.py — edit that file, then regenerate. Both follow
 // docs/PROTOCOL.md; server/tests/test_protocol_sync.py checks all three agree.
 
-export const PROTOCOL_VERSION = "0.15";
+export const PROTOCOL_VERSION = "0.16";
 
 export const T = Object.freeze({
   SETUP_CLAIM: "setup.claim",

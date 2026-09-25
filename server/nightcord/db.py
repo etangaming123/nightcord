@@ -22,6 +22,7 @@ from typing import Any, Iterable
 from . import files as F
 from .ids import new_id
 from .permissions import DEFAULT_EVERYONE, OWNER_RANK
+from . import protocol as P
 from .protocol import BADGE_VERIFIED
 
 log = logging.getLogger("nightcord.db")
@@ -56,6 +57,9 @@ DEFAULT_SERVER_CONFIG = {
     # Fetch pages people link to and show a preview (PROTOCOL.md §4 Embed).
     # Off means the server never makes outbound requests for messages.
     "link_embeds": True,
+    # Read X/Twitter status links through fixupx, which serves a proper
+    # preview (tweet text, media, stats) where x.com serves nothing useful.
+    "fx_links": True,
 }
 
 STAFF_LEVELS = {"none": 0, "moderator": 1, "admin": 2, "owner": 3}
@@ -368,6 +372,17 @@ MIGRATIONS: list[str] = [
         PRIMARY KEY (user_id, badge_id)
     );
     CREATE INDEX user_badges_badge ON user_badges(badge_id)
+    """,
+    # 12 — link preview cache (PROTOCOL.md §4 Embed): what a URL looked like
+    # last time, so a restart doesn't mean fetching every link again.
+    """
+    CREATE TABLE embed_cache (
+        url TEXT PRIMARY KEY,
+        data TEXT NOT NULL,
+        fetched_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+    );
+    CREATE INDEX embed_cache_expires ON embed_cache(expires_at)
     """,
 ]
 
@@ -2056,6 +2071,34 @@ class Database:
         """Fills in link previews without touching edited_at (PROTOCOL.md §4 Embed)."""
         self._exec("UPDATE messages SET embeds = ? WHERE message_id = ?", json.dumps(embeds), message_id)
         return self.get_message(message_id)
+
+    # --- link preview cache (embeds.py) -----------------------------------------
+
+    def embed_cache_get(self, url: str) -> tuple[dict, int] | None:
+        """(embed, expires_at) if url was looked at recently; {} = nothing to show."""
+        row = self._one("SELECT data, expires_at FROM embed_cache WHERE url = ? AND expires_at > ?", url, int(time.time()))
+        return (json.loads(row["data"]), row["expires_at"]) if row else None
+
+    def embed_cache_put(self, url: str, embed: dict, expires_at: int) -> None:
+        self._exec(
+            "INSERT INTO embed_cache(url, data, fetched_at, expires_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(url) DO UPDATE SET data = excluded.data, fetched_at = excluded.fetched_at, "
+            "expires_at = excluded.expires_at",
+            url, json.dumps(embed), int(time.time()), expires_at,
+        )
+
+    def embed_cache_prune(self, max_rows: int = P.EMBED_CACHE_MAX_ROWS) -> int:
+        """Drops expired rows, then the oldest beyond max_rows. Returns rows removed."""
+        with self._tx():
+            n = self.conn.execute("DELETE FROM embed_cache WHERE expires_at <= ?", (int(time.time()),)).rowcount
+            n += self.conn.execute(
+                "DELETE FROM embed_cache WHERE url IN (SELECT url FROM embed_cache ORDER BY fetched_at DESC LIMIT -1 OFFSET ?)",
+                (max_rows,),
+            ).rowcount
+        return n
+
+    def embed_cache_clear(self) -> int:
+        return self.conn.execute("DELETE FROM embed_cache").rowcount
 
     def suppress_embeds(self, message_id: int, suppressed: bool) -> dict | None:
         self._exec(

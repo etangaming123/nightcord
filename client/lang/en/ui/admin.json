@@ -237,6 +237,8 @@
   "unban_device_body": "That device will be able to log in again.",
   "link_embeds_label": "Link previews",
   "link_embeds_hint": "The server fetches pages people link to and shows a preview. Sites see this server's IP address, never the readers'. Turn it off and the server makes no outbound requests for messages.",
+  "fx_links_label": "Read X/Twitter links through fixupx",
+  "fx_links_hint": "x.com shows nothing useful to link previews, so the server asks fixupx.com for the tweet instead. The link people see stays the same.",
   "tab_badges": "Badges",
   "badges_label": "Badges…",
   "badges_hint": "Give or take away badges",

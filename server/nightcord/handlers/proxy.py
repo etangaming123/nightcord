@@ -1,4 +1,4 @@
-"""GET /proxy/{sig}/{b64url} — images inside link embeds (PROTOCOL.md §4 Embed).
+"""GET /proxy/{sig}/{b64url} — images and videos inside link embeds (PROTOCOL.md §4 Embed).
 
 Embeds never point a viewer's browser at a third-party host: every image URL
 in a stored embed is rewritten to this route, so the only address the remote
@@ -60,7 +60,7 @@ def proxy_url(secret: str, url: str) -> str:
 def proxy_embed(secret: str, embed: dict) -> dict:
     """A copy of `embed` whose image fields point at this server."""
     out = dict(embed)
-    for key in ("image", "thumbnail"):
+    for key in ("image", "thumbnail", "video"):
         if out.get(key):
             out[key] = proxy_url(secret, out[key])
     return out
@@ -100,13 +100,15 @@ async def serve(request: web.Request) -> web.StreamResponse:
         raise web.HTTPNotFound()
     try:
         _final, resp, body = await E.fetch_guarded(
-            ctx.http, url, accept="image/*", max_bytes=P.EMBED_IMAGE_MAX_BYTES
+            ctx.http, url, accept="image/*,video/mp4,video/webm;q=0.9", max_bytes=P.EMBED_IMAGE_MAX_BYTES,
+            sizes={"image": P.EMBED_IMAGE_MAX_BYTES, "video": P.EMBED_VIDEO_MAX_BYTES},
+            total=P.EMBED_VIDEO_FETCH_TIMEOUT,
         )
     except (E.UnsafeUrl, aiohttp.ClientError, asyncio.TimeoutError, UnicodeError, OSError) as e:
         log.debug("proxy fetch failed for %s: %s", url, e)
         raise web.HTTPNotFound()
-    content_type = (resp.headers.get("Content-Type") or "").split(";")[0].strip().lower()
-    if content_type not in E.IMAGE_TYPES:
+    content_type = E.content_type_of(resp)
+    if content_type not in E.IMAGE_TYPES + E.VIDEO_TYPES:
         raise web.HTTPNotFound()
     try:
         proxy_dir(ctx).mkdir(parents=True, exist_ok=True)
@@ -147,6 +149,9 @@ async def sweeper(app: web.Application) -> None:
             n = sweep(ctx)
             if n:
                 log.info("removed %d cached preview images", n)
+            n = ctx.db.embed_cache_prune()
+            if n:
+                log.info("forgot %d cached link previews", n)
         except Exception:
             log.exception("proxy cache sweep failed")
 

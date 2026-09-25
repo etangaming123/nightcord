@@ -9,7 +9,7 @@ import {
 import { renderAttachments } from "./attachments.js";
 import { commandHeader, commandResult } from "./commands.js";
 import { forwardCard, messageMenuHandlers } from "./messageMenu.js";
-import { renderEmbeds } from "./embeds.js";
+import { isMediaOnly, renderEmbeds } from "./embeds.js";
 import { renderPoll } from "./polls.js";
 import { messageQuote } from "./quote.js";
 import { $, add, avatar, clear, h, iconBtn, idGt } from "./dom.js";
@@ -283,7 +283,7 @@ function messageNodes(m, prev, state, actions) {
   const body = editing
     ? editBox(m, state, actions)
     : h("div", { class: `msg-body ${jumbo ? "jumbo" : ""}` },
-      m.content ? renderMarkdown(m.content, mdContext(state, actions)) : null,
+      m.content && !isMediaOnly(m) ? renderMarkdown(m.content, mdContext(state, actions)) : null,
       m.edited_at ? h("span", { class: "edited", title: `Edited ${fullFmt.format(new Date(m.edited_at))}` }, " (edited)") : null);
   const files = editing ? null : [
     forwardCard(m, actions),

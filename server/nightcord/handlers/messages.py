@@ -108,7 +108,9 @@ async def _fill_embeds(ctx, channel: dict, message_id: int) -> None:
         row = ctx.db.message_row(message_id)
         if row is None:
             return
-        found = await E.build_embeds(ctx.http, row["content"] or "")
+        found = await E.build_embeds(
+            ctx.http, row["content"] or "", db=ctx.db, fx=ctx.db.get_server_config()["fx_links"],
+        )
         # The message may have been edited or deleted while we were fetching.
         fresh = ctx.db.message_row(message_id)
         if fresh is None or fresh["content"] != row["content"] or fresh["embeds_suppressed"]:

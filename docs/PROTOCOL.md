@@ -1,6 +1,6 @@
 # Nightcord Protocol
 
-Version: `0.15`
+Version: `0.16`
 
 This document is the single source of truth for the wire format between the
 Nightcord client (GitHub Pages, vanilla JS) and a Nightcord server (Python).
@@ -21,6 +21,7 @@ Each protocol version arrived with one commit on `main`, named in the middle col
 | 0.6 | Friends, blocking and message requests | Friends and friend requests, one-sided blocking, per-user DM privacy with message requests, group DMs limited to friends, and user search as a server setting (off by default). |
 | 0.7 | Announcements inbox | A server-wide announcements inbox with per-account read state, and automatic entries when the Terms or Privacy Policy change. |
 | 0.8 | Account switcher | `max_accounts_per_client`, an advisory server setting for clients that keep several accounts. |
+| 0.16 | Discord-style link embeds | Embeds gain `gifv` and `video` media (proxied), `provider_url`, `author_url`, image/video sizes and `youtube_id`; oEmbed author/provider lines, YouTube titles, X/Twitter links read through fixupx (`fx_links`), and a preview cache that survives restarts. |
 | 0.15 | Server description | `server_description`, a Markdown blurb the owner writes; shown on the server's address page (`GET /`) and the client's About tab. |
 | 0.14 | Badges | Badges the server owner uploads and hands out, plus a built-in Verified badge (`badge.*`, `admin.users.set_badges`, `PublicUser.badges`, the `badge` media kind). |
 | 0.13 | Status privacy and expiry | A custom status is hidden from everyone else while you're offline or invisible, and can be set to clear itself after 30m, 1h, 4h or at the end of the day. |
@@ -126,12 +127,13 @@ Besides `/ws`, the server answers:
   after an hour. Uploading needs no customisation perks; using an image
   may (§8d).
 - `GET /media/{media_id}` — a stored image. Public and immutable.
-- `GET /proxy/{signature}/{url}` — one image from a link preview (§4
-  Embed). `url` is the remote image's URL, base64url-encoded; `signature`
+- `GET /proxy/{signature}/{url}` — one image or video from a link preview
+  (§4 Embed). `url` is the remote file's URL, base64url-encoded; `signature`
   is HMAC-SHA256 over it with a per-server secret, so this can't be used as
   an open proxy. The server fetches it with the same guards as a preview
-  (public addresses only, `image/*` only, 8 MB cap) and keeps the bytes for
-  a week. No authentication: an embed's images are as public as the message
+  (public addresses only; `image/*` up to 8 MB, `video/mp4` and
+  `video/webm` up to 25 MB) and keeps the bytes for a week; cached files
+  answer `Range` requests so videos can seek. No authentication: an embed's images are as public as the message
   they're on.
 
 ---
@@ -260,7 +262,8 @@ Password is never sent to the client; the server stores only a bcrypt hash.
   "user_search": "off | staff | on",
   "announcements_admins": false,
   "max_accounts_per_client": 0,
-  "link_embeds": true
+  "link_embeds": true,
+  "fx_links": true
 }
 ```
 Defaults: `guild_creation: "on"`, `account_creation: "on"`,
@@ -283,7 +286,10 @@ switcher stop offering "Add account" for this server once they hold that
 many; the server doesn't enforce it. `link_embeds` (default true) decides
 whether the server fetches pages people link to and builds previews (§4
 Embed); with it off the server makes no outbound requests for messages at
-all, and `/proxy` stops serving anything new.
+all, and `/proxy` stops serving anything new. `fx_links` (default true)
+reads X/Twitter status links through fixupx.com, which serves a real
+preview (tweet text, media, stats) where x.com serves nothing useful to a
+bot; the embed's `url` stays the link as posted.
 
 ### Guild
 ```json
@@ -543,35 +549,70 @@ in a viewer, and offer everything else as a download.
 ### Embed
 ```json
 {
-  "kind": "link | image | video",
+  "kind": "link | image | gifv | video",
   "url": "https://…",
   "title": "string | null",
   "description": "string | null",
   "site_name": "string | null",
+  "provider_url": "https://… | null",
   "author": "string | null",
+  "author_url": "https://… | null",
   "color": "#rrggbb | null",
   "image": "/proxy/… | null",
-  "thumbnail": "/proxy/… | null"
+  "image_width": "number | null",
+  "image_height": "number | null",
+  "thumbnail": "/proxy/… | null",
+  "video": "/proxy/… | null",
+  "video_width": "number | null",
+  "video_height": "number | null",
+  "youtube_id": "string | null"
 }
 ```
-A preview the server built for a link somebody posted. The server reads at
+A preview the server built for a link somebody posted, laid out like
+Discord's: provider line (`site_name`, linking to `provider_url`), author
+line (`author` → `author_url`), title linking to `url`, description (plain
+text with line breaks, up to 1000 chars), then media. The server reads at
 most 5 links per message — skipping code spans, spoilers and the `<url>`
 "no preview" forms of §4 Message — fetches each page and keeps `og:*`,
-`twitter:*`, `<title>`, `<meta name="description">` and `theme-color`.
+`twitter:*`, `<title>`, `<meta name="description">`, `theme-color` and the
+page's oEmbed link (`<link rel="alternate" type="application/json+oembed">`),
+whose `author_name`/`author_url`/`provider_name`/`provider_url` fill the
+author and provider lines.
 
-A URL that answers with an image is a `kind: "image"` embed; a YouTube
-watch, `youtu.be` or shorts link is a `kind: "video"` card with the video's
-thumbnail. Nothing is ever embedded as an iframe.
+- `link`: a page. A `twitter:card` of `summary_large_image` or `player`
+  gets a big `image`; any other page image is a small `thumbnail` beside
+  the text (Discord's rule). A page with a playable `og:video` (mp4/webm)
+  is a `video` instead.
+- `image`: the URL answered with an image. Clients show it bare, like an
+  attachment.
+- `gifv`: a GIF site (Tenor, Giphy) whose page has an mp4. Clients play
+  `video` muted and looping with no controls, bare like an attachment,
+  `image` as the poster.
+- `video`: a page with a playable video, or a direct mp4/webm link. Clients
+  play `video` inline with controls (`image` as the poster). A YouTube
+  watch, `youtu.be`, shorts or live link is a `video` with `youtube_id`, the
+  title and channel from YouTube's oEmbed and the thumbnail as `image`, but
+  no `video`: clients show the thumbnail and load YouTube's player (an
+  iframe from `youtube-nocookie.com`) only when the viewer presses play.
+  That is the one time a viewer's browser talks to the previewed site.
 
-`image` and `thumbnail` are **always** paths on this server
-(`/proxy/{signature}/{url}`, §2 HTTP), never third-party URLs: a link in a
-message must not be usable to collect every reader's IP address. The server
-fetches the real image once and caches it.
+`image`, `thumbnail` and `video` are paths on this server
+(`/proxy/{signature}/{url}`, §2 HTTP), never third-party URLs (YouTube
+thumbnails included): a link in a message must not be usable to collect
+every reader's IP address. The server fetches the real file once and caches it (images up to
+8 MB, videos up to 25 MB; past that the proxy answers 404 and clients fall
+back to the poster image and a link).
+
+Built previews are cached by URL for a day (ten minutes for a URL with
+nothing to show) in memory and in the database, so restarts don't refetch
+everything. Fields a server doesn't know are absent or null; clients must
+treat embeds from older servers (no sizes, no `video`) the same way.
 
 Previews arrive after the message: `message.new` carries `embeds: []`, and
 a `message.updated` follows with them filled in. That update does **not**
 set `edited_at`, so it isn't shown as an edit. Editing a message clears its
-previews and looks again.
+previews and looks again. A message whose text is nothing but links that
+became `image` / `gifv` embeds may be shown as just the media.
 
 `message.embeds.suppress` hides them (author, or `MANAGE_MESSAGES` in a
 guild); `embeds_suppressed` then stays true and `embeds` reads empty.

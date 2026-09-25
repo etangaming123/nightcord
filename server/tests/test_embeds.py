@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import time
 
 import pytest
 from aiohttp import web
 
 from nightcord import embeds as E
+from nightcord import protocol as P
 from nightcord.handlers import proxy as PX
 
 PAGE = """<!doctype html><html><head>
@@ -26,6 +28,29 @@ PAGE = """<!doctype html><html><head>
 <meta property="og:image" content="/pic.png">
 <meta name="theme-color" content="#abc">
 </head><body><p>ignored</p><title>late</title></body></html>"""
+
+LARGE_PAGE = """<html><head>
+<meta property="og:title" content="Big picture">
+<meta property="og:image" content="/pic.png">
+<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="alternate" type="application/json+oembed" href="/oembed.json">
+</head></html>"""
+
+OEMBED = {"author_name": "💬 12 🔁 3 ❤️ 45", "author_url": "https://x.com/someone/status/1",
+          "provider_name": "FixupX", "provider_url": "https://github.com/FxEmbed/FxEmbed", "title": "Embed"}
+
+TWEET_PAGE = """<html><head>
+<meta property="og:title" content="someone (@someone)">
+<meta property="og:description" content="line one
+line two">
+<meta property="og:site_name" content="FixupX">
+<meta property="og:image" content="/pic.png">
+<meta property="twitter:card" content="summary">
+<link rel="alternate" type="application/json+oembed" href="/oembed.json">
+</head></html>"""
+
+LATIN1_PAGE = "<html><head><meta property='og:title' content='Caf\u00e9'></head></html>".encode("latin-1")
 
 PNG = bytes.fromhex(
     "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
@@ -46,6 +71,35 @@ async def site(aiohttp_server):
         hits["pic"] += 1
         return web.Response(body=PNG, content_type="image/png")
 
+    async def large(request):
+        hits["large"] = hits.get("large", 0) + 1
+        return web.Response(text=LARGE_PAGE, content_type="text/html")
+
+    async def oembed(request):
+        return web.json_response(OEMBED)
+
+    async def tweet(request):
+        hits["tweet"] = request.path
+        return web.Response(text=TWEET_PAGE, content_type="text/html")
+
+    async def youtube(request):
+        hits["youtube"] = request.query.get("url")
+        return web.json_response({"title": "Never Gonna Give You Up", "author_name": "Rick Astley",
+                                  "author_url": "https://www.youtube.com/@RickAstleyYT"})
+
+    async def latin1(request):
+        return web.Response(body=LATIN1_PAGE, headers={"Content-Type": "text/html; charset=iso-8859-1"})
+
+    async def clip(request):
+        return web.Response(body=b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 64, content_type="video/mp4")
+
+    async def huge_clip(request):
+        return web.Response(body=b"\x00" * (P.EMBED_VIDEO_MAX_BYTES + 1), content_type="video/mp4")
+
+    async def empty(request):
+        hits["empty"] = hits.get("empty", 0) + 1
+        return web.Response(text="<html><head></head><body>nothing</body></html>", content_type="text/html")
+
     async def huge(request):
         return web.Response(body=b"x" * (2 * 1024 * 1024), content_type="text/html")
 
@@ -65,12 +119,24 @@ async def site(aiohttp_server):
     app.router.add_get("/plain", plain)
     app.router.add_get("/to-private", to_private)
     app.router.add_get("/to-page", to_page)
+    app.router.add_get("/large", large)
+    app.router.add_get("/oembed.json", oembed)
+    app.router.add_get("/someone/status/1", tweet)
+    app.router.add_get("/yt-oembed", youtube)
+    app.router.add_get("/latin1", latin1)
+    app.router.add_get("/clip.mp4", clip)
+    app.router.add_get("/huge.mp4", huge_clip)
+    app.router.add_get("/empty", empty)
     server = await aiohttp_server(app)
     E.allow_private_host("127.0.0.1")
     E.cache_clear()
+    fx_base, yt = E.FX_BASE, E.YOUTUBE_OEMBED
+    E.FX_BASE = f"http://127.0.0.1:{server.port}"
+    E.YOUTUBE_OEMBED = f"http://127.0.0.1:{server.port}/yt-oembed?url="
     try:
         yield server, hits
     finally:
+        E.FX_BASE, E.YOUTUBE_OEMBED = fx_base, yt
         E.allow_private_host(None)
         E.cache_clear()
 
@@ -173,7 +239,54 @@ async def test_meta_parsing(site, http):
     assert embed["description"] == "Open Graph description"  # whitespace collapsed
     assert embed["site_name"] == "Example Site"
     assert embed["color"] == "#aabbcc"  # #abc expanded
-    assert embed["image"] == url_for(server, "/pic.png")  # made absolute
+    # No large-image card: the page's image is a thumbnail, as on Discord.
+    assert embed["thumbnail"] == url_for(server, "/pic.png") and embed["image"] is None  # made absolute
+
+
+async def test_large_image_cards_and_oembed(site, http):
+    server, _ = site
+    embed = await E.build_embed(http, url_for(server, "/large"))
+    assert embed["image"] == url_for(server, "/pic.png") and embed["thumbnail"] is None
+    assert (embed["image_width"], embed["image_height"]) == (1200, 630)
+    # oEmbed fills the author and provider lines; its title doesn't replace the page's.
+    assert embed["author"] == OEMBED["author_name"] and embed["author_url"] == OEMBED["author_url"]
+    assert embed["site_name"] == "FixupX" and embed["provider_url"] == OEMBED["provider_url"]
+    assert embed["title"] == "Big picture"
+
+
+async def test_twitter_links_are_read_through_fixupx(site, http):
+    server, hits = site
+    embed = await E.build_embed(http, "https://x.com/someone/status/1?s=20")
+    assert hits["tweet"] == "/someone/status/1"
+    assert embed["url"] == "https://x.com/someone/status/1?s=20"  # the link as posted
+    assert embed["description"] == "line one\nline two"  # line breaks kept
+    assert embed["author"] == OEMBED["author_name"]
+    # With fx_links off it's fetched from x.com itself (not reachable here).
+    assert E.fx_url("https://twitter.com/a/status/5") and not E.fx_url("https://x.com/home")
+
+
+def test_gif_sites_become_gifv_and_videos_are_found():
+    page = b"""<html><head><meta property="og:image" content="https://media.tenor.com/a.gif">
+    <meta name="twitter:player:stream" content="https://media.tenor.com/a.mp4">
+    <meta name="twitter:player:stream:content_type" content="video/mp4">
+    <meta name="twitter:player:width" content="498"><meta name="twitter:player:height" content="476"></head></html>"""
+    embed = E.parse_meta(page, "https://tenor.com/view/cat-123")
+    assert embed["kind"] == "gifv" and embed["video"] == "https://media.tenor.com/a.mp4"
+    assert (embed["video_width"], embed["video_height"]) == (498, 476)
+    assert embed["image"] == "https://media.tenor.com/a.gif"
+    other = E.parse_meta(page.replace(b"tenor", b"example"), "https://example.com/clip")
+    assert other["kind"] == "video"
+
+
+async def test_page_charset_is_honoured(site, http):
+    server, _ = site
+    assert (await E.build_embed(http, url_for(server, "/latin1")))["title"] == "Caf\u00e9"
+
+
+async def test_direct_video_link_becomes_a_video(site, http):
+    server, _ = site
+    embed = await E.build_embed(http, url_for(server, "/clip.mp4"))
+    assert embed["kind"] == "video" and embed["video"] == url_for(server, "/clip.mp4")
 
 
 def test_meta_falls_back_to_title_and_description():
@@ -190,13 +303,40 @@ async def test_direct_image_url_becomes_an_image_embed(site, http):
     server, _ = site
     embed = await E.build_embed(http, url_for(server, "/pic.png"))
     assert embed["kind"] == "image" and embed["image"] == url_for(server, "/pic.png")
+    assert (embed["image_width"], embed["image_height"]) == (1, 1)  # read from the image header
 
 
-async def test_pages_are_cached_for_an_hour(site, http):
+async def test_pages_are_cached(site, http):
     server, hits = site
     await E.build_embed(http, url_for(server, "/page"))
     await E.build_embed(http, url_for(server, "/page"))
     assert hits["page"] == 1
+
+
+async def test_cache_survives_a_restart_via_the_database(site, http, db):
+    server, hits = site
+    await E.build_embed(http, url_for(server, "/large"), db=db)
+    E.cache_clear()  # as if the server restarted
+    embed = await E.build_embed(http, url_for(server, "/large"), db=db)
+    assert hits["large"] == 1 and embed["title"] == "Big picture"
+    assert db.embed_cache_get(url_for(server, "/large"))[0]["title"] == "Big picture"
+
+
+async def test_nothing_to_show_is_only_remembered_briefly(site, http, db):
+    server, hits = site
+    assert await E.build_embed(http, url_for(server, "/empty"), db=db) == {}
+    data, expires = db.embed_cache_get(url_for(server, "/empty"))
+    assert data == {} and expires <= time.time() + P.EMBED_FAIL_CACHE_SECONDS + 1
+    assert hits["empty"] == 1
+
+
+def test_cache_prune_drops_expired_and_extra_rows(db):
+    now = int(time.time())
+    db.embed_cache_put("https://old.example", {}, now - 5)
+    for i in range(5):
+        db.embed_cache_put(f"https://n{i}.example", {"kind": "link"}, now + 100)
+    assert db.embed_cache_prune(max_rows=3) == 3
+    assert db.embed_cache_get("https://old.example") is None
 
 
 def test_youtube_links_become_video_cards():
@@ -207,10 +347,14 @@ def test_youtube_links_become_video_cards():
     assert E.youtube_id("https://notyoutube.example/watch?v=dQw4w9WgXcQ") is None
 
 
-async def test_youtube_card_is_built_without_fetching(http):
+async def test_youtube_card_gets_its_title_from_oembed(site, http):
+    _, hits = site
     embed = await E.build_embed(http, "https://youtu.be/dQw4w9WgXcQ")
-    assert embed["kind"] == "video" and embed["site_name"] == "YouTube"
+    assert hits["youtube"] == "https://youtu.be/dQw4w9WgXcQ"
+    assert embed["kind"] == "video" and embed["site_name"] == "YouTube" and embed["youtube_id"] == "dQw4w9WgXcQ"
+    assert embed["title"] == "Never Gonna Give You Up" and embed["author"] == "Rick Astley"
     assert embed["image"] == "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg"
+    assert embed["video"] is None  # played from YouTube by the client, on click only
 
 
 # --- the proxy route -----------------------------------------------------------
@@ -225,11 +369,25 @@ def test_proxy_url_is_signed(db):
     assert base64.urlsafe_b64decode(token + "=" * (-len(token) % 4)).decode() == "https://a.example/pic.png"
 
 
-def test_proxy_embed_rewrites_only_image_fields(db):
-    embed = {"kind": "link", "url": "https://a.example", "image": "https://a.example/i.png", "thumbnail": None}
+def test_proxy_embed_rewrites_only_media_fields(db):
+    embed = {"kind": "link", "url": "https://a.example", "image": "https://a.example/i.png", "thumbnail": None,
+             "video": "https://a.example/v.mp4", "author_url": "https://a.example/me"}
     out = PX.proxy_embed(db.file_secret(), embed)
-    assert out["url"] == "https://a.example"  # the link itself stays
-    assert out["image"].startswith("/proxy/") and out["thumbnail"] is None
+    assert out["url"] == "https://a.example" and out["author_url"] == "https://a.example/me"  # links stay
+    assert out["image"].startswith("/proxy/") and out["video"].startswith("/proxy/") and out["thumbnail"] is None
+
+
+async def test_proxy_serves_videos_up_to_the_cap(server, ctx, site):
+    remote, _ = site
+    ctx.http = E.make_session()
+    try:
+        ok = await server.get(PX.proxy_url(ctx.db.file_secret(), url_for(remote, "/clip.mp4")))
+        assert ok.status == 200 and ok.headers["Content-Type"] == "video/mp4"
+        big = await server.get(PX.proxy_url(ctx.db.file_secret(), url_for(remote, "/huge.mp4")))
+        assert big.status == 404
+    finally:
+        await ctx.http.close()
+        ctx.http = None
 
 
 async def test_proxy_serves_a_signed_image(server, ctx, site):
@@ -281,7 +439,7 @@ async def test_message_gets_an_embed(guild, ctx, site):
             if stored["embeds"]:
                 break
         assert stored["embeds"][0]["title"] == "Open Graph title"
-        assert stored["embeds"][0]["image"].startswith("/proxy/")
+        assert stored["embeds"][0]["thumbnail"].startswith("/proxy/")
         assert stored["edited_at"] is None  # a preview is not an edit
         events = [e for e in await alice.drain(0.3) if e["type"] == "message.updated"]
         assert events and events[-1]["payload"]["embeds"][0]["site_name"] == "Example Site"

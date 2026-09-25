@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-PROTOCOL_VERSION = "0.15"
+PROTOCOL_VERSION = "0.16"
 
 # --- Message types -----------------------------------------------------------
 
@@ -559,7 +559,11 @@ MAX_EMBEDS_PER_MESSAGE = 5
 EMBED_FETCH_TIMEOUT = 5
 EMBED_PAGE_MAX_BYTES = 1024 * 1024
 EMBED_IMAGE_MAX_BYTES = 8 * 1024 * 1024
-EMBED_CACHE_SECONDS = 3600
+EMBED_VIDEO_MAX_BYTES = 25 * 1024 * 1024
+EMBED_VIDEO_FETCH_TIMEOUT = 30
+EMBED_CACHE_SECONDS = 24 * 3600
+EMBED_FAIL_CACHE_SECONDS = 600
+EMBED_CACHE_MAX_ROWS = 20000
 PROXY_CACHE_DAYS = 7
 
 # Slash commands the server rolls, so nobody can fake a result (§4 Message).

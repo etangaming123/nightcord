@@ -599,37 +599,64 @@ kbd {
 .poll-row input { flex: 1; min-width: 0; }
 .poll-emoji-btn { flex: none; min-width: 36px; }
 
-.embeds { display: grid; gap: 6px; margin: 4px 0 2px; max-width: 520px; }
+/* Link previews (ui/embeds.js), sized and ordered like Discord's */
+.embeds { display: grid; gap: 6px; margin: 4px 0 2px; justify-items: start; max-width: 100%; }
 .embed {
-  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px;
-  padding: 10px 12px; border-radius: 6px; background: var(--bg-1);
-  border-left: 4px solid var(--embed-color, var(--bg-4));
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px;
+  padding: 10px 14px 14px 12px; border-radius: 6px; background: var(--bg-1);
+  border-left: 4px solid var(--embed-color, var(--bg-4)); max-width: min(432px, 100%); box-sizing: border-box;
 }
-.embed-main { display: grid; gap: 4px; min-width: 0; }
-.embed-site { font-size: 12px; color: var(--text-2); overflow-wrap: anywhere; }
-.embed-title {
-  border: 0; background: none; padding: 0; text-align: left; cursor: pointer; font: 600 15px inherit;
-  color: var(--accent-text); overflow-wrap: anywhere;
-}
-.embed-title:hover { text-decoration: underline; }
+.embed.has-thumb { grid-template-columns: minmax(0, 1fr) 80px; }
+.embed:has(.embed-video, .embed-image) { max-width: min(432px, 100%); }
+.embed-main { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.embed-provider { font-size: 12px; color: var(--text-2); overflow-wrap: anywhere; }
+a.embed-provider { color: var(--text-2); text-decoration: none; }
+a.embed-provider:hover { text-decoration: underline; }
+.embed-author { font-size: 14px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+a.embed-author { color: var(--text); text-decoration: none; }
+a.embed-author:hover { text-decoration: underline; }
+.embed-title { font-size: 15px; font-weight: 700; color: var(--text); overflow-wrap: anywhere; }
+a.embed-title { color: var(--accent-text); text-decoration: none; }
+a.embed-title:hover { text-decoration: underline; }
 .embed-desc {
-  font-size: 14px; color: var(--text-2); overflow-wrap: anywhere;
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden;
+  font-size: 14px; line-height: 1.4; color: var(--text-2); overflow-wrap: anywhere; white-space: pre-wrap;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 12; line-clamp: 12; overflow: hidden;
 }
-.embed-thumb { grid-column: 2; width: 80px; height: 80px; object-fit: cover; border-radius: 4px; }
-.embed-image { grid-column: 1 / -1; border: 0; padding: 0; background: none; cursor: pointer; position: relative; }
-.embed-image img { display: block; width: 100%; max-height: 280px; object-fit: cover; border-radius: 4px; }
-.embed-image.video .embed-play {
+.embed-thumb { grid-column: 2; grid-row: 1; align-self: start; border: 0; padding: 0; background: none; cursor: zoom-in; }
+.embed-thumb img { display: block; width: 80px; height: 80px; object-fit: cover; border-radius: 4px; }
+.embed-image { border: 0; padding: 0; background: var(--bg-3); cursor: zoom-in; position: relative; border-radius: 4px; overflow: hidden; max-width: 100%; margin-top: 4px; }
+.embed-image.video { cursor: pointer; }
+.embed-image img { display: block; width: 100%; height: 100%; max-height: 300px; object-fit: contain; }
+.embed-video { position: relative; max-width: 100%; border-radius: 4px; overflow: hidden; background: #000; margin-top: 4px; }
+.embed-video video, .embed-video iframe { display: block; width: 100%; height: 100%; border: 0; }
+.embed-video.yt { width: 400px; }
+.embed-play-btn { display: block; width: 100%; height: 100%; border: 0; padding: 0; background: #000; cursor: pointer; position: relative; }
+.embed-play-btn img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.embed-play {
   position: absolute; inset: 0; margin: auto; width: 52px; height: 52px; border-radius: 50%;
   background: rgba(0, 0, 0, .65); color: #fff; display: grid; place-items: center; font-size: 22px;
-  padding-left: 4px; box-sizing: border-box;
+  padding-left: 3px; box-sizing: border-box; pointer-events: none; transition: background .12s;
 }
+.embed-play-btn:hover .embed-play, .embed-image.video:hover .embed-play { background: var(--accent); }
+.embed-play .ico { fill: currentColor; }
 .embed-x {
   position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border: 0; border-radius: 4px;
   background: var(--bg-3); color: var(--text-2); cursor: pointer; font-size: 12px; opacity: 0;
+  display: grid; place-items: center; z-index: 1;
 }
-.embed:hover .embed-x, .embed-x:focus-visible { opacity: 1; }
+.embed:hover .embed-x, .embed-bare:hover .embed-x, .embed-x:focus-visible { opacity: 1; }
 .embed-x:hover { background: var(--bg-4); color: var(--text); }
+/* Bare media: image links and GIF-site links, shown like attachments */
+.embed-bare { position: relative; max-width: 100%; }
+.embed-bare .att-image { max-width: min(400px, 100%); }
+.embed-gifv { position: relative; max-width: min(400px, 100%); border-radius: 8px; overflow: hidden; background: var(--bg-3); }
+.embed-gifv video, .embed-gifv img { display: block; width: 100%; height: 100%; max-height: 300px; object-fit: contain; }
+.gif-tag {
+  position: absolute; left: 6px; top: 6px; padding: 1px 5px; border-radius: 4px; font-size: 11px; font-weight: 800;
+  background: rgba(0, 0, 0, .55); color: #fff; opacity: 0; transition: opacity .12s; pointer-events: none;
+}
+.embed-gifv:hover .gif-tag { opacity: 1; }
+@media (max-width: 520px) { .embed-video.yt { width: 100%; } }
 
 .md-quote { margin: 2px 0; padding: 0 0 0 12px; border-left: 4px solid var(--bg-4); }
 .md-h { margin: 8px 0 4px; line-height: 1.25; font-weight: 700; }
