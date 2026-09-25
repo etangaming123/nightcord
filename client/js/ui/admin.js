@@ -89,6 +89,9 @@ function serverSection(el, actions) {
     h("select", { name }, options.map(([v, label]) => h("option", { value: v, selected: v === value }, label)));
   add(el, formRow(h("form", { class: "stack narrow" },
     h("label", {}, t("server_name_label"), h("input", { name: "server_name", required: true, maxLength: LIMITS.SERVER_NAME_MAX, value: info.server_name })),
+    h("label", {}, t("server_description_label"),
+      h("textarea", { name: "server_description", rows: 5, maxLength: LIMITS.SERVER_DESCRIPTION_MAX, text: info.server_description || "", placeholder: t("server_description_placeholder") }),
+      h("span", { class: "muted small block" }, t("server_description_hint"))),
     h("label", {}, t("account_creation_label"), select("account_creation", info.account_creation, [
       ["on", t("account_creation_open")],
       ["request", t("account_creation_request")],
@@ -120,6 +123,7 @@ function serverSection(el, actions) {
   async (fd) => {
     const res = await actions.req(T.SERVER_CONFIG_UPDATE, {
       server_name: String(fd.get("server_name")).trim(),
+      server_description: String(fd.get("server_description") || "").trim(),
       account_creation: fd.get("account_creation"),
       guild_creation: fd.get("guild_creation"),
       guild_list_visible: fd.get("guild_list_visible") === "on",

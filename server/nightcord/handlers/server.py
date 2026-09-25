@@ -37,6 +37,8 @@ def apply_config_updates(ctx, payload: dict) -> dict:
                 raise ProtocolError(P.BAD_REQUEST, f"'{key}' must be 0 (no limit) to {P.MAX_ACCOUNTS_PER_CLIENT}")
         elif key == "server_name":
             val = P.validate_server_name(val)
+        elif key == "server_description":
+            val = P.validate_server_description(val)
         elif key == "customization_mode":
             if val not in P.CUSTOMIZATION_MODES:
                 raise ProtocolError(P.BAD_REQUEST, f"'{key}' must be one of {P.CUSTOMIZATION_MODES}")

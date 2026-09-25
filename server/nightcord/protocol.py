@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-PROTOCOL_VERSION = "0.14"
+PROTOCOL_VERSION = "0.15"
 
 # --- Message types -----------------------------------------------------------
 
@@ -468,6 +468,7 @@ PASSWORD_MAX_BYTES = 72
 CONTENT_MAX_CHARS = 2000
 GUILD_NAME_MAX = 100
 SERVER_NAME_MAX = 64
+SERVER_DESCRIPTION_MAX = 2000
 CHANNEL_NAME_RE = re.compile(r"^[a-z0-9_-]{1,32}$")
 HISTORY_DEFAULT_LIMIT = 50
 HISTORY_MAX_LIMIT = 100
@@ -728,6 +729,15 @@ def validate_guild_name(name: Any) -> str:
     if len(name) > GUILD_NAME_MAX:
         raise ProtocolError(BAD_REQUEST, "Guild name must be at most 100 characters")
     return name
+
+
+def validate_server_description(text: Any) -> str:
+    if not isinstance(text, str):
+        raise ProtocolError(BAD_REQUEST, "Server description must be a string")
+    text = text.strip()
+    if len(text) > SERVER_DESCRIPTION_MAX:
+        raise ProtocolError(BAD_REQUEST, f"Server description must be at most {SERVER_DESCRIPTION_MAX} characters")
+    return text
 
 
 def validate_server_name(name: Any) -> str:

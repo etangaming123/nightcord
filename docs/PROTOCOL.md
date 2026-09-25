@@ -1,6 +1,6 @@
 # Nightcord Protocol
 
-Version: `0.14`
+Version: `0.15`
 
 This document is the single source of truth for the wire format between the
 Nightcord client (GitHub Pages, vanilla JS) and a Nightcord server (Python).
@@ -21,6 +21,7 @@ Each protocol version arrived with one commit on `main`, named in the middle col
 | 0.6 | Friends, blocking and message requests | Friends and friend requests, one-sided blocking, per-user DM privacy with message requests, group DMs limited to friends, and user search as a server setting (off by default). |
 | 0.7 | Announcements inbox | A server-wide announcements inbox with per-account read state, and automatic entries when the Terms or Privacy Policy change. |
 | 0.8 | Account switcher | `max_accounts_per_client`, an advisory server setting for clients that keep several accounts. |
+| 0.15 | Server description | `server_description`, a Markdown blurb the owner writes; shown on the server's address page (`GET /`) and the client's About tab. |
 | 0.14 | Badges | Badges the server owner uploads and hands out, plus a built-in Verified badge (`badge.*`, `admin.users.set_badges`, `PublicUser.badges`, the `badge` media kind). |
 | 0.13 | Status privacy and expiry | A custom status is hidden from everyone else while you're offline or invisible, and can be set to clear itself after 30m, 1h, 4h or at the end of the day. |
 | 0.12 | Message tools | `message.forward` (a snapshot, not a reference), and `read_state.ack` learning to move backwards so a message can be marked unread. |
@@ -244,6 +245,7 @@ Password is never sent to the client; the server stores only a bcrypt hash.
 ```json
 {
   "server_name": "string",
+  "server_description": "string",
   "guild_creation": "off | on",
   "account_creation": "off | request | on",
   "guild_list_visible": true,
@@ -265,7 +267,10 @@ Defaults: `guild_creation: "on"`, `account_creation: "on"`,
 `guild_list_visible: true`, `max_upload_bytes` 25 MB (1 MB – 1 GB),
 `voice_enabled: false`, `customization_mode: "on"` with every feature
 on, `server_name` from the server's config file
-until the owner sets one. `guild_list_visible` gates whether a server-wide
+until the owner sets one, `server_description: ""`. `server_description`
+(0–2000 chars, Markdown, trimmed) tells people what the server is; the
+landing page at `GET /` shows it in place of the certificate note, and
+clients show it on an About page. `guild_list_visible` gates whether a server-wide
 "open guild list" can exist at all — a guild's own `listed` flag still needs
 to be true for it to appear.
 
@@ -678,6 +683,7 @@ only mention counts.
 | password | 8–72 bytes UTF-8 (bcrypt limit) |
 | message `content` | 1–2000 chars after trimming |
 | server `server_name` | 1–64 chars |
+| server `server_description` | 0–2000 chars after trimming |
 | guild `name` | 1–100 chars |
 | channel `name` | 1–32 chars, `[a-z0-9_-]` (client lowercases / replaces spaces with `-`) |
 | role `name` | 1–32 chars; at most 50 roles per guild |

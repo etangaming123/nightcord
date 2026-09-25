@@ -59,6 +59,7 @@ def main() -> None:
         f"  CONTENT_MAX_CHARS: {P.CONTENT_MAX_CHARS},",
         f"  GUILD_NAME_MAX: {P.GUILD_NAME_MAX},",
         f"  SERVER_NAME_MAX: {P.SERVER_NAME_MAX},",
+        f"  SERVER_DESCRIPTION_MAX: {P.SERVER_DESCRIPTION_MAX},",
         f"  CHANNEL_NAME_RE: /{P.CHANNEL_NAME_RE.pattern}/,",
         f"  HISTORY_PAGE: {P.HISTORY_DEFAULT_LIMIT},",
         f"  DISPLAY_NAME_MAX: {P.DISPLAY_NAME_MAX},",

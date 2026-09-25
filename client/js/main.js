@@ -15,6 +15,7 @@ import { flush, invalidate, setActions } from "./render.js";
 import { currentChannel, resetServerState, state } from "./state.js";
 import * as store from "./storage.js";
 import { $, add, clear, h, setAvatarBase } from "./ui/dom.js";
+import { render as renderMarkdown } from "./ui/markdown.js";
 import { clearPending } from "./uploads.js";
 import { focusComposer, setupDropZone } from "./ui/composer.js";
 import { legalLinks, legalUpdateModal, renderLegalTabs, showLegalModal } from "./ui/legal.js";
@@ -364,6 +365,9 @@ function showAuth({ message = null, info = false } = {}) {
   showScreen("auth");
   $("#auth-server-name").textContent = state.info.server_name;
   $("#auth-server-url").textContent = state.url;
+  const desc = state.info.server_description || "";
+  clear($("#auth-server-desc"), desc ? renderMarkdown(desc, { plainLinks: true }) : null);
+  $("#auth-server-desc").hidden = !desc;
   const policy = state.info.account_creation;
   const modes = [["login", t("auth_login_tab")]];
   if (policy === "on") modes.push(["register", t("auth_register_tab")]);

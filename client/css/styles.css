@@ -1469,6 +1469,14 @@ canvas.still { display: block; }
 .home-stat-icon { width: 34px; height: 34px; border-radius: 10px; background: var(--bg-1); color: var(--accent-text); display: grid; place-items: center; font-size: 18px; flex: none; }
 .home-stat-link { color: inherit; font-weight: 400; }
 .home-stat-link:hover { color: var(--text); }
+.home-about { margin: -12px 0 28px; padding: 12px 16px; border-left: 3px solid var(--accent); background: var(--bg-1); border-radius: 0 8px 8px 0; }
+.home-about-text { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.home-about-text p { margin: 0; }
+.home-about .btn.link { margin-top: 6px; font-size: 13px; }
+.about-name { font-size: 30px; margin: 0 0 4px; }
+.about-desc { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 20px; font-size: 16px; line-height: 1.6; color: var(--text); }
+.auth-desc { white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0 12px; font-size: 13px; color: var(--text-2); max-height: 6.4em; overflow: auto; }
+.auth-desc p { margin: 0 0 6px; }
 @media (max-width: 720px) { .home-page { padding: 28px 16px; } .home-title { font-size: 34px; } }
 .friends-page { display: flex; flex-direction: column; gap: 2px; padding: 16px 20px 32px; max-width: 900px; width: 100%; }
 .friends-page .section-label { padding: 12px 8px 6px; }

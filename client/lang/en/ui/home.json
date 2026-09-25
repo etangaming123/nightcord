@@ -26,5 +26,9 @@
   "unread_dms": {
     "one": "conversation with unread messages",
     "other": "conversations with unread messages"
-  }
+  },
+  "about_title": "About this server",
+  "about_empty": "The owner hasn't written a description yet.",
+  "read_more": "Read more",
+  "about_link": "About this server"
 }

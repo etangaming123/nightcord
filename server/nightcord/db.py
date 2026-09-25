@@ -27,6 +27,8 @@ SESSION_TTL_SECONDS = 30 * 24 * 3600
 
 DEFAULT_SERVER_CONFIG = {
     "server_name": None,  # None: use the config file's server_name
+    # Markdown shown on the server's address page and the client's About tab.
+    "server_description": "",
     "guild_creation": "on",
     "account_creation": "on",
     "guild_list_visible": True,

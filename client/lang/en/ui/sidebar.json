@@ -46,5 +46,6 @@
   "message_requests": "Message requests",
   "inbox": "Inbox",
   "switch_account": "Switch account",
-  "home": "Home"
+  "home": "Home",
+  "about_server": "About this server"
 }
