@@ -1,5 +1,8 @@
 {
   "notif_title_guild": "{author} ({channel}, {guild})",
+  "update_banner_title": "Nightcord {latest} is out",
+  "update_banner_body": "You're running {current}. Download the new standalone file to get the latest fixes and features.",
+  "update_banner_cta": "Get the update",
   "update_toast": "Nightcord {latest} is available.",
   "update_toast_inbox": "Nightcord {latest} is available — see Inbox for details."
 }

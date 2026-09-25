@@ -15,12 +15,17 @@ import { scopedT } from "./strings.js";
 const t = scopedT("notify");
 const REPO = "etangaming123/nightcord";
 const RELEASES_API = `https://api.github.com/repos/${REPO}/releases/latest`;
-export const RELEASES_URL = `https://github.com/${REPO}/releases/latest`;
+export const RELEASES_URL = `https://github.com/${REPO}/releases`;
 const NOTIFIED_KEY = "nightcord.updateNotifiedVersion";
 
 let updateInfo = null; // { latest, current } once a real newer release is confirmed
 
 export const getUpdateInfo = () => updateInfo;
+
+// The login screens draw a big banner; they subscribe here since the check
+// finishes after they're first shown.
+const listeners = [];
+export const onUpdateInfo = (fn) => { listeners.push(fn); };
 
 // "v1.0.1" -> [1,0,1]; null for anything that doesn't match (e.g. "dev" local
 // builds, or a branch name when release.yml runs via workflow_dispatch off a
@@ -51,6 +56,7 @@ export async function checkForUpdate() {
   if (!latestParsed || !isNewer(latestParsed, currentParsed)) return;
 
   updateInfo = { latest: latestTag, current };
+  for (const fn of listeners) fn(updateInfo);
   invalidate("chat"); // redraw Friends/Inbox if it's already open (no-op pre-login)
 
   if (!getPrefs().updateNotifier) return;

@@ -9,7 +9,7 @@ import { resync, wireEvents } from "./events.js";
 import { applyPrefs, getPrefs, setPrefs } from "./prefs.js";
 import { restoreReminders } from "./reminders.js";
 import { ERR, LIMITS, PROTOCOL_VERSION, T } from "./protocol.js";
-import { checkForUpdate } from "./update-check.js";
+import { checkForUpdate, getUpdateInfo, onUpdateInfo, RELEASES_URL } from "./update-check.js";
 import { handleShortcut, shouldFocusComposer } from "./shortcuts.js";
 import { flush, invalidate, setActions } from "./render.js";
 import { currentChannel, resetServerState, state } from "./state.js";
@@ -668,6 +668,20 @@ function checkGrass() {
 // ---------------------------------------------------------------------------
 // Boot
 
+function renderUpdateBanner() {
+  const tn = scopedT("notify");
+  const info = getUpdateInfo();
+  for (const box of document.querySelectorAll(".update-banner")) {
+    box.hidden = !info;
+    if (!info) continue;
+    clear(box);
+    add(box,
+      h("strong", {}, tn("update_banner_title", { latest: info.latest })),
+      h("p", {}, tn("update_banner_body", { current: info.current })),
+      h("a", { class: "btn primary", href: RELEASES_URL, target: "_blank", rel: "noopener" }, tn("update_banner_cta")));
+  }
+}
+
 function hydrateStatic() {
   const ts = scopedT("shell");
   for (const el of document.querySelectorAll("[data-i18n]")) el.textContent = ts(el.dataset.i18n);
@@ -680,6 +694,7 @@ async function boot() {
   await loadStrings();
   hydrateStatic();
   applyPrefs();
+  onUpdateInfo(renderUpdateBanner);
   checkForUpdate(); // standalone-only, local pref-gated; see update-check.js
   matchMedia("(prefers-color-scheme: light)").addEventListener?.("change", applyPrefs);
   $("#connect-form").addEventListener("submit", (e) => {
