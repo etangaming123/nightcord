@@ -183,6 +183,18 @@ textarea { resize: vertical; }
 .update-banner strong { font-size: 18px; }
 .update-banner p { margin: 0; font-size: 14px; }
 .update-banner .btn { margin-top: 6px; background: var(--accent-ink); color: var(--accent); border-color: transparent; text-decoration: none; }
+.update-float {
+  --float-h: 44px; box-sizing: border-box; height: var(--float-h); padding: 0 10px 0 16px;
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  background: var(--accent); color: var(--accent-ink); font-size: 14px; font-weight: 500;
+}
+.update-float[hidden] { display: none; }
+.update-float span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.update-float .btn { background: var(--accent-ink); color: var(--accent); flex: none; }
+.update-float .icon-btn { color: var(--accent-ink); }
+.update-float .icon-btn:hover { background: rgba(255, 255, 255, .2); color: var(--accent-ink); }
+body.has-update-float #app { height: calc(100% - 44px); }
+body.has-update-float .screen { min-height: calc(100% - 44px); }
 .home-link { display: inline-block; margin-bottom: 10px; font-size: 13px; text-decoration: none; }
 .whats-this-body ul { margin: 8px 0; padding-left: 20px; display: grid; gap: 6px; }
 .whats-this-body a { color: var(--accent-text); }

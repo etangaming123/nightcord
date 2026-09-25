@@ -42,9 +42,14 @@ setActions(actions);
 // ---------------------------------------------------------------------------
 // Screens
 
+let currentScreen = "connect";
+let updateFloatDismissed = false; // this session only, like the Inbox card
+
 function showScreen(which) {
   for (const id of ["connect", "setup", "legal", "auth"]) $(`#screen-${id}`).hidden = which !== id;
   $("#app").hidden = which !== "app";
+  currentScreen = which;
+  renderUpdateFloat();
   if (which !== "app") document.title = t("brand");
 }
 
@@ -699,7 +704,25 @@ function checkGrass() {
 // ---------------------------------------------------------------------------
 // Boot
 
+// Connect and login already carry the big banner; everywhere else (chat,
+// setup, rules) gets this small floating reminder.
+function renderUpdateFloat() {
+  const box = $("#update-float");
+  const info = getUpdateInfo();
+  box.hidden = !info || updateFloatDismissed || currentScreen === "connect" || currentScreen === "auth";
+  document.body.classList.toggle("has-update-float", !box.hidden);
+  if (box.hidden) return;
+  const tn = scopedT("notify");
+  clear(box);
+  add(box,
+    h("span", {}, tn("update_float_text", { latest: info.latest })),
+    h("a", { class: "btn small primary", href: RELEASES_URL, target: "_blank", rel: "noopener" }, tn("update_banner_cta")),
+    h("button", { class: "icon-btn", type: "button", title: tn("update_float_dismiss"), "aria-label": tn("update_float_dismiss"),
+      on: { click: () => { updateFloatDismissed = true; renderUpdateFloat(); } } }, "✕"));
+}
+
 function renderUpdateBanner() {
+  renderUpdateFloat();
   const tn = scopedT("notify");
   const info = getUpdateInfo();
   for (const box of document.querySelectorAll(".update-banner")) {
