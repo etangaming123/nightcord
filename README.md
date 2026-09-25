@@ -68,7 +68,9 @@ A web-based messaging app, built for selfhosting. A parody of Discord.
 ## Quickstart
 
 To **join** a server, open [the client](https://nightcord.etangaming.xyz/app/), type in the server's
-address (`host:port`) and make an account. That's it.
+address (`host:port`) and make an account. That's it. Registering asks for the password twice, and
+the client can reconnect to your last server on startup (a checkbox on the server select screen,
+also in *Settings → Appearance*; switch it off if you'd rather pick each time).
 
 To **host** one, keep reading.
 
@@ -81,7 +83,7 @@ same as the hosted client. The server you connect to needs `allow_file_origin` t
 below), since a page opened from disk sends `Origin: null`, which servers reject by default.
 
 On load, the standalone client checks GitHub's release API (`api.github.com`) once to see if a newer
-standalone build exists, and shows a dismissible notice in the Inbox if so — this is the only network
+standalone build exists, and shows a big banner on the server select and login screens (and a dismissible notice in the Inbox) if so — this is the only network
 request the client ever makes outside the server you connect to. Turn it off in *Settings → Local
 Options*.
 
