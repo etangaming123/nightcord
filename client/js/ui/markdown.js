@@ -9,7 +9,7 @@
 // tested in node); render() builds DOM nodes from it with text nodes only —
 // never innerHTML — so message content can't inject markup.
 
-import { h, mediaUrl } from "./dom.js";
+import { fmtRelative, h, mediaUrl } from "./dom.js";
 import { scopedT } from "../strings.js";
 
 // Named `ts`, not `t`: this file uses `t` as the token-object parameter name everywhere.
@@ -231,22 +231,7 @@ const STAMP_FORMATS = {
 const stampFmt = new Map();
 const stampFull = new Intl.DateTimeFormat(undefined, { dateStyle: "full", timeStyle: "short" });
 
-const RELATIVE_UNITS = [
-  ["year", 31536000], ["month", 2592000], ["week", 604800], ["day", 86400],
-  ["hour", 3600], ["minute", 60], ["second", 1],
-];
-let relFmt = null;
-
-function relativeStamp(date) {
-  relFmt ??= new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-  const diff = (date.getTime() - Date.now()) / 1000;
-  for (const [unit, secs] of RELATIVE_UNITS) {
-    if (Math.abs(diff) >= secs || unit === "second") {
-      return relFmt.format(Math.round(diff / secs), unit);
-    }
-  }
-  return "";
-}
+const relativeStamp = (date) => fmtRelative(date);
 
 function stampText(date, style) {
   if (style === "R") return relativeStamp(date);

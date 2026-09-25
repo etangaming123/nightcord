@@ -53,7 +53,21 @@ async def users_list(ctx, conn, payload):
     require_staff(conn, MODERATOR)
     status = P.opt_enum(payload, "status", USER_STATUSES)
     query = P.opt_text(payload, "query", 64) or None
-    return {"users": ctx.db.list_users(status=status, query=query)}
+    flags = payload.get("flags") or []
+    if not isinstance(flags, list) or any(f not in P.ADMIN_USER_FLAGS for f in flags):
+        raise ProtocolError(P.BAD_REQUEST, f"'flags' must be a list of {P.ADMIN_USER_FLAGS}")
+    users = ctx.db.list_users(
+        status=status, query=query,
+        sort=P.opt_enum(payload, "sort", P.ADMIN_USER_SORTS) or "joined",
+        order=P.opt_enum(payload, "order", ("asc", "desc")) or "asc",
+        flags=[f for f in flags if f != "online"],
+        seen=P.opt_enum(payload, "seen", P.ADMIN_USER_SEEN),
+        joined=P.opt_enum(payload, "joined", P.ADMIN_USER_JOINED),
+        only_ids=ctx.hub.online_user_ids() if "online" in flags else None,
+    )
+    for u in users:
+        u["online"] = ctx.hub.is_online(u["user_id"])
+    return {"users": users}
 
 
 @handles(P.ADMIN_USERS_SET_STATUS)

@@ -159,3 +159,33 @@ const shortFmt = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 const fullFmt = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 export const fmtDate = (iso) => (iso ? shortFmt.format(new Date(iso)) : "");
 export const fmtDateTime = (iso) => (iso ? fullFmt.format(new Date(iso)) : "");
+
+const RELATIVE_UNITS = [
+  ["year", 31536000], ["month", 2592000], ["week", 604800], ["day", 86400],
+  ["hour", 3600], ["minute", 60], ["second", 1],
+];
+let relFmt = null;
+
+// "3 hours ago", "in 2 days": a Date or ISO string relative to now.
+export function fmtRelative(date) {
+  if (!date) return "";
+  const d = date instanceof Date ? date : new Date(date);
+  relFmt ??= new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+  const diff = (d.getTime() - Date.now()) / 1000;
+  for (const [unit, secs] of RELATIVE_UNITS) {
+    if (Math.abs(diff) >= secs || unit === "second") {
+      return relFmt.format(Math.round(diff / secs), unit);
+    }
+  }
+  return "";
+}
+
+// A "last seen" time in the viewer's chosen style (prefs.lastSeenFormat):
+// datetime | date | relative | both ("3 hours ago (25 Sept 2026, 9:40 am)").
+export function fmtSeen(iso, format) {
+  if (!iso) return "";
+  if (format === "date") return fmtDate(iso);
+  if (format === "relative") return fmtRelative(iso);
+  if (format === "both") return `${fmtRelative(iso)} (${fmtDateTime(iso)})`;
+  return fmtDateTime(iso);
+}

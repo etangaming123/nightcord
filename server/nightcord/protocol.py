@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-PROTOCOL_VERSION = "0.16"
+PROTOCOL_VERSION = "0.17"
 
 # --- Message types -----------------------------------------------------------
 
@@ -555,6 +555,11 @@ DM_PRIVACY = ("everyone", "requests", "friends")
 USER_SEARCH_MODES = ("off", "staff", "on")
 ANNOUNCEMENT_MAX_CHARS = 4000
 # Link embeds (§4 Embed): the server fetches pages people post.
+# admin.users.list (§5 Admin): sort keys, narrowing flags, activity windows.
+ADMIN_USER_SORTS = ("joined", "seen", "name", "devices")
+ADMIN_USER_FLAGS = ("staff", "muted", "perks", "badges", "online")
+ADMIN_USER_SEEN = ("7d", "30d", "inactive30", "never")
+ADMIN_USER_JOINED = ("7d", "30d")
 MAX_EMBEDS_PER_MESSAGE = 5
 EMBED_FETCH_TIMEOUT = 5
 EMBED_PAGE_MAX_BYTES = 1024 * 1024

@@ -488,6 +488,11 @@ INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O/1/I
 REPLY_PREVIEW_CHARS = 120
 
 
+def _iso_days_ago(days: int) -> str:
+    then = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)
+    return then.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
 def now_iso() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat(timespec="milliseconds").replace(
         "+00:00", "Z"
@@ -867,19 +872,69 @@ class Database:
             "device_count": devices,
         }
 
-    def list_users(self, *, status: str | None = None, query: str | None = None, limit: int = 200) -> list[dict]:
-        sql = "SELECT * FROM users WHERE 1=1"
+    # admin.users.list sorting (PROTOCOL.md §5 Admin): column expressions over
+    # the query below, never anything the client sends.
+    _USER_SORTS = {
+        "joined": "u.created_at",
+        "seen": "seen_at",
+        "name": "lower(COALESCE(NULLIF(u.display_name, ''), u.username))",
+        "devices": "devices",
+    }
+
+    def list_users(
+        self, *, status: str | None = None, query: str | None = None, limit: int = 200,
+        sort: str = "joined", order: str = "asc", flags: Iterable[str] = (), seen: str | None = None,
+        joined: str | None = None, only_ids: Iterable[str] | None = None,
+    ) -> list[dict]:
+        """Accounts for the admin list. flags: staff | muted | perks | badges
+        (each narrows the list); seen: 7d | 30d | inactive30 | never;
+        joined: 7d | 30d; only_ids: restrict to these users (e.g. who's online)."""
+        sql = (
+            "SELECT u.*, "
+            "(SELECT MAX(s.last_seen) FROM sessions s WHERE s.user_id = u.user_id AND s.last_ip IS NOT NULL) AS seen_at, "
+            "(SELECT COUNT(DISTINCT s.device_id) FROM sessions s WHERE s.user_id = u.user_id AND s.device_id IS NOT NULL) AS devices "
+            "FROM users u WHERE 1=1"
+        )
         args: list[Any] = []
         if status:
-            sql += " AND status = ?"
+            sql += " AND u.status = ?"
             args.append(status)
         else:
-            sql += " AND status != 'deleted'"
+            sql += " AND u.status != 'deleted'"
         if query:
-            sql += " AND (username_lower LIKE ? ESCAPE '\\' OR lower(display_name) LIKE ? ESCAPE '\\')"
+            sql += " AND (u.username_lower LIKE ? ESCAPE '\\' OR lower(u.display_name) LIKE ? ESCAPE '\\')"
             like = "%" + _like_escape(query.lower()) + "%"
             args += [like, like]
-        sql += " ORDER BY created_at LIMIT ?"
+        flags = set(flags)
+        if "staff" in flags:
+            sql += " AND (u.server_role != 'none' OR u.is_server_owner = 1)"
+        if "muted" in flags:
+            sql += " AND u.muted_until IS NOT NULL AND (u.muted_until = 'permanent' OR u.muted_until > ?)"
+            args.append(now_iso())
+        if "perks" in flags:
+            sql += " AND u.perks = 1"
+        if "badges" in flags:
+            sql += " AND EXISTS (SELECT 1 FROM user_badges b WHERE b.user_id = u.user_id)"
+        if only_ids is not None:
+            ids = list(only_ids)
+            sql += f" AND u.user_id IN ({','.join('?' * len(ids)) or 'NULL'})"
+            args += ids
+        ago = lambda days: _iso_days_ago(days)  # noqa: E731
+        if seen in ("7d", "30d"):
+            sql += " AND seen_at >= ?"
+            args.append(ago(int(seen[:-1])))
+        elif seen == "inactive30":
+            sql += " AND (seen_at IS NULL OR seen_at < ?)"
+            args.append(ago(30))
+        elif seen == "never":
+            sql += " AND seen_at IS NULL"
+        if joined in ("7d", "30d"):
+            sql += " AND u.created_at >= ?"
+            args.append(ago(int(joined[:-1])))
+        column = self._USER_SORTS.get(sort, "u.created_at")
+        direction = "DESC" if order == "desc" else "ASC"
+        # Never-seen accounts go last either way.
+        sql += f" ORDER BY ({column}) IS NULL, {column} {direction}, u.created_at LIMIT ?"
         args.append(limit)
         return [self._admin_user(r) for r in self._all(sql, *args)]
 
@@ -992,6 +1047,14 @@ class Database:
             time.time() + SESSION_TTL_SECONDS, now_iso(), (user_agent or "")[:300] or None, th,
         )
         return row["user_id"]
+
+    def touch_sessions(self, tokens: Iterable[str]) -> None:
+        """Marks sessions as seen now: a live connection is activity too, not
+        just the moment someone logs in (admin "last seen")."""
+        now = now_iso()
+        self.conn.executemany(
+            "UPDATE sessions SET last_seen = ? WHERE token_hash = ?", [(now, hash_token(t)) for t in tokens]
+        )
 
     def session_exists(self, token: str) -> bool:
         return self._one("SELECT 1 FROM sessions WHERE token_hash = ?", hash_token(token)) is not None

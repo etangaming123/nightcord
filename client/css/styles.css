@@ -1008,6 +1008,13 @@ a.embed-title:hover { text-decoration: underline; }
   font-family: var(--mono); font-size: 12px; cursor: pointer;
 }
 .chip:hover { border-color: var(--accent); color: var(--text); }
+.chip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.filter-chips { margin: 0; }
+.filter-chips .chip { font-family: inherit; }
+.account-tools { display: flex; flex-wrap: wrap; align-items: end; gap: 8px 12px; }
+.inline-field { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.inline-field select { font-size: 13px; padding: 5px 8px; }
+.account-tools > .btn.small { display: inline-flex; align-items: center; gap: 4px; height: 30px; }
 .warning-body p { margin: 0; line-height: 1.5; }
 .warning-body strong { color: var(--warn); }
 

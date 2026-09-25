@@ -19,6 +19,7 @@ const DEFAULTS = {
   updateNotifier: true, // standalone-only: toast when an update is found
   trustedDomains: [], // link hosts that skip the leaving-site dialog (ui/links.js)
   touchGrass: true, // the parody nudge after hours of unbroken use (main.js)
+  lastSeenFormat: "datetime", // how "last seen" times read: datetime | date | relative | both (ui/dom.js fmtSeen)
   homeServerReveal: "hidden", // Home page server line: hidden | name | address (ui/home.js)
   twemoji: true, // Discord-style emoji font instead of the OS one (styles.css)
 };

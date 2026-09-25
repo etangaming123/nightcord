@@ -110,6 +110,11 @@ class Hub:
     async def deauthenticate(self, conn: Connection) -> None:
         conn.channel_id = None
         user_id = conn.user_id
+        if conn.session_token:
+            try:
+                self.db.touch_sessions([conn.session_token])  # last seen = when they left
+            except Exception:
+                log.warning("couldn't record last seen", exc_info=True)
         conn.user = None
         conn.session_token = None
         if user_id is None:
@@ -197,6 +202,12 @@ class Hub:
             conn.user = user
 
     # --- presence ------------------------------------------------------------
+
+    def online_user_ids(self) -> list[str]:
+        return list(self.conns_by_user)
+
+    def live_session_tokens(self) -> list[str]:
+        return [c.session_token for c in self.all_conns if c.user is not None and c.session_token]
 
     def is_online(self, user_id: str) -> bool:
         return bool(self.conns_by_user.get(user_id))

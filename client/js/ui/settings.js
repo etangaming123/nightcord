@@ -7,7 +7,7 @@ import { STAFF_LABEL, state } from "../state.js";
 import { lockedReason, userCan } from "../perks.js";
 import { MAX_THEME_COLORS, PRESETS, gradientCss, normalizeCustom } from "../themes.js";
 import { adminSections } from "./admin.js";
-import { add, avatar, clear, displayName, fmtDate, fmtDateTime, h } from "./dom.js";
+import { add, avatar, clear, displayName, fmtDate, fmtDateTime, fmtSeen, h } from "./dom.js";
 import { cropImage } from "./cropper.js";
 import { pickImage, uploadImage } from "./images.js";
 import { renderInline } from "./markdown.js";
@@ -377,7 +377,7 @@ async function devices(el, actions) {
       h("span", { class: "list-icon", "aria-hidden": "true" }, icon("laptop")),
       h("span", { class: "meta" },
         h("span", { class: "name" }, describeAgent(s.user_agent), s.current ? h("span", { class: "tag ok" }, t("this_device_tag")) : null),
-        h("span", { class: "sub" }, t("device_last_active", { lastActive: fmtDateTime(s.last_seen), signedIn: fmtDate(s.created_at) }))),
+        h("span", { class: "sub" }, t("device_last_active", { lastActive: fmtSeen(s.last_seen, getPrefs().lastSeenFormat), signedIn: fmtDate(s.created_at) }))),
       s.current ? null : h("button", {
         class: "btn", type: "button",
         on: {
@@ -455,6 +455,7 @@ function appearance(el, actions) {
     h("label", { class: "check" }, h("input", {
       type: "checkbox", checked: p.compact, on: { change: (e) => setPrefs({ compact: e.currentTarget.checked }) },
     }), t("compact_message_layout")),
+    h("label", {}, t("last_seen_format_label"), lastSeenSelect()),
     h("label", { class: "check" }, h("input", {
       type: "checkbox", checked: p.twemoji, on: { change: (e) => setPrefs({ twemoji: e.currentTarget.checked }) },
     }), t("twemoji_label")),
@@ -564,6 +565,16 @@ function reminderList(actions) {
           on: { click: () => { actions.cancelReminder(r.id); refreshFullscreen(); } },
         }, t("cancel_reminder")))))
       : h("p", { class: "muted small" }, t("reminders_none")));
+}
+
+// "Last seen" style, shared by Appearance and the admin Accounts tab.
+export function lastSeenSelect(onChange = null) {
+  const cur = getPrefs().lastSeenFormat;
+  return h("select", {
+    "aria-label": t("last_seen_format_label"),
+    on: { change: (e) => { setPrefs({ lastSeenFormat: e.currentTarget.value }); onChange?.(); } },
+  }, [["datetime", t("last_seen_datetime")], ["date", t("last_seen_date")], ["relative", t("last_seen_relative")], ["both", t("last_seen_both")]]
+    .map(([v, label]) => h("option", { value: v, selected: v === cur }, label)));
 }
 
 // --- Local Options (standalone build only) ------------------------------------

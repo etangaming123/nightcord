@@ -3,9 +3,11 @@
 // moderators enforce, admins also manage accounts and guilds, and only the
 // owner changes server config, legal documents and appoints admins.
 
+import { getPrefs } from "../prefs.js";
 import { LIMITS, T } from "../protocol.js";
 import { STAFF_LABEL, staffLevel, state } from "../state.js";
-import { add, avatar, clear, displayName, fmtBytes, fmtDate, fmtDateTime, h, initials } from "./dom.js";
+import { add, avatar, clear, displayName, fmtBytes, fmtDate, fmtDateTime, fmtSeen, h, initials } from "./dom.js";
+import { lastSeenSelect } from "./settings.js";
 import { renderDocument } from "./markdown.js";
 import { closeFullscreen, confirmAction, confirmModal, formModal, openMenu, openModal, refreshFullscreen, toast } from "./modals.js";
 import { badgesSection, giveBadgesDialog } from "./adminBadges.js";
@@ -258,15 +260,42 @@ async function legalSection(el, actions) {
 
 // --- accounts ---------------------------------------------------------------------
 
+// Sort / filter choices survive switching tabs while the settings are open.
+const accountView = { sort: "joined", order: "asc", flags: new Set(), seen: "", joined: "" };
+
 async function accountsSection(el, actions) {
   let filter = state.pendingAccounts ? "pending" : "";
+  const v = accountView;
   const tabs = h("div", { class: "tabs inline" });
   const search = h("input", { type: "search", placeholder: t("search_accounts_placeholder"), "aria-label": t("search_accounts_aria") });
   const list = h("div", { class: "list" });
+  const count = h("span", { class: "muted small" });
+  const select = (label, value, options, set) => h("label", { class: "inline-field" }, h("span", {}, label),
+    h("select", { on: { change: (e) => { set(e.currentTarget.value); draw(); } } },
+      options.map(([val, text]) => h("option", { value: val, selected: val === value }, text))));
+  const orderBtn = h("button", { class: "btn small", type: "button", on: { click: () => { v.order = v.order === "asc" ? "desc" : "asc"; draw(); } } });
+  const chips = h("div", { class: "chips filter-chips", role: "group", "aria-label": t("filter_flags_aria") });
+  const drawChips = () => clear(chips, [["online", t("flag_online")], ["staff", t("flag_staff")], ["muted", t("flag_muted")], ["perks", t("flag_perks")], ["badges", t("flag_badges")]].map(([f, label]) =>
+    h("button", {
+      class: `chip ${v.flags.has(f) ? "on" : ""}`, type: "button", "aria-pressed": String(v.flags.has(f)),
+      on: { click: () => { v.flags.has(f) ? v.flags.delete(f) : v.flags.add(f); draw(); } },
+    }, label)));
+  const toolbar = h("div", { class: "account-tools" },
+    select(t("sort_label"), v.sort, [["joined", t("sort_joined")], ["seen", t("sort_seen")], ["name", t("sort_name")], ["devices", t("sort_devices")]], (x) => { v.sort = x; }),
+    orderBtn,
+    select(t("seen_filter_label"), v.seen, [["", t("any_time")], ["7d", t("seen_7d")], ["30d", t("seen_30d")], ["inactive30", t("seen_inactive30")], ["never", t("seen_never")]], (x) => { v.seen = x; }),
+    select(t("joined_filter_label"), v.joined, [["", t("any_time")], ["7d", t("joined_7d")], ["30d", t("joined_30d")]], (x) => { v.joined = x; }),
+    h("label", { class: "inline-field" }, h("span", {}, t("seen_format_label")), lastSeenSelect(() => draw())));
   const draw = async () => {
-    clear(tabs, [["", t("filter_all")], ["pending", t("filter_pending")], ["active", t("filter_active")], ["disabled", t("filter_disabled")], ["rejected", t("filter_rejected")]].map(([v, l]) =>
-      h("button", { class: "tab", type: "button", "aria-selected": String(filter === v), on: { click: () => { filter = v; draw(); } } }, l)));
-    const { users } = await actions.req(T.ADMIN_USERS_LIST, { status: filter || undefined, query: search.value.trim() || undefined });
+    clear(tabs, [["", t("filter_all")], ["pending", t("filter_pending")], ["active", t("filter_active")], ["disabled", t("filter_disabled")], ["rejected", t("filter_rejected")]].map(([val, l]) =>
+      h("button", { class: "tab", type: "button", "aria-selected": String(filter === val), on: { click: () => { filter = val; draw(); } } }, l)));
+    drawChips();
+    clear(orderBtn, icon(v.order === "asc" ? "arrow-up" : "arrow-down"), " ", v.order === "asc" ? t("order_asc") : t("order_desc"));
+    const { users } = await actions.req(T.ADMIN_USERS_LIST, {
+      status: filter || undefined, query: search.value.trim() || undefined,
+      sort: v.sort, order: v.order, flags: [...v.flags], seen: v.seen || undefined, joined: v.joined || undefined,
+    });
+    count.textContent = t("accounts_count", { count: users.length });
     if (filter === "pending" || !filter) {
       state.pendingAccounts = users.filter((u) => u.status === "pending").length || (filter === "pending" ? 0 : state.pendingAccounts);
       actions.refreshChrome();
@@ -277,7 +306,7 @@ async function accountsSection(el, actions) {
   };
   let timer;
   search.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(draw, 200); });
-  add(el, h("p", { class: "muted small" }, t("ip_visibility_note")), h("div", { class: "row wrap" }, tabs, search), list);
+  add(el, h("p", { class: "muted small" }, t("ip_visibility_note")), h("div", { class: "row wrap" }, tabs, search), toolbar, chips, count, list);
   await draw();
 }
 
@@ -319,7 +348,7 @@ function accountRow(u, actions, redraw) {
   const facts = [
     t("joined_fact", { date: fmtDate(u.created_at) }),
     u.last_ip ? t("ip_fact", { ip: u.last_ip }) : null,
-    u.last_seen ? t("seen_fact", { date: fmtDateTime(u.last_seen) }) : null,
+    u.online ? t("online_now_fact") : u.last_seen ? t("seen_fact", { date: fmtSeen(u.last_seen, getPrefs().lastSeenFormat) }) : t("never_seen_fact"),
     u.device_count ? t("device_count_fact", { count: u.device_count }) : null,
     u.note ? t("note_fact", { note: u.note }) : null,
   ].filter(Boolean).join(" · ");

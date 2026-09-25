@@ -132,5 +132,10 @@
   "cancel_reminder": "Cancel",
   "shortcuts_heading": "Keyboard shortcuts",
   "shortcuts_note": "Ctrl+/ (⌘/ on a Mac) opens this list from anywhere.",
-  "shortcuts_button": "Show shortcuts"
+  "shortcuts_button": "Show shortcuts",
+  "last_seen_format_label": "Show \"last seen\" times as",
+  "last_seen_datetime": "Date and time (25 Sept 2026, 9:40 am)",
+  "last_seen_date": "Date (25 Sept 2026)",
+  "last_seen_relative": "Relative (3 hours ago)",
+  "last_seen_both": "Both (3 hours ago, with the date)"
 }

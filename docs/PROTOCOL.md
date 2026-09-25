@@ -1,6 +1,6 @@
 # Nightcord Protocol
 
-Version: `0.16`
+Version: `0.17`
 
 This document is the single source of truth for the wire format between the
 Nightcord client (GitHub Pages, vanilla JS) and a Nightcord server (Python).
@@ -21,6 +21,7 @@ Each protocol version arrived with one commit on `main`, named in the middle col
 | 0.6 | Friends, blocking and message requests | Friends and friend requests, one-sided blocking, per-user DM privacy with message requests, group DMs limited to friends, and user search as a server setting (off by default). |
 | 0.7 | Announcements inbox | A server-wide announcements inbox with per-account read state, and automatic entries when the Terms or Privacy Policy change. |
 | 0.8 | Account switcher | `max_accounts_per_client`, an advisory server setting for clients that keep several accounts. |
+| 0.17 | Accounts tab: sorting and filters | `admin.users.list` learns `sort`, `order`, `flags`, `seen` and `joined`; `AdminUser.online`; a session's `last_seen` now moves while connected and when it disconnects, not only at login. |
 | 0.16 | Discord-style link embeds | Embeds gain `gifv` and `video` media (proxied), `provider_url`, `author_url`, image/video sizes and `youtube_id`; oEmbed author/provider lines, YouTube titles, X/Twitter links read through fixupx (`fx_links`), and a preview cache that survives restarts. |
 | 0.15 | Server description | `server_description`, a Markdown blurb the owner writes; shown on the server's address page (`GET /`) and the client's About tab. |
 | 0.14 | Badges | Badges the server owner uploads and hands out, plus a built-in Verified badge (`badge.*`, `admin.users.set_badges`, `PublicUser.badges`, the `badge` media kind). |
@@ -801,8 +802,8 @@ target's server role to be strictly below the actor's.
 
 | type | direction | payload |
 |---|---|---|
-| `admin.users.list` | C→S | `{ status?: "pending"\|"active"\|"rejected"\|"disabled", query? }` — mod. Deleted accounts are left out |
-| `admin.users.list.result` | S→C | `{ users: [AdminUser] }` — `PublicUser` plus `status`, `created_at`, `note`, `muted_until`, `last_ip`, `last_seen`, `device_count` |
+| `admin.users.list` | C→S | `{ status?: "pending"\|"active"\|"rejected"\|"disabled", query?, sort?: "joined"\|"seen"\|"name"\|"devices", order?: "asc"\|"desc", flags?: ["staff"\|"muted"\|"perks"\|"badges"\|"online"], seen?: "7d"\|"30d"\|"inactive30"\|"never", joined?: "7d"\|"30d" }` — mod. Deleted accounts are left out. Default order: oldest account first. Every flag narrows the list (`online` = connected right now, invisible included); `seen` filters on `last_seen` (`inactive30`: not seen in 30 days, or never); `joined` on `created_at`. Accounts never seen sort last either way. At most 200 |
+| `admin.users.list.result` | S→C | `{ users: [AdminUser] }` — `PublicUser` plus `status`, `created_at`, `note`, `muted_until`, `last_ip`, `last_seen`, `device_count`, `online`. `last_seen` is the latest of the account's sessions: updated at login, every few minutes while connected, and on disconnect |
 | `admin.users.set_status` | C→S | `{ user_id, status: "active"\|"rejected"\|"disabled" }` — mod. Approve (pending→active), reject (pending→rejected), disable (active→disabled; closes their connections), enable (disabled→active) |
 | `admin.users.set_status.result` | S→C | `{ user: AdminUser }` |
 | `admin.users.reset_password` | C→S | `{ user_id }` — admin. Sets a random password, revokes sessions |
