@@ -372,6 +372,15 @@ function showAuth({ message = null, info = false } = {}) {
       on: { click: () => { authMode = mode; showAuth(); } },
     }, label));
   }
+  const notice = clear($("#auth-notice"));
+  add(notice, t({ login: "auth_notice_login", register: "auth_notice_register", request: "auth_notice_request" }[authMode], { server: state.info.server_name }));
+  const other = modes.find(([m]) => m !== authMode);
+  if (other) {
+    add(notice, " ", h("button", {
+      class: "btn link", type: "button",
+      on: { click: () => { authMode = other[0]; showAuth(); } },
+    }, t({ login: "auth_switch_login", register: "auth_switch_register", request: "auth_switch_request" }[other[0]])));
+  }
   const form = $("#auth-form");
   form.password.autocomplete = authMode === "login" ? "current-password" : "new-password";
   form.password.maxLength = LIMITS.PASSWORD_MAX_BYTES;
