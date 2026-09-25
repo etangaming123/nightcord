@@ -376,6 +376,11 @@ function showAuth({ message = null, info = false } = {}) {
   form.password.autocomplete = authMode === "login" ? "current-password" : "new-password";
   form.password.maxLength = LIMITS.PASSWORD_MAX_BYTES;
   $("#auth-note-field").hidden = authMode !== "request";
+  const confirmField = $("#auth-confirm-field");
+  confirmField.hidden = authMode !== "register";
+  form.password2.required = authMode === "register";
+  form.password2.maxLength = LIMITS.PASSWORD_MAX_BYTES;
+  if (confirmField.hidden) form.password2.value = "";
   $("#auth-submit").textContent = { login: t("auth_submit_login"), register: t("auth_submit_register"), request: t("auth_submit_request") }[authMode];
 
   const links = legalLinks(state.info, openLegalDoc);
@@ -407,6 +412,9 @@ async function submitAuth(e) {
     if (authMode !== "login" && !LIMITS.USERNAME_RE.test(username)) {
       throw new Error(t("username_requirements"));
     }
+    if (authMode === "register" && password !== form.password2.value) {
+      throw new Error(t("passwords_dont_match"));
+    }
     const device_id = store.getDeviceId(state.url);
     const accept_legal_version = store.getLegalAccepted(state.url) || undefined;
     if (authMode === "request") {
@@ -420,6 +428,7 @@ async function submitAuth(e) {
       ? await req(T.AUTH_REGISTER, { username, password, device_id, accept_legal_version })
       : await req(T.AUTH_LOGIN, { username, password, device_id });
     form.password.value = "";
+    form.password2.value = "";
     await enterApp(ok);
   } catch (err) {
     if (err.code === ERR.LEGAL_REQUIRED) {
