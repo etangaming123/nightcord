@@ -6,9 +6,9 @@
 // The data lives in this module, not a JSON file: the standalone single-file
 // build (client/scripts/build-standalone.mjs) can't fetch anything at runtime.
 //
-// Whether a flag actually draws is up to the reader's font — Windows has no
-// country flag glyphs, so those show the two letters instead. That's a
-// platform thing, not something the client can fix.
+// Flags draw from the bundled Twemoji font (styles.css), so they show on
+// Windows too. With Twemoji turned off it's up to the OS font again, and
+// Windows has no flag glyphs, so those show the two letters instead.
 
 // [code, name, keywords]. The first keyword is the :shortcode:.
 const COUNTRIES = [

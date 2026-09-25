@@ -19,6 +19,7 @@ const DEFAULTS = {
   updateNotifier: true, // standalone-only: toast when an update is found
   trustedDomains: [], // link hosts that skip the leaving-site dialog (ui/links.js)
   touchGrass: true, // the parody nudge after hours of unbroken use (main.js)
+  twemoji: true, // Discord-style emoji font instead of the OS one (styles.css)
 };
 
 let prefs = load();
@@ -52,6 +53,7 @@ export function applyPrefs() {
   root.dataset.theme = theme;
   root.style.setProperty("--font-size", `${prefs.fontSize}px`);
   root.classList.toggle("compact", !!prefs.compact);
+  root.classList.toggle("native-emoji", !prefs.twemoji);
   document.querySelector('meta[name="color-scheme"]')?.setAttribute("content", theme);
 }
 

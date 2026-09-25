@@ -456,6 +456,9 @@ function appearance(el, actions) {
       type: "checkbox", checked: p.compact, on: { change: (e) => setPrefs({ compact: e.currentTarget.checked }) },
     }), t("compact_message_layout")),
     h("label", { class: "check" }, h("input", {
+      type: "checkbox", checked: p.twemoji, on: { change: (e) => setPrefs({ twemoji: e.currentTarget.checked }) },
+    }), t("twemoji_label")),
+    h("label", { class: "check" }, h("input", {
       type: "checkbox", checked: p.autoReconnect, on: { change: (e) => setPrefs({ autoReconnect: e.currentTarget.checked }) },
     }), t("auto_reconnect_label")),
     h("h3", {}, t("shortcuts_heading")),

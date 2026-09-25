@@ -20,7 +20,7 @@ const outFile = path.join(clientDir, "dist", "nightcord-standalone.html");
 // Read by client/js/update-check.js to know its own version.
 const buildVersion = process.env.GITHUB_REF_NAME || "dev";
 
-const MIME = { ".png": "image/png", ".wav": "audio/wav" };
+const MIME = { ".png": "image/png", ".wav": "audio/wav", ".woff2": "font/woff2" };
 
 async function dataUri(relPath) {
   const bytes = await readFile(path.join(clientDir, relPath));
@@ -51,12 +51,13 @@ async function main() {
     }),
   ]);
 
-  const [logoUri, messageUri, mentionUri, voiceJoinUri, voiceLeaveUri] = await Promise.all([
+  const [logoUri, messageUri, mentionUri, voiceJoinUri, voiceLeaveUri, twemojiUri] = await Promise.all([
     dataUri("assets/logo.png"),
     dataUri("assets/sounds/message.wav"),
     dataUri("assets/sounds/mention.wav"),
     dataUri("assets/sounds/voice-join.wav"),
     dataUri("assets/sounds/voice-leave.wav"),
+    dataUri("assets/fonts/twemoji.woff2"),
   ]);
 
   let script = result.outputFiles[0].text;
@@ -70,7 +71,7 @@ async function main() {
   let out = html
     .replace(
       '<link rel="stylesheet" href="css/styles.css">',
-      `<style>\n${css}\n</style>`
+      `<style>\n${css.replace("../assets/fonts/twemoji.woff2", twemojiUri)}\n</style>`
     )
     .replaceAll('href="assets/logo.png"', `href="${logoUri}"`)
     .replaceAll('src="assets/logo.png"', `src="${logoUri}"`)

@@ -71,6 +71,7 @@
   "theme_presets_aria": "Theme presets",
   "chat_font_size_label": "Chat font size",
   "compact_message_layout": "Compact message layout",
+  "twemoji_label": "Discord-style emoji (Twemoji) instead of your device's own",
   "colour_n_aria": "Colour {n}",
   "remove_colour_title": "Remove colour",
   "remove_colour_n_aria": "Remove colour {n}",
