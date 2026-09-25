@@ -12,6 +12,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
+import logging
 import secrets
 import sqlite3
 import time
@@ -22,6 +23,8 @@ from . import files as F
 from .ids import new_id
 from .permissions import DEFAULT_EVERYONE, OWNER_RANK
 from .protocol import BADGE_VERIFIED
+
+log = logging.getLogger("nightcord.db")
 
 SESSION_TTL_SECONDS = 30 * 24 * 3600
 
@@ -598,10 +601,28 @@ def _role(row: sqlite3.Row) -> dict:
     }
 
 
+# Pre-migration snapshots kept per backup folder (older ones are deleted).
+PRE_MIGRATE_KEEP = 3
+
+
+def snapshot_db(conn: sqlite3.Connection, target: Path) -> None:
+    """A consistent copy of an open database (SQLite's online backup API)."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    dst = sqlite3.connect(str(target))
+    try:
+        conn.backup(dst)
+    finally:
+        dst.close()
+
+
 class Database:
-    def __init__(self, path: Path | str):
-        if path != ":memory:":
-            Path(path).parent.mkdir(parents=True, exist_ok=True)
+    def __init__(self, path: Path | str, *, backup_dir: Path | None = None):
+        """backup_dir: where a snapshot goes before migrations run on an
+        existing database (default: a backups/ folder next to the file)."""
+        self.path = None if path == ":memory:" else Path(path)
+        if self.path:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.backup_dir = backup_dir or (self.path.parent / "backups" if self.path else None)
         self.conn = sqlite3.connect(str(path), isolation_level=None, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
@@ -618,6 +639,8 @@ class Database:
                 "This database was created by Nightcord v1 and can't be upgraded. "
                 "Move or delete the data directory and start again."
             )
+        if 0 < version < len(MIGRATIONS):
+            self._backup_before_migrating(version)
         for i, sql in enumerate(MIGRATIONS[version:], start=version + 1):
             self.conn.execute("BEGIN IMMEDIATE")
             try:
@@ -633,6 +656,25 @@ class Database:
                 self.conn.execute("ROLLBACK")
                 raise
         self.has_fts = self._one("SELECT 1 FROM sqlite_master WHERE name = 'messages_fts'") is not None
+
+    def _backup_before_migrating(self, version: int) -> None:
+        """Upgrades are automatic, so keep a copy of the old database first:
+        if a migration ever goes wrong, the data from before it is still
+        there. Only the newest PRE_MIGRATE_KEEP copies are kept."""
+        if not self.backup_dir:
+            return
+        stamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        base = f"pre-migrate-v{version}-to-v{len(MIGRATIONS)}-{stamp}"
+        target = self.backup_dir / f"{base}.db"
+        n = 1
+        while target.exists():
+            n += 1
+            target = self.backup_dir / f"{base}-{n}.db"
+        snapshot_db(self.conn, target)
+        log.info("Upgrading the database from version %d to %d; saved a copy to %s", version, len(MIGRATIONS), target)
+        old = sorted(self.backup_dir.glob("pre-migrate-*.db"), key=lambda p: p.stat().st_mtime, reverse=True)
+        for stale in old[PRE_MIGRATE_KEEP:]:
+            stale.unlink(missing_ok=True)
 
     def set_status_source(self, fn) -> None:
         """Tell the serializer who is online, so custom statuses can be hidden

@@ -35,7 +35,7 @@ import zipfile
 from pathlib import Path
 
 from nightcord.config import Config, load_config
-from nightcord.db import Database
+from nightcord.db import Database, snapshot_db
 from nightcord.handlers.auth import hash_password_sync
 
 
@@ -57,7 +57,7 @@ def cmd_run(cfg: Config) -> None:
     from nightcord.app import create_app, new_setup_code
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    db = Database(cfg.db_path)
+    db = Database(cfg.db_path, backup_dir=cfg.data_dir.parent / "backups")
     db.purge_expired_sessions()
     setup_code = None
     if db.get_server_owner_row() is None:
@@ -215,11 +215,9 @@ def cmd_backup(cfg: Config, out_dir: Path | None) -> int:
     with tempfile.TemporaryDirectory() as tmp:
         snapshot = Path(tmp) / "nightcord.db"
         src = sqlite3.connect(str(cfg.db_path))
-        dst = sqlite3.connect(str(snapshot))
         try:
-            src.backup(dst)
+            snapshot_db(src, snapshot)
         finally:
-            dst.close()
             src.close()
         with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.write(snapshot, "nightcord.db")
@@ -385,7 +383,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "backup":
         return cmd_backup(cfg, args.out)
-    db = Database(cfg.db_path)
+    db = Database(cfg.db_path, backup_dir=cfg.data_dir.parent / "backups")
     try:
         if args.command == "pending":
             return cmd_pending(db, args.action, args.username)

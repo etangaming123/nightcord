@@ -184,7 +184,7 @@ def new_setup_code() -> str:
 def create_app(config: Config, db: Database | None = None, *, setup_code: str | None = None) -> web.Application:
     """setup_code: the one-time code that claims a server with no owner yet.
     If the server needs one and none is given, a code is generated and logged."""
-    db = db or Database(config.db_path)
+    db = db or Database(config.db_path, backup_dir=config.data_dir.parent / "backups")
     perms = PermissionService(db)
     ctx = Ctx(db=db, hub=Hub(db, perms), perms=perms, config=config, login_throttle=LoginThrottle())
     # Serialised PublicUsers hide the custom status of anyone who reads as
