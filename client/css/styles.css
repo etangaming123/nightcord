@@ -176,6 +176,9 @@ textarea { resize: vertical; }
 /* The logo is client/assets/logo.png — swap the file to rebrand. */
 .brand-mark { display: inline-block; width: 32px; height: 32px; border-radius: 8px; object-fit: cover; }
 .server-title { margin: 12px 0 2px; font-size: 22px; }
+.home-link { display: inline-block; margin-bottom: 10px; font-size: 13px; text-decoration: none; }
+.whats-this-body ul { margin: 8px 0; padding-left: 20px; display: grid; gap: 6px; }
+.whats-this-body a { color: var(--accent-text); }
 .connect-option { margin-top: 14px; color: var(--text-2); font-size: 13px; }
 .auth-notice { margin: 14px 0 10px; color: var(--text-2); }
 .auth-notice .btn.link { padding: 0; display: inline; }
@@ -215,7 +218,7 @@ textarea { resize: vertical; }
 
 .whats-this {
   border: 0; background: none; padding: 0; margin-left: 4px; color: var(--muted); text-decoration: underline dotted;
-  font-size: inherit; cursor: help;
+  font-size: inherit; cursor: pointer;
 }
 .whats-this:hover, .whats-this:focus-visible { color: var(--text-2); }
 

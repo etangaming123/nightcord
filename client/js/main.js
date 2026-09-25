@@ -697,7 +697,10 @@ async function boot() {
     const ts = scopedT("shell");
     openModal({
       title: t("whats_this_title"),
-      content: h("p", {}, ts("whats_this_body")),
+      content: h("div", { class: "whats-this-body" },
+        h("p", {}, ts("whats_this_body")),
+        h("ul", {}, ["servers", "accounts", "data", "start"].map((k) => h("li", {}, ts(`whats_this_point_${k}`)))),
+        h("p", {}, h("a", { href: "https://github.com/etangaming123/nightcord#readme", target: "_blank", rel: "noopener" }, ts("whats_this_more")))),
       actions: [h("button", { class: "btn primary", type: "button", on: { click: closeModal } }, tc("close"))],
     });
   });
