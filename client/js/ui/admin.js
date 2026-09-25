@@ -46,6 +46,7 @@ export function adminSections(actions) {
     { id: "bans", label: t("tab_bans"), render: (el) => bansSection(el, actions) },
     lvl >= ADMIN ? { id: "guilds", label: t("tab_guilds"), render: (el) => guildsSection(el, actions) } : null,
     { id: "server-audit", label: t("tab_audit_log"), render: (el) => auditSection(el, actions) },
+    lvl >= OWNER ? { id: "data", label: t("tab_data"), render: (el) => dataSection(el, actions) } : null,
   ];
 }
 
@@ -79,7 +80,8 @@ async function overview(el, actions) {
     h("p", { class: "muted" }, t("overview_role_line", { role: STAFF_LABEL[state.user.server_role] || t("staff_member_fallback"), server: state.info.server_name })),
     h("div", { class: "stats" },
       stat(s.users, t("stat_active_accounts")), stat(s.guilds, t("stat_guilds")), stat(s.messages, t("stat_messages")),
-      stat(fmtBytes(s.attachments.bytes), t("stat_files_label", { count: s.attachments.count }))),
+      stat(fmtBytes(s.attachments.bytes), t("stat_files_label", { count: s.attachments.count })),
+      s.media ? stat(fmtBytes(s.media.bytes), t("stat_media_label", { count: s.media.count })) : null),
     h("p", { class: "muted small" }, t("overview_limits", { limit: fmtBytes(state.info.max_upload_bytes), voice: state.info.voice_enabled ? t("voice_on") : t("voice_off") })));
 }
 
@@ -611,6 +613,115 @@ const AUDIT_TEXT = {
   "config.update": (d) => t("audit_config_update", { keys: Object.keys(d).join(", ") }),
   "legal.update": (d) => t("audit_legal_update", { documents: (d.documents || []).join(" and ") }),
 };
+
+// --- data (owner): what the server's storage goes on -------------------------------
+
+// Slice order is fixed and colour follows the category, never its rank, so a
+// category keeps its colour when others come and go. `other` and `free` are
+// neutral: they aren't a kind of data anyone chose to keep.
+const DATA_KEYS = ["messages", "attachments", "emoji", "images", "previews", "users", "servers", "logs", "other", "free"];
+const DATA_COLOR = (key) => `var(--data-${key})`;
+
+function donut(slices, total, { onHover }) {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", "0 0 200 200");
+  svg.setAttribute("class", "data-donut");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", t("data_chart_aria"));
+  const R = 92;
+  const r = 60;
+  let angle = -Math.PI / 2;
+  const point = (rad, a) => [100 + rad * Math.cos(a), 100 + rad * Math.sin(a)];
+  const shown = slices.filter((s) => s.bytes > 0);
+  for (const s of shown) {
+    const sweep = Math.min((s.bytes / total) * Math.PI * 2, Math.PI * 2 - 1e-4);
+    const a0 = angle;
+    const a1 = angle + sweep;
+    angle = a1;
+    const large = sweep > Math.PI ? 1 : 0;
+    const [x0, y0] = point(R, a0);
+    const [x1, y1] = point(R, a1);
+    const [x2, y2] = point(r, a1);
+    const [x3, y3] = point(r, a0);
+    const path = document.createElementNS(NS, "path");
+    path.setAttribute("d", `M${x0} ${y0}A${R} ${R} 0 ${large} 1 ${x1} ${y1}L${x2} ${y2}A${r} ${r} 0 ${large} 0 ${x3} ${y3}Z`);
+    path.setAttribute("class", `slice slice-${s.key}`);
+    path.setAttribute("fill", s.key === "free" ? "url(#data-free-hatch)" : DATA_COLOR(s.key));
+    path.dataset.key = s.key;
+    path.addEventListener("mouseenter", () => onHover(s.key));
+    path.addEventListener("mouseleave", () => onHover(null));
+    const title = document.createElementNS(NS, "title");
+    title.textContent = `${t(`data_${s.key}`)}: ${fmtBytes(s.bytes)}`;
+    path.append(title);
+    svg.append(path);
+  }
+  // Free space is hatched, so it reads as "not data" without a colour.
+  const defs = document.createElementNS(NS, "defs");
+  defs.innerHTML = '<pattern id="data-free-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">'
+    + '<rect width="6" height="6" fill="var(--data-free)"/><line x1="0" y1="0" x2="0" y2="6" stroke="var(--data-other)" stroke-width="2"/></pattern>';
+  svg.prepend(defs);
+  return svg;
+}
+
+async function dataSection(el, actions) {
+  const body = h("div", { class: "data-tab" });
+  const draw = (s) => {
+    const total = s.total_bytes || 0;
+    const slices = DATA_KEYS.map((key) => s.categories.find((c) => c.key === key) || { key, bytes: 0, db_bytes: 0, file_bytes: 0, files: 0 });
+    const centre = h("div", { class: "data-centre" });
+    const showCentre = (key) => {
+      const c = key && slices.find((x) => x.key === key);
+      clear(centre,
+        h("div", { class: "data-centre-n" }, fmtBytes(c ? c.bytes : total)),
+        h("div", { class: "data-centre-l" }, c ? t(`data_${c.key}`) : t("data_total")));
+      for (const row of legend.children) row.classList.toggle("hover", row.dataset.key === key);
+      for (const p of chart.querySelectorAll(".slice")) p.classList.toggle("dim", !!key && p.dataset.key !== key);
+    };
+    const pct = (b) => (total ? `${((b / total) * 100).toFixed(b / total < 0.01 ? 1 : 0)}%` : "0%");
+    const legend = h("ul", { class: "data-legend" }, slices.map((c) => h("li", {
+      class: c.bytes ? "" : "empty", dataset: { key: c.key },
+      on: { mouseenter: () => showCentre(c.key), mouseleave: () => showCentre(null) },
+    },
+    h("span", { class: `data-swatch ${c.key}`, style: `background:${DATA_COLOR(c.key)}` }),
+    h("span", { class: "data-name" }, t(`data_${c.key}`),
+      h("span", { class: "muted small block" }, [
+        c.db_bytes ? t("data_in_db", { size: fmtBytes(c.db_bytes) }) : null,
+        c.file_bytes ? t("data_in_files", { size: fmtBytes(c.file_bytes), count: c.files }) : null,
+      ].filter(Boolean).join(" · ") || t("data_nothing"))),
+    h("span", { class: "data-size" }, fmtBytes(c.bytes)),
+    h("span", { class: "data-pct muted" }, pct(c.bytes)))));
+    const chart = donut(slices, total || 1, { onHover: showCentre });
+    showCentre(null);
+    const db = s.database;
+    const action = (key, label, hint, danger = false) => h("div", { class: "list-row" },
+      h("span", { class: "meta" }, h("span", { class: "name" }, label), h("span", { class: "sub" }, hint)),
+      h("button", {
+        class: `btn ${danger ? "danger" : ""}`, type: "button",
+        on: {
+          click: (e) => confirmAction(e, {
+            title: label, message: t(`data_${key}_confirm`), confirmLabel: t(`data_${key}_btn`),
+            onConfirm: async () => { draw(await actions.req(T.ADMIN_STORAGE_ACTION, { action: key })); toast(t(`data_${key}_done`)); },
+          }),
+        },
+      }, t(`data_${key}_btn`)));
+    clear(body,
+      h("div", { class: "data-summary" },
+        h("div", { class: "data-chart" }, chart, centre),
+        legend),
+      h("p", { class: "muted small" },
+        t("data_db_line", { file: fmtBytes(db.file_bytes), wal: fmtBytes(db.wal_bytes), free: fmtBytes(db.free_bytes) }),
+        " ", db.exact ? t("data_exact") : t("data_estimated")),
+      h("h3", {}, t("data_tidy_heading")),
+      h("div", { class: "list" },
+        action("clear_previews", t("data_clear_previews_label"), t("data_clear_previews_hint", { count: s.cached_previews })),
+        action("purge_unclaimed", t("data_purge_unclaimed_label"), t("data_purge_unclaimed_hint", { count: s.unclaimed_media.count, size: fmtBytes(s.unclaimed_media.bytes) })),
+        action("vacuum", t("data_vacuum_label"), t("data_vacuum_hint", { size: fmtBytes(db.free_bytes) }))));
+  };
+  add(el, h("p", { class: "muted" }, t("data_intro")), body);
+  add(body, h("p", { class: "muted" }, t("data_loading")));
+  draw(await actions.req(T.ADMIN_STORAGE));
+}
 
 async function auditSection(el, actions) {
   const box = h("div", { class: "list" });

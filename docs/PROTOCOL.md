@@ -1,6 +1,6 @@
 # Nightcord Protocol
 
-Version: `0.17`
+Version: `0.18`
 
 This document is the single source of truth for the wire format between the
 Nightcord client (GitHub Pages, vanilla JS) and a Nightcord server (Python).
@@ -21,6 +21,7 @@ Each protocol version arrived with one commit on `main`, named in the middle col
 | 0.6 | Friends, blocking and message requests | Friends and friend requests, one-sided blocking, per-user DM privacy with message requests, group DMs limited to friends, and user search as a server setting (off by default). |
 | 0.7 | Announcements inbox | A server-wide announcements inbox with per-account read state, and automatic entries when the Terms or Privacy Policy change. |
 | 0.8 | Account switcher | `max_accounts_per_client`, an advisory server setting for clients that keep several accounts. |
+| 0.18 | Data tab | `admin.storage` (how much space the server uses, by category) and `admin.storage.action` (clear the preview cache, `VACUUM`, purge unclaimed uploads). |
 | 0.17 | Accounts tab: sorting and filters | `admin.users.list` learns `sort`, `order`, `flags`, `seen` and `joined`; `AdminUser.online`; a session's `last_seen` now moves while connected and when it disconnects, not only at login. |
 | 0.16 | Discord-style link embeds | Embeds gain `gifv` and `video` media (proxied), `provider_url`, `author_url`, image/video sizes and `youtube_id`; oEmbed author/provider lines, YouTube titles, X/Twitter links read through fixupx (`fx_links`), and a preview cache that survives restarts. |
 | 0.15 | Server description | `server_description`, a Markdown blurb the owner writes; shown on the server's address page (`GET /`) and the client's About tab. |
@@ -619,6 +620,29 @@ became `image` / `gifv` embeds may be shown as just the media.
 guild); `embeds_suppressed` then stays true and `embeds` reads empty.
 Embeds are off entirely when the server's `link_embeds` setting is false.
 
+### StorageUsage
+```json
+{
+  "total_bytes": 12345678,
+  "database": { "file_bytes": 0, "wal_bytes": 0, "page_size": 4096, "page_count": 0, "free_bytes": 0, "exact": false },
+  "categories": [ { "key": "messages", "bytes": 0, "db_bytes": 0, "file_bytes": 0, "files": 0 } ],
+  "unclaimed_media": { "count": 0, "bytes": 0 },
+  "cached_previews": 0
+}
+```
+What the server's data takes up (`admin.storage`). `categories` always
+lists, in this order: `messages` (messages, reactions, polls, the search
+index), `attachments` (files people sent), `emoji` (custom emoji and
+stickers), `images` (avatars, banners, icons, badges), `previews` (link
+preview cache and proxied media), `users` (accounts, sessions, friends,
+read states), `servers` (guilds, channels, roles, invites), `logs` (audit
+logs, announcements, bans), `other` (everything else, including the WAL
+file and the rules pages) and `free` (empty database pages a `vacuum`
+would give back). `db_bytes` is the category's share of the database,
+`file_bytes` what it keeps on disk. Per-table sizes are exact when the
+server's SQLite has `dbstat` (`database.exact`); otherwise they're
+estimated from what's stored and scaled to the pages in use.
+
 ### Badge
 ```json
 { "id": "string", "name": "string", "description": "string | null", "image": "string | null", "inline": true }
@@ -830,6 +854,10 @@ target's server role to be strictly below the actor's.
 | `admin.audit_log.result` | S→C | `{ entries: [{ entry_id, actor: PublicUser, action, target_id, details, created_at }], has_more }` |
 | `admin.stats` | C→S | `{}` — admin |
 | `admin.stats.result` | S→C | `{ users, guilds, messages, attachments: { count, bytes }, media: { count, bytes } }` |
+| `admin.storage` | C→S | `{}` — owner |
+| `admin.storage.result` | S→C | `StorageUsage` (below) |
+| `admin.storage.action` | C→S | `{ action: "clear_previews"\|"vacuum"\|"purge_unclaimed" }` — owner. `clear_previews` empties the link preview cache and the proxied files (previews already on messages stay, and their media is fetched again when viewed); `vacuum` rebuilds the database file to hand free pages back to the disk; `purge_unclaimed` deletes uploads nobody attached to anything, older than five minutes. Each is written to the server audit log as `storage.<action>` |
+| `admin.storage.action.result` | S→C | `StorageUsage`, measured after the action |
 | `admin.legal.set` | C→S | `{ terms?: markdown \| null, privacy?: markdown \| null }` — owner. Empty or null removes a document |
 | `admin.legal.set.result` | S→C | `{ legal_version, has_terms, has_privacy }` |
 | `admin.guilds.list` | C→S | `{}` — admin |

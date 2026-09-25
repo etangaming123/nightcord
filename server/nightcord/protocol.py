@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-PROTOCOL_VERSION = "0.17"
+PROTOCOL_VERSION = "0.18"
 
 # --- Message types -----------------------------------------------------------
 
@@ -75,6 +75,10 @@ ADMIN_AUDIT_LOG = "admin.audit_log"
 ADMIN_AUDIT_LOG_RESULT = "admin.audit_log.result"
 ADMIN_STATS = "admin.stats"
 ADMIN_STATS_RESULT = "admin.stats.result"
+ADMIN_STORAGE = "admin.storage"
+ADMIN_STORAGE_RESULT = "admin.storage.result"
+ADMIN_STORAGE_ACTION = "admin.storage.action"
+ADMIN_STORAGE_ACTION_RESULT = "admin.storage.action.result"
 ADMIN_LEGAL_SET = "admin.legal.set"
 ADMIN_LEGAL_SET_RESULT = "admin.legal.set.result"
 ADMIN_USERS_SET_PERKS = "admin.users.set_perks"
@@ -557,6 +561,8 @@ ANNOUNCEMENT_MAX_CHARS = 4000
 # Link embeds (§4 Embed): the server fetches pages people post.
 # admin.users.list (§5 Admin): sort keys, narrowing flags, activity windows.
 ADMIN_USER_SORTS = ("joined", "seen", "name", "devices")
+# admin.storage.action (§5 Admin): what the Data tab can tidy up.
+STORAGE_ACTIONS = ("clear_previews", "vacuum", "purge_unclaimed")
 ADMIN_USER_FLAGS = ("staff", "muted", "perks", "badges", "online")
 ADMIN_USER_SEEN = ("7d", "30d", "inactive30", "never")
 ADMIN_USER_JOINED = ("7d", "30d")

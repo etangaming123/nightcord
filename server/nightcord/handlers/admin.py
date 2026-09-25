@@ -12,13 +12,19 @@ from __future__ import annotations
 import ipaddress
 import secrets
 
+import shutil
+
+from .. import embeds as E
 from .. import protocol as P
+from .. import storage
 from ..db import iso_in
 from ..protocol import ProtocolError
 from . import handles
 from ._access import ADMIN, MODERATOR, OWNER, require_guild, require_outranks, require_staff, staff_level
 from .auth import hash_password
 from .guilds import remove_guild
+from . import media as media_routes
+from . import proxy as proxy_routes
 
 USER_STATUSES = ("pending", "active", "rejected", "disabled")
 # Allowed admin.users.set_status transitions.
@@ -259,6 +265,44 @@ async def device_bans_remove(ctx, conn, payload):
 
 
 # --- server overview ------------------------------------------------------------
+
+
+@handles(P.ADMIN_STORAGE)
+async def storage_usage(ctx, conn, payload):
+    """Data tab: how much space everything takes (owner only; it shows the
+    whole server's footprint)."""
+    require_staff(conn, OWNER)
+    return storage.breakdown(ctx.db, ctx.config.data_dir)
+
+
+@handles(P.ADMIN_STORAGE_ACTION)
+async def storage_action(ctx, conn, payload):
+    require_staff(conn, OWNER)
+    action = P.opt_enum(payload, "action", P.STORAGE_ACTIONS)
+    if action is None:
+        raise ProtocolError(P.BAD_REQUEST, f"'action' must be one of {P.STORAGE_ACTIONS}")
+    details: dict = {}
+    if action == "clear_previews":
+        # Stored previews on messages stay; only the cache and the proxied
+        # files go, and come back the next time someone views them.
+        E.cache_clear()
+        details["rows"] = ctx.db.embed_cache_clear()
+        folder = proxy_routes.proxy_dir(ctx)
+        if folder.is_dir():
+            shutil.rmtree(folder, ignore_errors=True)
+    elif action == "vacuum":
+        before = ctx.db.conn.execute("PRAGMA page_count").fetchone()[0]
+        ctx.db.conn.execute("VACUUM")
+        ctx.db.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        after = ctx.db.conn.execute("PRAGMA page_count").fetchone()[0]
+        details["pages_freed"] = before - after
+    elif action == "purge_unclaimed":
+        # Five minutes' grace so an upload someone is finishing right now survives.
+        details["files"] = media_routes.sweep(ctx, max_age=300)
+    _audit(ctx, conn, f"storage.{action}", None, details)
+    return storage.breakdown(ctx.db, ctx.config.data_dir)
+
+
 
 
 @handles(P.ADMIN_AUDIT_LOG)
