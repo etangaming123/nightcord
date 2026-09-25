@@ -165,6 +165,8 @@ export async function openHome(dmId = null) {
   if (target && state.dms.has(target)) {
     await openChannel(target);
   } else {
+    // Coming to Home with no conversation to reopen lands on the Home page.
+    if (switching) state.homeTab = "home";
     state.channelId = null;
     resetMessages();
     closeNavDrawer();

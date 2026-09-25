@@ -20,6 +20,7 @@ import { badgeEls, nameAttrs, roleIconEl } from "./names.js";
 import { stickerImg } from "./stickers.js";
 import { scopedT } from "../strings.js";
 import { icon } from "./icons.js";
+import { renderHomeHeader, renderHomePage } from "./home.js";
 
 const t = scopedT("ui/chat");
 const tc = scopedT("common");
@@ -107,7 +108,8 @@ export function renderChatHeader(state, actions) {
     add(header, iconBtn("users", t("show_members"), actions.toggleMembers, { cls: "members-btn" }));
     add(header, searchButton(actions));
   } else if (state.view === "home") {
-    renderFriendsHeader(header, state, actions);
+    if (state.homeTab === "home") renderHomeHeader(header);
+    else renderFriendsHeader(header, state, actions);
   } else {
     add(header, h("span", { class: "title" }, currentGuild()?.name || ""));
   }
@@ -319,7 +321,7 @@ function messageNodes(m, prev, state, actions) {
 }
 
 function emptyState(state, actions) {
-  if (state.view === "home") return renderFriendsPage(state, actions);
+  if (state.view === "home") return state.homeTab === "home" ? renderHomePage(state, actions) : renderFriendsPage(state, actions);
   if (!state.guilds.size) {
     return h("div", { class: "empty-state" },
       h("h2", {}, t("no_guilds_title")),

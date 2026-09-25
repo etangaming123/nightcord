@@ -1448,6 +1448,28 @@ canvas.still { display: block; }
 .friends-tab.add { background: var(--accent); color: var(--accent-ink); }
 .friends-tab.add.active { background: none; color: var(--accent-text); }
 .friends-tab .badge { position: static; }
+/* Home page (ui/home.js) */
+.home-page { padding: 48px 40px; max-width: 720px; width: 100%; }
+.home-title {
+  font-size: 44px; font-weight: 800; letter-spacing: -.02em; margin: 0 0 12px;
+  background: linear-gradient(120deg, var(--accent-text), #bb6688 60%, #ddaacc); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.home-welcome { font-size: 17px; color: var(--text-2); margin: 0 0 28px; line-height: 1.7; }
+.server-reveal {
+  display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; cursor: pointer;
+  border: 1px solid var(--line); background: var(--bg-1); color: var(--text); border-radius: 999px;
+  padding: 3px 12px 3px 10px; font-weight: 600; font-size: 15px;
+}
+.server-reveal:hover { border-color: var(--accent); }
+.server-reveal.hidden span { letter-spacing: .08em; color: var(--muted); font-style: italic; font-weight: 500; }
+.server-reveal.address span { font-family: var(--mono); font-size: 14px; }
+.home-stats { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.home-stats li { display: flex; align-items: center; gap: 12px; font-size: 16px; color: var(--text-2); }
+.home-stats strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.home-stat-icon { width: 34px; height: 34px; border-radius: 10px; background: var(--bg-1); color: var(--accent-text); display: grid; place-items: center; font-size: 18px; flex: none; }
+.home-stat-link { color: inherit; font-weight: 400; }
+.home-stat-link:hover { color: var(--text); }
+@media (max-width: 720px) { .home-page { padding: 28px 16px; } .home-title { font-size: 34px; } }
 .friends-page { display: flex; flex-direction: column; gap: 2px; padding: 16px 20px 32px; max-width: 900px; width: 100%; }
 .friends-page .section-label { padding: 12px 8px 6px; }
 .friends-h2 { margin: 4px 0; font-size: 18px; }

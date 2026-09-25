@@ -20,6 +20,7 @@
   "state",
   "ui/accounts",
   "ui/friends",
+  "ui/home",
   "ui/chat",
   "ui/composer",
   "ui/attachments",

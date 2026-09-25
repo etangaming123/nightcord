@@ -234,7 +234,7 @@ function renderHome(state, actions) {
   clear($("#guild-header"), h("span", { class: "title" }, t("rail_dm_label")));
   const list = clear($("#channel-list"));
   // The Friends link covers every Friends-page tab except the two with their own links.
-  const own = ["requests", "inbox"];
+  const own = ["home", "requests", "inbox"];
   const friendsTab = own.includes(state.homeTab) ? "online" : state.homeTab;
   const homeLink = (label, glyph, tab, n) => {
     const active = !state.channelId && (tab ? state.homeTab === tab : !own.includes(state.homeTab));
@@ -245,6 +245,7 @@ function renderHome(state, actions) {
     }, h("span", { class: "home-glyph", "aria-hidden": "true" }, glyph), h("span", { class: "name" }, label), badge(n));
   };
   add(list,
+    homeLink(t("home"), icon("house"), "home", 0),
     homeLink(t("friends"), icon("users"), null, friendsBadge() - messageRequests().length - (state.announcements.unread || 0)),
     messageRequests().length ? homeLink(t("message_requests"), icon("mail"), "requests", messageRequests().length) : null,
     homeLink(t("inbox"), icon("inbox"), "inbox", state.announcements.unread));

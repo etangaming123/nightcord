@@ -1,0 +1,30 @@
+{
+  "title": "Home",
+  "title_big": "Nightcord",
+  "welcome": "Welcome to Nightcord, you're on server",
+  "server_hidden": "hidden",
+  "reveal_hidden_title": "Server hidden. Click to show its name",
+  "reveal_name_title": "Showing the server name. Click to show its address",
+  "reveal_address_title": "Showing the server address. Click to hide it",
+  "friends_online": {
+    "one": "friend online",
+    "other": "friends online"
+  },
+  "servers_joined": {
+    "one": "server joined",
+    "other": "servers joined"
+  },
+  "uptime_label": "Nightcord uptime",
+  "uptime_under_minute": "<1m",
+  "uptime_minutes": "{m}m",
+  "uptime_hours": "{h}h {m}m",
+  "uptime_days": "{d}d {h}h",
+  "pending_requests": {
+    "one": "friend request waiting",
+    "other": "friend requests waiting"
+  },
+  "unread_dms": {
+    "one": "conversation with unread messages",
+    "other": "conversations with unread messages"
+  }
+}

@@ -2,7 +2,10 @@
   "rail_dm_label": "Direct Messages",
   "rail_guild_ghost_title": "{name} (ghost view)",
   "rail_add_guild": "Create or join a guild",
-  "mentions_count": { "one": "{count} mention", "other": "{count} mentions" },
+  "mentions_count": {
+    "one": "{count} mention",
+    "other": "{count} mentions"
+  },
   "guild_aria_mentions": "{name}, {mentions}",
   "guild_aria_unread": "{name}, unread",
   "guild_pick_prompt": "Pick a guild on the left, or press + to create or join one.",
@@ -21,7 +24,10 @@
   "dm_section_label": "Direct messages",
   "new_message": "New message",
   "no_conversations": "No conversations yet. Press + to message a friend.",
-  "group_members_count": { "one": "{count} member", "other": "{count} members" },
+  "group_members_count": {
+    "one": "{count} member",
+    "other": "{count} members"
+  },
   "close_conversation": "Close conversation",
   "leave_group": "Leave group",
   "set_status_title": "Set status",
@@ -36,9 +42,9 @@
   "unmute_button": "🔇 Unmute",
   "deafen_button": "🎧 Deafen",
   "undeafen_button": "🔕 Undeafen",
-
   "friends": "Friends",
   "message_requests": "Message requests",
   "inbox": "Inbox",
-  "switch_account": "Switch account"
+  "switch_account": "Switch account",
+  "home": "Home"
 }
