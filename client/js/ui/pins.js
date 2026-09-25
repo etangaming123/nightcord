@@ -41,7 +41,7 @@ export async function openPins(anchor, actions) {
             m.attachments?.length ? h("div", { class: "muted small" }, t("attachment_count", { count: m.attachments.length })) : null)),
         h("div", { class: "pin-actions" },
           h("button", { class: "btn small", type: "button", on: { click: () => { closePopover(); actions.jumpTo(m.message_id, m.channel_id); } } }, t("jump")),
-          canUnpin ? iconBtn("✕", t("unpin"), async (e) => {
+          canUnpin ? iconBtn("x", t("unpin"), async (e) => {
             if (!await actions.unpinMessage(m, e.shiftKey)) return;
             try { await draw(); } catch (err) { toast(err.message, { error: true }); }
           }) : null)));

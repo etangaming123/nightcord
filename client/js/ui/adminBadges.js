@@ -67,7 +67,7 @@ export async function badgesSection(el, actions) {
     });
     return h("div", { class: "list-row expr-row" }, badgeEl(b, { cls: "big" }), name,
       h("label", { class: "check grow" }, inline, h("span", { class: "small" }, t("show_next_to_name"))),
-      iconBtn("🗑", t("delete_aria", { name: b.name }), () => confirmModal({
+      iconBtn("trash-2", t("delete_aria", { name: b.name }), () => confirmModal({
         title: t("delete_title", { name: b.name }),
         message: t("delete_message"),
         confirmLabel: t("delete_btn"),

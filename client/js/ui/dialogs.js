@@ -4,6 +4,7 @@ import { LIMITS, PERMS } from "../protocol.js";
 import { scopedT } from "../strings.js";
 import { add, avatar, clear, displayName, h, initials } from "./dom.js";
 import { closeModal, confirmModal, formModal, openModal, toast } from "./modals.js";
+import { icon } from "./icons.js";
 
 const t = scopedT("ui/dialogs");
 const tc = scopedT("common");
@@ -135,9 +136,9 @@ export function createChannelDialog({ roles, canSetPerms, kind = "text", parentI
     h("span", { class: "kind-icon", "aria-hidden": "true" }, icon),
     h("span", {}, h("strong", {}, label), h("span", { class: "muted small block" }, sub)));
   add(kinds,
-    kindOption("text", "#", t("kind_text_label"), t("kind_text_sub")),
-    kindOption("voice", "🔊", t("kind_voice_label"), voiceEnabled ? t("kind_voice_sub_enabled") : t("kind_voice_sub_disabled"), !voiceEnabled),
-    kindOption("category", "▤", t("kind_category_label"), t("kind_category_sub")));
+    kindOption("text", icon("hash"), t("kind_text_label"), t("kind_text_sub")),
+    kindOption("voice", icon("volume-2"), t("kind_voice_label"), voiceEnabled ? t("kind_voice_sub_enabled") : t("kind_voice_sub_disabled"), !voiceEnabled),
+    kindOption("category", icon("folder-plus"), t("kind_category_label"), t("kind_category_sub")));
   input.addEventListener("input", update);
   update();
   const privateBox = h("input", { type: "checkbox", name: "private" });
@@ -237,7 +238,7 @@ function userPicker({ search, exclude = [], multi = true, max = LIMITS.GROUP_DM_
             },
           },
         }, avatar(u, { size: "sm" }), h("span", { class: "meta" }, h("span", { class: "name" }, displayName(u)), h("span", { class: "sub" }, u.username)),
-        h("span", { class: "tick", "aria-hidden": "true" }, on ? "✓" : "")));
+        h("span", { class: "tick", "aria-hidden": "true" }, on ? icon("check") : "")));
       }
     } catch (e) {
       clear(results, h("p", { class: "muted small" }, e.message));

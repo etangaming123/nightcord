@@ -40,7 +40,7 @@ export async function openSaved(anchor, actions) {
             m.attachments?.length ? h("div", { class: "muted small" }, t("attachment_count", { count: m.attachments.length })) : null)),
         h("div", { class: "pin-actions" },
           h("button", { class: "btn small", type: "button", on: { click: () => { closePopover(); actions.jumpTo(m.message_id, m.channel_id, m.guild_id); } } }, t("jump")),
-          iconBtn("✕", t("remove"), async () => {
+          iconBtn("x", t("remove"), async () => {
             try {
               await actions.unsaveMessage(m);
               await draw();

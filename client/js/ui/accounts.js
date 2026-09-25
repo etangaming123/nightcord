@@ -7,6 +7,7 @@ import * as store from "../storage.js";
 import { add, avatar, h, iconBtn } from "./dom.js";
 import { closePopover, confirmModal, openMenu, openPopover } from "./modals.js";
 import { scopedT } from "../strings.js";
+import { icon } from "./icons.js";
 
 const t = scopedT("ui/accounts");
 
@@ -28,12 +29,12 @@ function accountRow(server, account, actions) {
   h("span", { class: "meta" },
     h("span", { class: "name" }, shown.display_name || shown.username || t("unknown_account")),
     h("span", { class: "sub" }, shown.username || "")),
-  current ? h("span", { class: "tick", "aria-hidden": "true" }, "✓") : null,
-  iconBtn("⋯", t("account_options"), (e) => openMenu(e.currentTarget, [
-    current ? null : { label: t("switch"), icon: "⇄", onClick: pick },
+  current ? h("span", { class: "tick", "aria-hidden": "true" }, icon("check")) : null,
+  iconBtn("ellipsis", t("account_options"), (e) => openMenu(e.currentTarget, [
+    current ? null : { label: t("switch"), icon: "arrow-left-right", onClick: pick },
     {
       label: current ? t("log_out") : t("forget"),
-      icon: "🚪",
+      icon: "log-out",
       danger: true,
       onClick: (ev) => {
         const go = () => { closePopover(); actions.forgetAccount(server.url, account.user_id); };

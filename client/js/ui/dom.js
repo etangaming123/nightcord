@@ -2,6 +2,7 @@
 // can't inject markup.
 
 import { scopedT } from "../strings.js";
+import { hasIcon, icon } from "./icons.js";
 
 const t = scopedT("ui/dom");
 
@@ -139,11 +140,12 @@ export function initials(name) {
   return letters.join("").toUpperCase();
 }
 
+// glyph: an icon name from icons.js, or any node/text (e.g. an emoji).
 export function iconBtn(glyph, label, onClick, { cls = "" } = {}) {
   return h("button", {
     class: `icon-btn ${cls}`, type: "button", title: label, "aria-label": label,
     on: { click: (e) => { e.stopPropagation(); onClick(e); } },
-  }, glyph);
+  }, hasIcon(glyph) ? icon(glyph) : glyph);
 }
 
 // Compare snowflake id strings numerically.

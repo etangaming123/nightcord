@@ -22,6 +22,7 @@ import { closeSearch, searchOpen } from "./ui/search.js";
 import { parseMessageLink, setMessageLinkHandler, setupLinkGuard } from "./ui/links.js";
 import { closeFullscreen, closeModal, closePopover, confirmAction, fullscreenOpen, modalOpen, openModal, popoverOpen, toast } from "./ui/modals.js";
 import { loadStrings, scopedT } from "./strings.js";
+import { icon } from "./ui/icons.js";
 
 const t = scopedT("main");
 const tc = scopedT("common");
@@ -420,7 +421,7 @@ function showAuth({ message = null, info = false } = {}) {
 // as you type rather than after Submit.
 function setupAuthFields(form) {
   for (const input of form.querySelectorAll('input[type="password"]')) {
-    const eye = h("button", { class: "icon-btn pw-toggle", type: "button", title: t("show_password"), "aria-label": t("show_password"), "aria-pressed": "false" }, "👁");
+    const eye = h("button", { class: "icon-btn pw-toggle", type: "button", title: t("show_password"), "aria-label": t("show_password"), "aria-pressed": "false" }, icon("eye"));
     eye.addEventListener("click", () => {
       const show = input.type === "password";
       input.type = show ? "text" : "password";
@@ -718,7 +719,7 @@ function renderUpdateFloat() {
     h("span", {}, tn("update_float_text", { latest: info.latest })),
     h("a", { class: "btn small primary", href: RELEASES_URL, target: "_blank", rel: "noopener" }, tn("update_banner_cta")),
     h("button", { class: "icon-btn", type: "button", title: tn("update_float_dismiss"), "aria-label": tn("update_float_dismiss"),
-      on: { click: () => { updateFloatDismissed = true; renderUpdateFloat(); } } }, "✕"));
+      on: { click: () => { updateFloatDismissed = true; renderUpdateFloat(); } } }, icon("x")));
 }
 
 function renderUpdateBanner() {

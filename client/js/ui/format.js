@@ -4,6 +4,7 @@
 
 import { h } from "./dom.js";
 import { scopedT } from "../strings.js";
+import { hasIcon, icon } from "./icons.js";
 
 const t = scopedT("ui/format");
 
@@ -18,7 +19,7 @@ export const WRAPS = {
 };
 
 const BUTTONS = [
-  ["bold", "B"], ["italic", "I"], ["strike", "S"], ["spoiler", "▓"], ["code", "‹›"], ["link", "🔗"],
+  ["bold", "B"], ["italic", "I"], ["strike", "S"], ["spoiler", "eye-off"], ["code", "code"], ["link", "link"],
 ];
 
 // Wrapping an already-wrapped selection unwraps it, so the same key is a toggle.
@@ -78,7 +79,7 @@ export function attachFormatBar(form, input) {
       class: `format-btn ${kind}`, type: "button", title: t(`${kind}_title`), "aria-label": t(`${kind}_title`),
       // mousedown, not click: clicking mustn't take the selection away first.
       on: { mousedown: (e) => { e.preventDefault(); applyFormat(input, kind); } },
-    }, glyph)));
+    }, hasIcon(glyph) ? icon(glyph) : glyph)));
   const update = () => {
     const has = document.activeElement === input && input.selectionStart !== input.selectionEnd;
     bar.hidden = !has;

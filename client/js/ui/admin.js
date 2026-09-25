@@ -11,6 +11,7 @@ import { closeFullscreen, confirmAction, confirmModal, formModal, openMenu, open
 import { badgesSection, giveBadgesDialog } from "./adminBadges.js";
 import { copyText } from "./profile.js";
 import { scopedT } from "../strings.js";
+import { icon } from "./icons.js";
 
 const t = scopedT("ui/admin");
 
@@ -334,16 +335,16 @@ export function adminModeration(u, actions, after = () => {}) {
   const muted = isMuted(u);
   return [
     muted
-      ? { label: t("unmute_label"), icon: "🔊", onClick: () => done(actions.req(T.ADMIN_USERS_MUTE, { user_id: u.user_id }).then(() => toast(t("unmuted_toast", { name })))) }
-      : { label: t("mute_label"), icon: "🔇", onClick: () => muteDialog(u, (payload) => done(actions.req(T.ADMIN_USERS_MUTE, { user_id: u.user_id, ...payload }).then(() => toast(t("muted_toast", { name }))))) },
-    { label: t("disable_account_label"), icon: "⛔", danger: true, onClick: () => confirmModal({
+      ? { label: t("unmute_label"), icon: "volume-2", onClick: () => done(actions.req(T.ADMIN_USERS_MUTE, { user_id: u.user_id }).then(() => toast(t("unmuted_toast", { name })))) }
+      : { label: t("mute_label"), icon: "volume-x", onClick: () => muteDialog(u, (payload) => done(actions.req(T.ADMIN_USERS_MUTE, { user_id: u.user_id, ...payload }).then(() => toast(t("muted_toast", { name }))))) },
+    { label: t("disable_account_label"), icon: "ban", danger: true, onClick: () => confirmModal({
       title: t("disable_confirm_title", { name }), message: t("disable_confirm_message"), confirmLabel: t("disable_confirm_btn"),
       onConfirm: () => done(actions.req(T.ADMIN_USERS_SET_STATUS, { user_id: u.user_id, status: "disabled" })),
     }) },
-    { label: t("ban_devices_label"), icon: "📵", danger: true, onClick: () => reasonDialog(t("ban_devices_title", { name }),
+    { label: t("ban_devices_label"), icon: "smartphone", danger: true, onClick: () => reasonDialog(t("ban_devices_title", { name }),
       t("ban_devices_message"),
       t("ban_devices_btn"), (reason) => done(actions.req(T.ADMIN_DEVICE_BANS_ADD, { user_id: u.user_id, reason }).then(() => toast(t("devices_banned_toast"))))) },
-    { label: t("ban_ip_label"), icon: "🌐", danger: true, onClick: async () => {
+    { label: t("ban_ip_label"), icon: "globe", danger: true, onClick: async () => {
       try {
         const { users } = await actions.req(T.ADMIN_USERS_LIST, { query: u.username });
         const ip = users.find((x) => x.user_id === u.user_id)?.last_ip;
@@ -353,7 +354,7 @@ export function adminModeration(u, actions, after = () => {}) {
       } catch (e) { fail(e); }
     } },
     lvl >= ADMIN ? "-" : null,
-    lvl >= ADMIN ? { label: t("reset_password_label"), icon: "🔑", onClick: () => confirmModal({
+    lvl >= ADMIN ? { label: t("reset_password_label"), icon: "key-round", onClick: () => confirmModal({
       title: t("reset_password_title", { name }), message: t("reset_password_message"), confirmLabel: t("reset_password_btn"),
       onConfirm: async () => {
         const { password } = await actions.req(T.ADMIN_USERS_RESET_PASSWORD, { user_id: u.user_id });
@@ -364,9 +365,9 @@ export function adminModeration(u, actions, after = () => {}) {
         }));
       },
     }) } : null,
-    lvl >= ADMIN ? { label: u.perks ? t("remove_perks_label") : t("give_perks_btn"), icon: "✨", hint: t("give_perks_hint"), onClick: () => done(actions.req(T.ADMIN_USERS_SET_PERKS, { user_id: u.user_id, perks: !u.perks }).then(() => toast(u.perks ? t("perks_removed_toast2") : t("perks_given_toast2")))) } : null,
-    lvl >= OWNER && u.status === "active" ? { label: t("badges_label"), icon: "🏅", hint: t("badges_hint"), onClick: () => giveBadgesDialog(u, actions, after) } : null,
-    lvl >= ADMIN ? { label: t("delete_account_label"), icon: "🗑", danger: true, onClick: () => deleteAccountDialog(u, () => done(actions.req(T.ADMIN_USERS_DELETE, { user_id: u.user_id }).then(() => toast(t("account_deleted_toast", { name }))))) } : null,
+    lvl >= ADMIN ? { label: u.perks ? t("remove_perks_label") : t("give_perks_btn"), icon: "sparkles", hint: t("give_perks_hint"), onClick: () => done(actions.req(T.ADMIN_USERS_SET_PERKS, { user_id: u.user_id, perks: !u.perks }).then(() => toast(u.perks ? t("perks_removed_toast2") : t("perks_given_toast2")))) } : null,
+    lvl >= OWNER && u.status === "active" ? { label: t("badges_label"), icon: "award", hint: t("badges_hint"), onClick: () => giveBadgesDialog(u, actions, after) } : null,
+    lvl >= ADMIN ? { label: t("delete_account_label"), icon: "trash-2", danger: true, onClick: () => deleteAccountDialog(u, () => done(actions.req(T.ADMIN_USERS_DELETE, { user_id: u.user_id }).then(() => toast(t("account_deleted_toast", { name }))))) } : null,
   ];
 }
 
@@ -479,7 +480,7 @@ async function bansSection(el, actions) {
   const ipList = h("div", { class: "list" });
   if (!ips.length) add(ipList, h("p", { class: "muted" }, t("no_ip_bans")));
   for (const b of ips) {
-    add(ipList, h("div", { class: "list-row" }, h("span", { class: "list-icon", "aria-hidden": "true" }, "🌐"),
+    add(ipList, h("div", { class: "list-row" }, h("span", { class: "list-icon", "aria-hidden": "true" }, icon("globe")),
       h("span", { class: "meta" }, h("span", { class: "name mono" }, b.cidr),
         h("span", { class: "sub" }, [b.reason ? t("note_fact", { note: b.reason }) : null, b.banned_by ? t("banned_by_fact", { name: displayName(b.banned_by) }) : null, fmtDateTime(b.created_at)].filter(Boolean).join(" · "))),
       h("button", {
@@ -500,7 +501,7 @@ async function bansSection(el, actions) {
   const devList = h("div", { class: "list" });
   if (!devices.length) add(devList, h("p", { class: "muted" }, t("no_device_bans")));
   for (const b of devices) {
-    add(devList, h("div", { class: "list-row" }, h("span", { class: "list-icon", "aria-hidden": "true" }, "📵"),
+    add(devList, h("div", { class: "list-row" }, h("span", { class: "list-icon", "aria-hidden": "true" }, icon("smartphone")),
       h("span", { class: "meta" }, h("span", { class: "name" }, b.user ? displayName(b.user) : t("unknown_user"), h("span", { class: "muted small mono" }, ` ${b.device_id.slice(0, 8)}…`)),
         h("span", { class: "sub" }, [b.reason ? t("note_fact", { note: b.reason }) : null, fmtDateTime(b.created_at)].filter(Boolean).join(" · "))),
       h("button", {

@@ -7,6 +7,7 @@ import { currentChannel, customStatusOf, hoistedRole, isDm, memberCanView, nameO
 import { $, add, avatar, clear, displayName, h, statusLabel } from "./dom.js";
 import { badgeEls, nameAttrs, profileBanner, profileThemeAttrs, roleIconEl } from "./names.js";
 import { scopedT } from "../strings.js";
+import { icon } from "./icons.js";
 
 const t = scopedT("ui/members");
 
@@ -26,7 +27,7 @@ function row(state, actions, user, { crown = false, guild = false } = {}) {
       guild ? roleIconEl(user.user_id) : null,
       badgeEls(user)),
     customStatusOf(user) ? h("span", { class: "sub" }, customStatusOf(user)) : null),
-  crown ? h("span", { class: "crown", title: t("guild_owner_title"), "aria-label": t("guild_owner_title") }, "♛") : null);
+  crown ? h("span", { class: "crown", title: t("guild_owner_title"), "aria-label": t("guild_owner_title") }, icon("crown")) : null);
 }
 
 // 1:1 DMs show the other person's profile instead of a member list.

@@ -7,6 +7,7 @@ import { openMenu } from "./modals.js";
 import { plainText } from "./markdown.js";
 import { mdContext } from "./chat.js";
 import { scopedT } from "../strings.js";
+import { icon } from "./icons.js";
 
 const t = scopedT("ui/messageMenu");
 
@@ -51,21 +52,21 @@ export function messageMenu(m, anchor, actions) {
   const a = messageAbilities(m, actions);
   const saved = actions.isSaved(m);
   openMenu(anchor, [
-    a.react ? { label: t("add_reaction"), icon: "☺", onClick: () => actions.pickReaction(m, anchor) } : null,
-    a.reply ? { label: t("reply"), icon: "↩", onClick: () => actions.reply(m) } : null,
-    a.forward ? { label: t("forward"), icon: "⇪", onClick: () => actions.forwardMessage(m) } : null,
+    a.react ? { label: t("add_reaction"), icon: "smile-plus", onClick: () => actions.pickReaction(m, anchor) } : null,
+    a.reply ? { label: t("reply"), icon: "reply", onClick: () => actions.reply(m) } : null,
+    a.forward ? { label: t("forward"), icon: "forward", onClick: () => actions.forwardMessage(m) } : null,
     "-",
-    m.content ? { label: t("copy_text"), icon: "📋", onClick: () => actions.copyText(plainText(m.content, mdContext(state, actions)), t("copied_text")) } : null,
-    { label: t("copy_link"), icon: "🔗", onClick: () => actions.copyText(actions.linkToMessage(m), t("copied_link")) },
-    { label: t("copy_id"), icon: "🆔", onClick: () => actions.copyText(m.message_id, t("copied_id")) },
+    m.content ? { label: t("copy_text"), icon: "copy", onClick: () => actions.copyText(plainText(m.content, mdContext(state, actions)), t("copied_text")) } : null,
+    { label: t("copy_link"), icon: "link", onClick: () => actions.copyText(actions.linkToMessage(m), t("copied_link")) },
+    { label: t("copy_id"), icon: "id-card", onClick: () => actions.copyText(m.message_id, t("copied_id")) },
     "-",
-    a.save ? { label: saved ? t("unsave") : t("save"), icon: "🔖", onClick: () => actions.toggleSaved(m) } : null,
-    a.pin ? { label: m.pinned ? t("unpin") : t("pin"), icon: "📌", onClick: (e) => (m.pinned ? actions.unpinMessage(m, e?.shiftKey) : actions.pinMessage(m, e?.shiftKey)) } : null,
-    a.unread ? { label: t("mark_unread"), icon: "👁", onClick: () => actions.markUnreadFrom(m) } : null,
-    a.suppress ? { label: t("hide_previews"), icon: "🖼", onClick: () => actions.suppressEmbeds(m) } : null,
+    a.save ? { label: saved ? t("unsave") : t("save"), icon: "bookmark", onClick: () => actions.toggleSaved(m) } : null,
+    a.pin ? { label: m.pinned ? t("unpin") : t("pin"), icon: "pin", onClick: (e) => (m.pinned ? actions.unpinMessage(m, e?.shiftKey) : actions.pinMessage(m, e?.shiftKey)) } : null,
+    a.unread ? { label: t("mark_unread"), icon: "eye", onClick: () => actions.markUnreadFrom(m) } : null,
+    a.suppress ? { label: t("hide_previews"), icon: "image", onClick: () => actions.suppressEmbeds(m) } : null,
     a.edit || a.remove ? "-" : null,
-    a.edit ? { label: t("edit"), icon: "✎", onClick: () => actions.startEdit(m) } : null,
-    a.remove ? { label: t("delete"), icon: "🗑", danger: true, onClick: (e) => actions.deleteMessage(m, e?.shiftKey) } : null,
+    a.edit ? { label: t("edit"), icon: "pencil", onClick: () => actions.startEdit(m) } : null,
+    a.remove ? { label: t("delete"), icon: "trash-2", danger: true, onClick: (e) => actions.deleteMessage(m, e?.shiftKey) } : null,
   ], { placement: anchor instanceof Element ? "bottom" : "right", key: `message:${m.message_id}` });
 }
 
@@ -147,7 +148,7 @@ export function forwardCard(m, actions) {
   const author = userById(f.author?.user_id) || f.author;
   return h("div", { class: "forward" },
     h("div", { class: "forward-head muted small" },
-      h("span", { "aria-hidden": "true" }, "⇪"),
+      icon("forward"),
       t("forwarded_from", { source: f.source })),
     h("div", { class: "forward-body" },
       h("div", { class: "forward-author" }, nameOf(author), " ",

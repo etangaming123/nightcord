@@ -2,6 +2,7 @@
 // No window.alert/confirm/prompt anywhere.
 
 import { $, add, clear, h } from "./dom.js";
+import { hasIcon, icon } from "./icons.js";
 import { scopedT } from "../strings.js";
 
 const t = scopedT("ui/modals");
@@ -232,9 +233,9 @@ export function openMenu(anchor, items, opts = {}) {
       disabled: item.disabled,
       on: { click: (e) => { closePopover(); item.onClick?.(e); } },
     },
-    item.icon ? h("span", { class: "menu-icon", "aria-hidden": "true" }, item.icon) : null,
+    item.icon ? h("span", { class: "menu-icon", "aria-hidden": "true" }, hasIcon(item.icon) ? icon(item.icon) : item.icon) : null,
     h("span", { class: "menu-label" }, item.label),
-    item.checked !== undefined ? h("span", { class: "menu-check", "aria-hidden": "true" }, item.checked ? "●" : "○") : null,
+    item.checked !== undefined ? h("span", { class: "menu-check", "aria-hidden": "true" }, item.checked ? icon("status-online") : icon("status-invisible")) : null,
     item.hint ? h("span", { class: "menu-hint" }, item.hint) : null));
   }
   const el = openPopover(anchor, list, { placement: "bottom", ...opts, cls: `menu-pop ${opts.cls || ""}` });
@@ -274,7 +275,7 @@ export function openFullscreen({ sections, initial, onClose, title }) {
     h("div", { class: "fs-side" }, nav),
     h("div", { class: "fs-main" },
       body,
-      h("button", { class: "fs-close", type: "button", title: t("close_esc_title"), "aria-label": tc("close"), on: { click: closeFullscreen } }, "✕")));
+      h("button", { class: "fs-close", type: "button", title: t("close_esc_title"), "aria-label": tc("close"), on: { click: closeFullscreen } }, icon("x"))));
   let active = null;
   // Named form controls the user has touched since this section was drawn.
   // A re-render (an upload finishing, an event arriving) must not wipe them.

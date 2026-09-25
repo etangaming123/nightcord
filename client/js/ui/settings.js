@@ -15,6 +15,7 @@ import { untrustDomain } from "./links.js";
 import { profileBanner, profileThemeAttrs } from "./names.js";
 import { closeFullscreen, confirmAction, confirmModal, openFullscreen, refreshFullscreen, toast } from "./modals.js";
 import { scopedT } from "../strings.js";
+import { icon } from "./icons.js";
 
 const t = scopedT("ui/settings");
 const tl = scopedT("ui/links");
@@ -111,7 +112,7 @@ function trustedDomainList() {
     h("p", { class: "muted small" }, tl("trusted_note")),
     domains.length
       ? h("div", { class: "list" }, domains.map((d) => h("div", { class: "list-row" },
-        h("span", { class: "list-icon", "aria-hidden": "true" }, "🔗"),
+        h("span", { class: "list-icon", "aria-hidden": "true" }, icon("link")),
         h("span", { class: "grow mono" }, d),
         h("button", {
           class: "btn small", type: "button",
@@ -297,7 +298,7 @@ function profile(el, actions) {
     h("div", { class: "field" },
       h("span", { class: "field-label" }, t("profile_banner_label")),
       bannerLocked
-        ? h("div", { class: "locked-note" }, "🔒 ", bannerLocked)
+        ? h("div", { class: "locked-note" }, icon("lock"), " ", bannerLocked)
         : h("div", { class: "row" },
           h("button", { class: "btn", type: "button", on: { click: changeBanner } }, me.banner_id ? t("change_banner") : t("upload_banner")),
           me.banner_id ? h("button", {
@@ -322,7 +323,7 @@ function profile(el, actions) {
     h("div", { class: "field" },
       h("span", { class: "field-label" }, t("profile_colours_label")),
       themeLocked
-        ? h("div", { class: "locked-note" }, "🔒 ", themeLocked)
+        ? h("div", { class: "locked-note" }, icon("lock"), " ", themeLocked)
         : h("div", { class: "row" },
           h("label", { class: "check" }, h("input", {
             type: "checkbox", checked: draft.themeOn, on: { change: (e) => { draft.themeOn = e.currentTarget.checked; drawPreview(); } },
@@ -373,7 +374,7 @@ async function devices(el, actions) {
   const list = h("div", { class: "list" });
   for (const s of sessions) {
     add(list, h("div", { class: "list-row" },
-      h("span", { class: "list-icon", "aria-hidden": "true" }, "💻"),
+      h("span", { class: "list-icon", "aria-hidden": "true" }, icon("laptop")),
       h("span", { class: "meta" },
         h("span", { class: "name" }, describeAgent(s.user_agent), s.current ? h("span", { class: "tag ok" }, t("this_device_tag")) : null),
         h("span", { class: "sub" }, t("device_last_active", { lastActive: fmtDateTime(s.last_seen), signedIn: fmtDate(s.created_at) }))),
@@ -443,7 +444,7 @@ function appearance(el, actions) {
         radio("theme", "system", t("theme_sync_system"), p.theme, (v) => setPrefs({ theme: v }))),
       p.themePreset && p.themePreset !== "default" && !locked ? h("span", { class: "muted small" }, t("theme_own_look_note")) : null),
     h("div", { class: "field" }, h("span", { class: "field-label" }, t("theme_label")),
-      locked ? h("div", { class: "locked-note" }, "🔒 ", locked) : null,
+      locked ? h("div", { class: "locked-note" }, icon("lock"), " ", locked) : null,
       presetCards),
     p.themePreset === "custom" && !locked ? themeEditor() : null,
     h("label", {}, t("chat_font_size_label"),
@@ -483,7 +484,7 @@ function themeEditor() {
       c.colors.length > 1 ? h("button", {
         class: "icon-btn", type: "button", title: t("remove_colour_title"), "aria-label": t("remove_colour_n_aria", { n: i + 1 }),
         on: { click: () => { c.colors.splice(i, 1); save({}, true); } },
-      }, "✕") : null)),
+      }, icon("x")) : null)),
     c.colors.length < MAX_THEME_COLORS ? h("button", {
       class: "btn", type: "button",
       on: { click: () => { c.colors.push(c.colors[c.colors.length - 1]); save({}, true); } },
@@ -551,7 +552,7 @@ function reminderList(actions) {
     h("p", { class: "muted small" }, t("reminders_note")),
     reminders.length
       ? h("div", { class: "list" }, reminders.map((r) => h("div", { class: "list-row" },
-        h("span", { class: "list-icon", "aria-hidden": "true" }, "⏰"),
+        h("span", { class: "list-icon", "aria-hidden": "true" }, icon("alarm-clock")),
         h("span", { class: "meta" },
           h("span", { class: "name" }, r.text),
           h("span", { class: "sub" }, fmtDateTime(new Date(r.at).toISOString()))),

@@ -75,7 +75,7 @@ export function emojiTab(el, actions) {
       name,
       e.animated ? h("span", { class: "tag" }, t("gif_tag")) : null,
       h("span", { class: "grow muted small" }, t("by_creator", { creator: creator(e.creator_id) })),
-      iconBtn("🗑", t("delete_emoji_aria", { name: e.name }), () => confirmModal({
+      iconBtn("trash-2", t("delete_emoji_aria", { name: e.name }), () => confirmModal({
         title: t("delete_emoji_title", { name: e.name }),
         message: t("delete_emoji_message"),
         confirmLabel: t("delete_button"),
@@ -135,7 +135,7 @@ export function stickersTab(el, actions) {
       s.description ? h("span", { class: "muted small" }, s.description) : null,
       h("span", { class: "muted small" }, `${t("by_creator", { creator: creator(s.creator_id) })}${s.animated ? " · animated" : ""}`)),
     h("div", { class: "sticker-actions" },
-      iconBtn("✎", t("edit_sticker_aria", { name: s.name }), () => formModal({
+      iconBtn("pencil", t("edit_sticker_aria", { name: s.name }), () => formModal({
         title: t("edit_sticker_title"),
         fields: [
           h("label", {}, t("name_label"), h("input", { name: "name", value: s.name, maxLength: LIMITS.STICKER_NAME_MAX, required: true, minLength: 2 })),
@@ -145,7 +145,7 @@ export function stickersTab(el, actions) {
           name: String(fd.get("name")).trim(), description: String(fd.get("description")).trim() || null,
         }),
       })),
-      iconBtn("🗑", t("delete_sticker_aria", { name: s.name }), () => confirmModal({
+      iconBtn("trash-2", t("delete_sticker_aria", { name: s.name }), () => confirmModal({
         title: t("delete_sticker_title", { name: s.name }),
         message: t("delete_sticker_message"),
         confirmLabel: t("delete_button"),

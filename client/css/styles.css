@@ -119,6 +119,16 @@ a.btn { text-decoration: none; display: inline-block; }
   font-size: 16px; line-height: 1; flex: none;
 }
 .icon-btn:hover { background: var(--bg-3); color: var(--text); }
+/* SVG icons (ui/icons.js) take the size and colour of the text around them. */
+.ico { width: 1em; height: 1em; flex: none; display: inline-block; vertical-align: -0.14em; }
+.icon-btn .ico { width: 1.2em; height: 1.2em; }
+.menu-icon, .home-glyph, .list-icon, .kind-icon, .file-icon, .sys-icon, .sw-hash, .hash { display: inline-grid; place-items: center; }
+.menu-icon .ico-status-online, .ico.status-online { color: var(--ok); }
+.menu-icon .ico-status-idle, .ico.status-idle { color: var(--idle); }
+.menu-icon .ico-status-dnd, .ico.status-dnd { color: var(--dnd); }
+.menu-icon .ico-status-invisible, .ico.status-invisible { color: var(--muted); }
+.menu-item:hover .menu-icon .ico, .menu-item:focus-visible .menu-icon .ico { color: inherit; }
+.locked-note .ico { margin-right: 2px; }
 .icon-btn.danger:hover { color: var(--danger); }
 
 label { display: grid; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text-2); }

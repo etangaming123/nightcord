@@ -909,13 +909,13 @@ export function statusMenu(anchor) {
     invalidate("sidebar", "members", "header");
   }).catch(fail);
   openMenu(anchor, [
-    { label: t("status_online"), icon: "🟢", checked: cur === "online", onClick: () => set("online") },
-    { label: t("status_idle"), icon: "🌙", checked: cur === "idle", onClick: () => set("idle") },
-    { label: t("status_dnd"), icon: "⛔", hint: t("status_dnd_hint"), checked: cur === "dnd", onClick: () => set("dnd") },
-    { label: t("status_invisible"), icon: "⚪", hint: t("status_invisible_hint"), checked: cur === "invisible", onClick: () => set("invisible") },
+    { label: t("status_online"), icon: "status-online", checked: cur === "online", onClick: () => set("online") },
+    { label: t("status_idle"), icon: "status-idle", checked: cur === "idle", onClick: () => set("idle") },
+    { label: t("status_dnd"), icon: "status-dnd", hint: t("status_dnd_hint"), checked: cur === "dnd", onClick: () => set("dnd") },
+    { label: t("status_invisible"), icon: "status-invisible", hint: t("status_invisible_hint"), checked: cur === "invisible", onClick: () => set("invisible") },
     "-",
     {
-      label: state.user.custom_status ? t("edit_custom_status") : t("set_custom_status"), icon: "💬",
+      label: state.user.custom_status ? t("edit_custom_status") : t("set_custom_status"), icon: "message-circle",
       onClick: () => dialogs.customStatusDialog(state.user.custom_status, async (text, clearAfter) => {
         setSelf((await req(T.USER_UPDATE, {
           custom_status: text || null,
@@ -924,11 +924,11 @@ export function statusMenu(anchor) {
       }, { expiresAt: state.user.custom_status_expires_at }),
     },
     state.user.custom_status ? {
-      label: t("clear_custom_status"), icon: "✕",
+      label: t("clear_custom_status"), icon: "x",
       onClick: async () => { try { setSelf((await req(T.USER_UPDATE, { custom_status: null })).user); } catch (e) { fail(e); } },
     } : null,
-    { label: t("edit_profile"), icon: "✎", onClick: () => openUserSettings("profile") },
-    { label: t("copy_user_id"), icon: "🆔", onClick: () => copyText(state.user.user_id, t("copied_user_id")) },
+    { label: t("edit_profile"), icon: "pencil", onClick: () => openUserSettings("profile") },
+    { label: t("copy_user_id"), icon: "id-card", onClick: () => copyText(state.user.user_id, t("copied_user_id")) },
   ], { placement: "top", key: "status" });
 }
 
@@ -1055,18 +1055,18 @@ export async function guildMenu(g, anchor) {
   if (state.guildId !== g.guild_id || state.view !== "guild") await openGuild(g.guild_id);
   const p = pref(g.guild_id);
   openMenu(anchor, [
-    { label: t("mark_as_read"), icon: "✓", onClick: () => markGuildRead(g.guild_id) },
-    can("CREATE_INVITE") ? { label: t("invite_people"), icon: "✉", onClick: openInviteDialog } : null,
-    hasGuildSettings() ? { label: t("guild_settings"), icon: "⚙", onClick: () => openGuildSettings() } : null,
-    can("MANAGE_CHANNELS") ? { label: t("create_channel"), icon: "＋", onClick: () => createChannel() } : null,
-    can("MANAGE_CHANNELS") ? { label: t("create_category"), icon: "▤", onClick: () => createChannel({ kind: "category" }) } : null,
-    !g.ghost && can("CHANGE_NICKNAME") ? { label: t("change_nickname"), icon: "✎", onClick: () => changeNickname(state.user.user_id) } : null,
+    { label: t("mark_as_read"), icon: "check", onClick: () => markGuildRead(g.guild_id) },
+    can("CREATE_INVITE") ? { label: t("invite_people"), icon: "user-plus", onClick: openInviteDialog } : null,
+    hasGuildSettings() ? { label: t("guild_settings"), icon: "settings", onClick: () => openGuildSettings() } : null,
+    can("MANAGE_CHANNELS") ? { label: t("create_channel"), icon: "plus", onClick: () => createChannel() } : null,
+    can("MANAGE_CHANNELS") ? { label: t("create_category"), icon: "folder-plus", onClick: () => createChannel({ kind: "category" }) } : null,
+    !g.ghost && can("CHANGE_NICKNAME") ? { label: t("change_nickname"), icon: "pencil", onClick: () => changeNickname(state.user.user_id) } : null,
     "-",
-    { label: p.muted ? t("unmute_guild") : t("mute_guild"), icon: p.muted ? "🔔" : "🔕", onClick: () => setNotifyPref(g.guild_id, { level: p.level, muted: !p.muted }) },
+    { label: p.muted ? t("unmute_guild") : t("mute_guild"), icon: p.muted ? "bell" : "bell-off", onClick: () => setNotifyPref(g.guild_id, { level: p.level, muted: !p.muted }) },
     ...levelItems(g.guild_id, { inherit: null }),
     "-",
-    { label: t("copy_guild_id"), icon: "🆔", onClick: () => copyText(g.guild_id, t("copied_guild_id")) },
-    isGuildOwner(g) ? null : { label: g.ghost ? t("leave_ghost") : t("leave_guild"), icon: "⇥", danger: true, onClick: () => leaveGuild(g) },
+    { label: t("copy_guild_id"), icon: "id-card", onClick: () => copyText(g.guild_id, t("copied_guild_id")) },
+    isGuildOwner(g) ? null : { label: g.ghost ? t("leave_ghost") : t("leave_guild"), icon: "log-out", danger: true, onClick: () => leaveGuild(g) },
   ], { placement: anchor instanceof Element ? "bottom" : "right", key: `guild:${g.guild_id}` });
 }
 
@@ -1168,17 +1168,17 @@ export function channelMenu(c, anchor) {
   const manage = can("MANAGE_CHANNELS", c);
   const isCat = c.kind === "category";
   openMenu(anchor, [
-    isCat || c.kind === "voice" ? null : { label: t("mark_as_read"), icon: "✓", disabled: !isUnread(c.channel_id), onClick: () => markChannelRead(c.channel_id) },
-    c.kind === "text" ? { label: p.muted ? t("unmute_channel") : t("mute_channel"), icon: p.muted ? "🔔" : "🔕", onClick: () => setNotifyPref(c.channel_id, { level: p.level, muted: !p.muted }) } : null,
+    isCat || c.kind === "voice" ? null : { label: t("mark_as_read"), icon: "check", disabled: !isUnread(c.channel_id), onClick: () => markChannelRead(c.channel_id) },
+    c.kind === "text" ? { label: p.muted ? t("unmute_channel") : t("mute_channel"), icon: p.muted ? "bell" : "bell-off", onClick: () => setNotifyPref(c.channel_id, { level: p.level, muted: !p.muted }) } : null,
     ...(c.kind === "text" ? levelItems(c.channel_id, { inherit: t("use_guild_default") }) : []),
-    isCat && can("MANAGE_CHANNELS") ? { label: t("create_channel_here"), icon: "＋", onClick: () => createChannel({ parentId: c.channel_id }) } : null,
+    isCat && can("MANAGE_CHANNELS") ? { label: t("create_channel_here"), icon: "plus", onClick: () => createChannel({ parentId: c.channel_id }) } : null,
     manage ? "-" : null,
-    manage ? { label: isCat ? t("edit_category") : t("edit_channel"), icon: "⚙", onClick: () => openChannelSettings(c) } : null,
-    manage ? { label: t("move_up"), icon: "↑", onClick: () => moveChannel(c, -1) } : null,
-    manage ? { label: t("move_down"), icon: "↓", onClick: () => moveChannel(c, 1) } : null,
-    manage ? { label: isCat ? t("delete_category") : t("delete_channel"), icon: "🗑", danger: true, onClick: () => dialogs.deleteChannelDialog(c, () => req(T.CHANNEL_DELETE, { channel_id: c.channel_id })) } : null,
+    manage ? { label: isCat ? t("edit_category") : t("edit_channel"), icon: "settings", onClick: () => openChannelSettings(c) } : null,
+    manage ? { label: t("move_up"), icon: "arrow-up", onClick: () => moveChannel(c, -1) } : null,
+    manage ? { label: t("move_down"), icon: "arrow-down", onClick: () => moveChannel(c, 1) } : null,
+    manage ? { label: isCat ? t("delete_category") : t("delete_channel"), icon: "trash-2", danger: true, onClick: () => dialogs.deleteChannelDialog(c, () => req(T.CHANNEL_DELETE, { channel_id: c.channel_id })) } : null,
     "-",
-    { label: t("copy_channel_id"), icon: "🆔", onClick: () => copyText(c.channel_id, t("copied_channel_id")) },
+    { label: t("copy_channel_id"), icon: "id-card", onClick: () => copyText(c.channel_id, t("copied_channel_id")) },
   ], { placement: "right", key: `channel:${c.channel_id}` });
 }
 
@@ -1293,12 +1293,12 @@ export function leaveDm(ch) {
 export function dmMenu(ch, anchor) {
   const p = pref(ch.channel_id);
   openMenu(anchor, [
-    { label: t("mark_as_read"), icon: "✓", disabled: !isUnread(ch.channel_id), onClick: () => markChannelRead(ch.channel_id) },
-    { label: p.muted ? t("unmute_conversation") : t("mute_conversation"), icon: p.muted ? "🔔" : "🔕", onClick: () => setNotifyPref(ch.channel_id, { level: p.level, muted: !p.muted }) },
-    ch.kind === "group_dm" ? { label: t("rename_group"), icon: "✎", onClick: () => renameGroup(ch) } : null,
-    ch.kind === "group_dm" ? { label: t("add_people"), icon: "＋", onClick: () => addToGroup(ch) } : null,
+    { label: t("mark_as_read"), icon: "check", disabled: !isUnread(ch.channel_id), onClick: () => markChannelRead(ch.channel_id) },
+    { label: p.muted ? t("unmute_conversation") : t("mute_conversation"), icon: p.muted ? "bell" : "bell-off", onClick: () => setNotifyPref(ch.channel_id, { level: p.level, muted: !p.muted }) },
+    ch.kind === "group_dm" ? { label: t("rename_group"), icon: "pencil", onClick: () => renameGroup(ch) } : null,
+    ch.kind === "group_dm" ? { label: t("add_people"), icon: "plus", onClick: () => addToGroup(ch) } : null,
     "-",
-    { label: ch.kind === "dm" ? t("close_conversation") : t("leave_group"), icon: "✕", danger: ch.kind !== "dm", onClick: () => leaveDm(ch) },
+    { label: ch.kind === "dm" ? t("close_conversation") : t("leave_group"), icon: "x", danger: ch.kind !== "dm", onClick: () => leaveDm(ch) },
   ], { placement: "right", key: `dm:${ch.channel_id}` });
 }
 
@@ -1404,13 +1404,13 @@ export function friendItems(userId) {
   if (userId === state.user.user_id || userById(userId)?.deleted) return [];
   const kind = relationKind(userId);
   return [
-    !kind ? { key: "add", label: t("add_friend"), icon: "🤝", onClick: () => sendFriendRequest(userId) } : null,
-    kind === "incoming" ? { label: t("accept_friend"), icon: "✓", onClick: () => acceptFriend(userId) } : null,
-    kind === "outgoing" ? { label: t("cancel_request"), icon: "✕", onClick: () => removeFriend(userId) } : null,
-    kind === "friend" ? { label: t("remove_friend"), icon: "💔", danger: true, onClick: () => removeFriend(userId) } : null,
+    !kind ? { key: "add", label: t("add_friend"), icon: "handshake", onClick: () => sendFriendRequest(userId) } : null,
+    kind === "incoming" ? { label: t("accept_friend"), icon: "check", onClick: () => acceptFriend(userId) } : null,
+    kind === "outgoing" ? { label: t("cancel_request"), icon: "x", onClick: () => removeFriend(userId) } : null,
+    kind === "friend" ? { label: t("remove_friend"), icon: "heart-crack", danger: true, onClick: () => removeFriend(userId) } : null,
     kind === "blocked"
-      ? { label: t("unblock"), icon: "🔓", onClick: () => unblockUser(userId) }
-      : { label: t("block"), icon: "🚫", danger: true, onClick: () => blockUser(userId) },
+      ? { label: t("unblock"), icon: "lock-open", onClick: () => unblockUser(userId) }
+      : { label: t("block"), icon: "ban", danger: true, onClick: () => blockUser(userId) },
   ].filter(Boolean);
 }
 
@@ -1521,18 +1521,18 @@ export function changeNickname(userId) {
 export function moderationItems(userId) {
   const m = memberById(userId);
   const nick = m && state.view === "guild" && userId !== state.user.user_id && can("MANAGE_NICKNAMES") && outranks(userId)
-    ? [{ label: t("change_nickname"), icon: "✎", onClick: () => changeNickname(userId) }] : [];
+    ? [{ label: t("change_nickname"), icon: "pencil", onClick: () => changeNickname(userId) }] : [];
   if (!m || state.view !== "guild" || !outranks(userId)) return nick;
   const user = userById(userId) || m.user;
   const gid = state.guildId;
   const timedOut = m.timed_out_until && new Date(m.timed_out_until) > new Date();
   return [
     can("MODERATE_MEMBERS") ? (timedOut
-      ? { label: t("remove_timeout"), icon: "⏳", onClick: () => req(T.MEMBER_TIMEOUT, { guild_id: gid, user_id: userId, duration_seconds: null }).then((r) => upsertMember(r.member), fail) }
-      : { label: t("time_out_user", { name: displayName(user) }), icon: "⏳", onClick: () => dialogs.timeoutDialog(user, async (seconds, reason) => upsertMember((await req(T.MEMBER_TIMEOUT, { guild_id: gid, user_id: userId, duration_seconds: seconds, reason })).member)) })
+      ? { label: t("remove_timeout"), icon: "hourglass", onClick: () => req(T.MEMBER_TIMEOUT, { guild_id: gid, user_id: userId, duration_seconds: null }).then((r) => upsertMember(r.member), fail) }
+      : { label: t("time_out_user", { name: displayName(user) }), icon: "hourglass", onClick: () => dialogs.timeoutDialog(user, async (seconds, reason) => upsertMember((await req(T.MEMBER_TIMEOUT, { guild_id: gid, user_id: userId, duration_seconds: seconds, reason })).member)) })
       : null,
-    can("KICK_MEMBERS") ? { label: t("kick_user", { name: displayName(user) }), icon: "👢", danger: true, onClick: () => dialogs.kickDialog(user, (reason) => req(T.MEMBER_KICK, { guild_id: gid, user_id: userId, reason })) } : null,
-    can("BAN_MEMBERS") ? { label: t("ban_user", { name: displayName(user) }), icon: "🔨", danger: true, onClick: () => dialogs.banDialog(user, (reason, deleteSeconds) => req(T.MEMBER_BAN, { guild_id: gid, user_id: userId, reason, delete_seconds: deleteSeconds })) } : null,
+    can("KICK_MEMBERS") ? { label: t("kick_user", { name: displayName(user) }), icon: "user-minus", danger: true, onClick: () => dialogs.kickDialog(user, (reason) => req(T.MEMBER_KICK, { guild_id: gid, user_id: userId, reason })) } : null,
+    can("BAN_MEMBERS") ? { label: t("ban_user", { name: displayName(user) }), icon: "gavel", danger: true, onClick: () => dialogs.banDialog(user, (reason, deleteSeconds) => req(T.MEMBER_BAN, { guild_id: gid, user_id: userId, reason, delete_seconds: deleteSeconds })) } : null,
     ...nick,
   ].filter(Boolean);
 }
@@ -1547,13 +1547,13 @@ export function staffItems(userId) {
 export function memberMenu(userId, anchor) {
   const me = userId === state.user.user_id;
   openMenu(anchor, [
-    { label: t("profile"), icon: "👤", onClick: () => openProfileAction(userId, anchor instanceof Element ? anchor : { ...anchor }) },
-    me ? null : { label: t("message_user"), icon: "💬", onClick: () => messageUser(userId) },
+    { label: t("profile"), icon: "user", onClick: () => openProfileAction(userId, anchor instanceof Element ? anchor : { ...anchor }) },
+    me ? null : { label: t("message_user"), icon: "message-circle", onClick: () => messageUser(userId) },
     ...friendItems(userId),
     ...(moderationItems(userId).length ? ["-", ...moderationItems(userId)] : []),
     ...(staffItems(userId).length ? ["-", { heading: t("server_staff_heading") }, ...staffItems(userId)] : []),
     "-",
-    { label: t("copy_user_id"), icon: "🆔", onClick: () => copyText(userId, t("copied_user_id")) },
+    { label: t("copy_user_id"), icon: "id-card", onClick: () => copyText(userId, t("copied_user_id")) },
   ], { placement: "left", key: `member:${userId}` });
 }
 

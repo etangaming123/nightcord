@@ -5,12 +5,13 @@ import { stickerUrl, usableStickerGroups } from "../perks.js";
 import { add, clear, h } from "./dom.js";
 import { closePopover, openPopover } from "./modals.js";
 import { scopedT } from "../strings.js";
+import { icon } from "./icons.js";
 
 const t = scopedT("ui/stickers");
 
 export function stickerImg(sticker, { cls = "sticker" } = {}) {
   if (sticker.deleted) {
-    return h("div", { class: `${cls} sticker-gone`, title: t("sticker_deleted_title") }, h("span", { "aria-hidden": "true" }, "🗒"), t("deleted_sticker"));
+    return h("div", { class: `${cls} sticker-gone`, title: t("sticker_deleted_title") }, icon("sticker"), t("deleted_sticker"));
   }
   const img = h("img", {
     class: cls, src: stickerUrl(sticker.sticker_id), alt: sticker.name, title: sticker.name,

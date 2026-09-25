@@ -15,6 +15,7 @@ import { cropImage } from "./cropper.js";
 import { pickImage, uploadImage } from "./images.js";
 import { roleIconOf, roleSwatch } from "./names.js";
 import { scopedT } from "../strings.js";
+import { icon } from "./icons.js";
 
 const t = scopedT("ui/guildSettings");
 
@@ -169,7 +170,7 @@ function overview(el, actions) {
             },
           }, t("remove_btn")) : null,
           h("span", { class: "muted small" }, t("banner_hint")))
-        : h("div", { class: "locked-note" }, "🔒 ", state.info.customization_mode === "allowlist"
+        : h("div", { class: "locked-note" }, icon("lock"), " ", state.info.customization_mode === "allowlist"
           ? t("banner_locked_allowlist")
           : t("banner_locked_off"))),
     h("label", {}, t("guild_name_label"), h("input", { name: "name", required: true, maxLength: LIMITS.GUILD_NAME_MAX, value: g.name })),
@@ -223,10 +224,10 @@ function roles(el, actions) {
         const editable = r.is_everyone || r.position < rank;
         const idx = movable.findIndex((x) => x.role_id === r.role_id);
         const menu = (anchor) => openMenu(anchor, [
-          { label: t("move_up_label"), icon: "↑", disabled: !(idx > 0 && movable[idx - 1].position < rank), onClick: () => move(r, -1) },
-          { label: t("move_down_label"), icon: "↓", disabled: !(idx < movable.length - 1), onClick: () => move(r, 1) },
+          { label: t("move_up_label"), icon: "arrow-up", disabled: !(idx > 0 && movable[idx - 1].position < rank), onClick: () => move(r, -1) },
+          { label: t("move_down_label"), icon: "arrow-down", disabled: !(idx < movable.length - 1), onClick: () => move(r, 1) },
           "-",
-          { label: t("delete_role_label"), icon: "🗑", danger: true, onClick: () => deleteRole(r) },
+          { label: t("delete_role_label"), icon: "trash-2", danger: true, onClick: () => deleteRole(r) },
         ], { placement: "right" });
         return h("div", {
           class: `role-item ${r.role_id === selected ? "active" : ""} ${editable ? "" : "locked"}`,
@@ -239,9 +240,9 @@ function roles(el, actions) {
         roleSwatch(r),
         h("span", { class: "name" }, r.name),
         roleIconOf(r),
-        r.hoist ? h("span", { class: "muted small", title: t("hoisted_title") }, "▤") : null,
-        editable ? null : h("span", { class: "lock", title: t("locked_role_title") }, "🔒"),
-        !r.is_everyone && editable ? iconBtn("⋯", t("more_options_for", { name: r.name }), (e) => menu(e.currentTarget)) : null);
+        r.hoist ? h("span", { class: "muted small", title: t("hoisted_title") }, icon("rows-3")) : null,
+        editable ? null : h("span", { class: "lock", title: t("locked_role_title") }, icon("lock")),
+        !r.is_everyone && editable ? iconBtn("ellipsis", t("more_options_for", { name: r.name }), (e) => menu(e.currentTarget)) : null);
       }));
   };
 
@@ -470,7 +471,7 @@ function members(el, actions) {
         avatar(u, { size: "sm" }),
         h("span", { class: "meta" },
           h("span", { class: "name" }, nameOf(u), m.nickname ? h("span", { class: "muted small" }, ` ${u.username}`) : null,
-            m.is_owner ? h("span", { class: "crown" }, " ♛") : null,
+            m.is_owner ? h("span", { class: "crown" }, " ", icon("crown")) : null,
             timedOut ? h("span", { class: "tag warn" }, t("timed_out_tag")) : null),
           h("span", { class: "sub" }, t("joined_fact", { date: fmtDate(m.joined_at) }),
             m.invited_by ? t("invited_by_fact", { name: nameOf(userById(m.invited_by) || { username: t("someone_fallback") }) }) : m.invite_code ? t("invited_via_link_fact") : "",

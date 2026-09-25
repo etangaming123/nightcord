@@ -6,6 +6,7 @@
 import { $, h, serverUrl } from "./dom.js";
 import { leavingDialog } from "./links.js";
 import { scopedT } from "../strings.js";
+import { icon } from "./icons.js";
 
 const t = scopedT("ui/embeds");
 
@@ -33,7 +34,7 @@ function card(embed, actions, message) {
       title: embed.kind === "video" ? t("play_on_site", { site: site || t("the_site") }) : t("open_image"),
       on: { click: () => openLink(embed.url) },
     }, h("img", { src: image, alt: "", loading: "lazy", decoding: "async" }),
-    embed.kind === "video" ? h("span", { class: "embed-play", "aria-hidden": "true" }, "▶") : null)
+    embed.kind === "video" ? h("span", { class: "embed-play", "aria-hidden": "true" }, icon("play")) : null)
     : null;
   return h("div", {
     class: `embed ${embed.kind}`,
@@ -50,7 +51,7 @@ function card(embed, actions, message) {
     ? h("button", {
       class: "embed-x", type: "button", title: t("hide_previews"), "aria-label": t("hide_previews"),
       on: { click: () => actions.suppressEmbeds(message) },
-    }, "✕")
+    }, icon("x"))
     : null);
 }
 
