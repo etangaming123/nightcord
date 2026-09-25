@@ -14,6 +14,7 @@ const DEFAULTS = {
   frequentEmoji: [],
   themePreset: "default", // themes.js PRESETS id (needs the server's client_themes perk)
   customTheme: DEFAULT_CUSTOM,
+  autoReconnect: true, // open the last server again on startup (main.js boot)
   autoUpdateCheck: true, // standalone-only: ping GitHub's release API on load
   updateNotifier: true, // standalone-only: toast when an update is found
   trustedDomains: [], // link hosts that skip the leaving-site dialog (ui/links.js)

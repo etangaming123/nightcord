@@ -11,6 +11,7 @@
   "server_address_label": "Server address",
   "server_address_placeholder": "chat.example.com:8765",
   "localhost_title": "Fill in a server running on this computer",
+  "auto_reconnect_label": "Reconnect to my last server on startup",
   "connect_submit": "Connect",
   "connect_cancel": "Cancel",
   "still_trying": "Still trying…",

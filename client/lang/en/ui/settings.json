@@ -122,6 +122,7 @@
     "one": "1 other session ends right away.",
     "other": "{count} other sessions end right away."
   },
+  "auto_reconnect_label": "Reconnect to my last server on startup",
   "touch_grass_label": "Touch grass reminder",
   "touch_grass_hint": "After about three hours of unbroken use, suggest going outside. It's a parody app; it's also good advice.",
   "reminders_heading": "Reminders",

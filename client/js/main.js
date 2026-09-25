@@ -6,7 +6,7 @@ import { ackCurrent, actions, loadAll, openInvite, restoreView, setSessionHooks 
 import { req } from "./api.js";
 import { Connection, NightcordError, certTrustUrl, normalizeServerUrl } from "./connection.js";
 import { resync, wireEvents } from "./events.js";
-import { applyPrefs, getPrefs } from "./prefs.js";
+import { applyPrefs, getPrefs, setPrefs } from "./prefs.js";
 import { restoreReminders } from "./reminders.js";
 import { ERR, LIMITS, PROTOCOL_VERSION, T } from "./protocol.js";
 import { checkForUpdate } from "./update-check.js";
@@ -690,6 +690,9 @@ async function boot() {
   $("#tab-btn-new").addEventListener("click", () => setConnectTab("new"));
   $("#tab-btn-saved").addEventListener("click", () => setConnectTab("saved"));
   $("#saved-empty-cta").addEventListener("click", () => setConnectTab("new"));
+  const reconnect = $("#auto-reconnect");
+  reconnect.checked = getPrefs().autoReconnect;
+  reconnect.addEventListener("change", () => setPrefs({ autoReconnect: reconnect.checked }));
   $("#whats-this").addEventListener("click", () => {
     const ts = scopedT("shell");
     openModal({
@@ -774,7 +777,7 @@ async function boot() {
   const last = store.getLastServer();
   showConnect();
   if (param) connectTo(param);
-  else if (last) connectTo(last);
+  else if (last && getPrefs().autoReconnect) connectTo(last);
 }
 
 boot();

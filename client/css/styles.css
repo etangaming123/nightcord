@@ -176,6 +176,7 @@ textarea { resize: vertical; }
 /* The logo is client/assets/logo.png — swap the file to rebrand. */
 .brand-mark { display: inline-block; width: 32px; height: 32px; border-radius: 8px; object-fit: cover; }
 .server-title { margin: 12px 0 2px; font-size: 22px; }
+.connect-option { margin-top: 14px; color: var(--text-2); font-size: 13px; }
 .auth-notice { margin: 14px 0 10px; color: var(--text-2); }
 .auth-notice .btn.link { padding: 0; display: inline; }
 .card p { margin: 0 0 18px; }
