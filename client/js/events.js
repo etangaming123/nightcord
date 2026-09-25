@@ -24,6 +24,9 @@ const t = scopedT("events");
 
 const TYPING_MS = 8000;
 
+// Parts to redraw when the Home pages (Friends etc.) show live lists.
+const onHomePage = () => (state.view === "home" && !state.channelId ? ["chat"] : []);
+
 // guild.permissions_changed can arrive in bursts (role edits); refetch once.
 let permsTimer = null;
 function permissionsChanged(guildId) {
@@ -141,7 +144,8 @@ export function wireEvents(conn) {
   on(T.PRESENCE_UPDATE, ({ user_id, status }) => {
     if (status === "offline") state.presences.delete(user_id);
     else state.presences.set(user_id, status);
-    invalidate("members", "sidebar", "header");
+    // The Friends page lists who's online, so it redraws too (not open channels).
+    invalidate("members", "sidebar", "header", ...onHomePage());
   });
 
   on(T.USER_UPDATED, (u) => {
@@ -307,7 +311,8 @@ export function wireEvents(conn) {
     }
     state.dms.set(ch.channel_id, ch);
     ch.recipients.forEach(rememberUser);
-    invalidate("sidebar", "header", "members", "composer");
+    // An accepted request leaves the Requests tab, maybe from another device.
+    invalidate("sidebar", "header", "members", "composer", ...onHomePage());
   });
 
   // --- friends ---
