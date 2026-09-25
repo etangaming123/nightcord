@@ -13,8 +13,9 @@ A web-based messaging app, built for selfhosting. A parody of Discord.
 > trust. The client warns about this before it connects anywhere new.
 >
 > **Link previews are fetched by the server, not by you.** When someone posts a link, the server requests that page
-> and proxies its preview image, so the site sees the *server's* address and never the readers'. Server owners who'd
-> rather not make outbound requests at all can turn it off with `link_embeds`.
+> and proxies its preview images and videos, so the site sees the *server's* address and never the readers'. The one
+> exception: pressing play on a YouTube preview loads YouTube's player (from `youtube-nocookie.com`) in your browser.
+> Server owners who'd rather not make outbound requests at all can turn previews off with `link_embeds`.
 
 > [!NOTE]
 > Nightcord is built for **personal use**: a few friends, a big friend group at most. It's one small Python process
@@ -23,18 +24,25 @@ A web-based messaging app, built for selfhosting. A parody of Discord.
 ## Features
 
 ### Chat
+- A **Home page** that says which server you're on (hidden, name or address, your pick), how many friends are online,
+  how many servers you're in and how long Nightcord's been open, plus an **About this server** page the owner writes
 - Guilds with text channels, categories, topics, slowmode and (placeholder) voice channels
 - Markdown (headings, lists, subtext, masked links, `<t:…>` timestamps, `#channel` chips), replies, reactions,
   pins, edits, @mentions, typing indicators, unread badges synced across devices
-- **Link previews** built by the server, with an image proxy so reading a channel never tells the linked site who
-  you are. A leaving-site dialog names the real host before any link opens.
+- **Link previews that look like Discord's**, built by the server: provider, author, title, description and a big
+  image or a thumbnail. X/Twitter links go through fixupx so tweets show their text, media and stats, YouTube links
+  show the video's title and play inline when you press play, and Tenor/Giphy/image links show up as plain GIFs and
+  pictures. Everything goes through the server's proxy, so reading a channel never tells the linked site who you
+  are, and previews are cached so a restart doesn't refetch them. A leaving-site dialog names the real host before
+  any link opens.
 - **Polls** with multiple choice, a countdown and visible voters, and **slash commands** — `/roll 2d6+3`, `/8ball`,
   `/coinflip` and `/choose` are rolled by the server so nobody can type a lucky result, while `/shrug`, `/me`,
   `/spoiler`, `/remind` and friends stay in the client
 - **Forward** a message anywhere, **Save** one for later in a private list, and **Mark Unread** to come back to it.
   Every message has a right-click (or long-press) menu, and a Copy Link that opens in the app rather than a new tab.
-- Country flags in the emoji picker, a formatting toolbar over the message box, and keyboard shortcuts with a
-  cheat sheet on Ctrl+/
+- **Twemoji**, the emoji Discord uses, on every OS (country flags on Windows too), with every emoji in the picker
+  under Discord's names: `:thumbsup:`, `:+1:`, `:slight_smile:`, `:flag_us:`. Buttons use proper icons, not emoji.
+- A formatting toolbar over the message box, and keyboard shortcuts with a cheat sheet on Ctrl+/
 - Search with `from:`, `in:`, `has:` and `pinned:` filters; Ctrl/Cmd+K quick switcher
 - File uploads with inline images and video
 - Custom emoji and stickers per guild, usable **everywhere by everyone**. No Nitro required, or even possible.
@@ -57,7 +65,12 @@ A web-based messaging app, built for selfhosting. A parody of Discord.
 - Custom badges and a Verified badge you can give to anyone, shown next to their name or just on their profile
 - Terms of Service and Privacy Policy pages that people accept before joining
 - Server-wide switches for who can customise their profile, whether user search exists, and more
-- One-command backups
+- A server description, shown on the login screen, the About page and the page at your server's address
+- An **Accounts** list you can sort and filter (online now, staff, muted, seen in the last week, gone quiet for a
+  month...) with "last seen" as a date, a time, "3 hours ago" or both
+- A **Data** tab with a chart of what your storage goes on, and buttons to clear the preview cache, delete unused
+  uploads and compact the database
+- One-command backups, and an automatic copy of the database before every upgrade
 
 ## Screenshots
 
@@ -110,8 +123,9 @@ Options*.
    client already pointed at your server.
 
 ### Updating
-Pull the new code and restart the server. The database upgrades itself on start; run a [backup](#backups) first if
-you're nervous. (Databases from the very first commit, protocol 0.2, can't be upgraded; the server says so and won't start.)
+Pull the new code and restart the server. The database upgrades itself on start, and saves a copy of the old one to
+`backups/pre-migrate-v<old>-to-v<new>-<date>.db` first (the newest three are kept), so a bad upgrade can be rolled
+back by putting that file back as `data/nightcord.db`. A full [backup](#backups) beforehand never hurts. (Databases from the very first commit, protocol 0.2, can't be upgraded; the server says so and won't start.)
 
 ### Certificates
 The hosted client runs over https, so it has to use `wss://`. Browsers reject self-signed certificates until you
@@ -172,6 +186,7 @@ Settings you can `config set`:
 | Key | Values |
 |---|---|
 | `server_name` | any name |
+| `server_description` | Markdown, up to 2000 characters. Write `\n` for a line break. |
 | `account_creation` | `on`, `request` (staff approve), `off` |
 | `guild_creation` | `on`, `off` (owner only) |
 | `guild_list_visible` | `true`, `false` |
@@ -181,6 +196,7 @@ Settings you can `config set`:
 | `user_search` | `off` (default: add friends by exact username), `staff`, `on` |
 | `announcements_admins` | `true`, `false` (the owner can always post) |
 | `link_embeds` | `true`, `false`. Fetch pages people link to and show a preview. Off means the server makes no outbound requests for messages. |
+| `fx_links` | `true`, `false`. Read X/Twitter links through fixupx.com for proper tweet previews. |
 | `max_accounts_per_client` | 0 (no limit) to 20. A courtesy limit for the account switcher, not enforced. |
 
 ## Backups
@@ -224,3 +240,7 @@ Things that might happen one day:
 ## License
 
 [MIT](LICENSE). Nightcord is a parody and isn't affiliated with or endorsed by Discord.
+
+Bundled bits with their own licences (details in [LICENSE](LICENSE)): emoji from [Twemoji](https://github.com/mozilla/twemoji-colr)
+(graphics CC-BY 4.0), icons from [Lucide](https://lucide.dev) (ISC), and emoji names from
+[emojibase](https://emojibase.dev) (MIT).
