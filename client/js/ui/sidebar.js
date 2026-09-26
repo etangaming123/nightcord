@@ -231,7 +231,8 @@ function dragController(state, actions, enabled) {
 }
 
 function renderHome(state, actions) {
-  clear($("#guild-header"), h("span", { class: "title" }, t("rail_dm_label")));
+  const header = clear($("#guild-header"), h("span", { class: "title" }, t("rail_dm_label")));
+  header.classList.remove("with-banner"); // left over from a guild with a banner
   const list = clear($("#channel-list"));
   // The Friends link covers every Friends-page tab except the two with their own links.
   const own = ["home", "about", "requests", "inbox"];
@@ -262,7 +263,7 @@ function renderHome(state, actions) {
     const unread = isUnread(ch.channel_id) && !active;
     const others = ch.recipients.filter((u) => u.user_id !== state.user?.user_id);
     const other = ch.kind === "dm" ? userById(others[0]?.user_id) || others[0] : null;
-    const icon = other
+    const pic = other
       ? avatar(other, { status: statusOf(other.user_id) })
       : h("div", { class: "avatar group", "aria-hidden": "true" }, icon("users"));
     const sub = other ? (customStatusOf(other) || "") : t("group_members_count", { count: ch.recipients.length });
@@ -276,7 +277,7 @@ function renderHome(state, actions) {
         contextmenu: (e) => { e.preventDefault(); actions.dmMenu(ch, { x: e.clientX, y: e.clientY }); },
       },
     },
-    icon,
+    pic,
     h("span", { class: "dm-meta" },
       h("span", { class: "name" }, dmTitle(ch)),
       sub ? h("span", { class: "sub" }, sub) : null),

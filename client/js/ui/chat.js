@@ -140,23 +140,23 @@ function systemNodes(m, state, actions) {
   const d = new Date(m.sent_at);
   const author = authorOf(m);
   const who = h("button", { class: "sys-name", type: "button", on: { click: (e) => actions.openProfile(author.user_id, e.currentTarget) } }, displayName(author));
-  let icon;
+  let mark;
   let text;
   if (m.type === "member_join") {
-    icon = h("span", { class: "sys-icon join", "aria-hidden": "true" }, "→");
+    mark = h("span", { class: "sys-icon join", "aria-hidden": "true" }, "→");
     text = JOIN_LINES[Number(BigInt(m.message_id) % BigInt(JOIN_LINES.length))](who);
   } else if (m.type === "member_leave") {
-    icon = h("span", { class: "sys-icon leave", "aria-hidden": "true" }, "←");
+    mark = h("span", { class: "sys-icon leave", "aria-hidden": "true" }, "←");
     text = [who, t("leave_suffix")];
   } else {
-    icon = h("span", { class: "sys-icon sys-pin", "aria-hidden": "true" }, icon("pin"));
+    mark = h("span", { class: "sys-icon sys-pin", "aria-hidden": "true" }, icon("pin"));
     text = [who, t("pin_prefix"),
       m.reply_to_id ? h("button", { class: "btn link", type: "button", on: { click: () => actions.jumpTo(m.reply_to_id) } }, t("pin_message_link")) : t("pin_message_link"),
       t("pin_suffix"),
       h("button", { class: "btn link", type: "button", on: { click: (e) => actions.showPins(e.currentTarget) } }, t("pin_see_all")), "."];
   }
   return h("div", { class: "msg msg-system", dataset: { id: m.message_id } },
-    icon, h("span", { class: "sys-text" }, text), stamp(d),
+    mark, h("span", { class: "sys-text" }, text), stamp(d),
     reactionsRow(m, state, actions), toolbar(m, state, actions));
 }
 
