@@ -12,7 +12,7 @@ import { ERR, LIMITS, PROTOCOL_VERSION, T } from "./protocol.js";
 import { checkForUpdate, getUpdateInfo, onUpdateInfo, RELEASES_URL } from "./update-check.js";
 import { handleShortcut, shouldFocusComposer } from "./shortcuts.js";
 import { flush, invalidate, setActions } from "./render.js";
-import { currentChannel, resetServerState, state } from "./state.js";
+import { currentChannel, isThisServer, resetServerState, state } from "./state.js";
 import * as store from "./storage.js";
 import { $, add, clear, h, setAvatarBase, setStampPrefs, setUrlResolver } from "./ui/dom.js";
 import { render as renderMarkdown } from "./ui/markdown.js";
@@ -20,7 +20,7 @@ import { clearPending } from "./uploads.js";
 import { focusComposer, setupDropZone } from "./ui/composer.js";
 import { legalLinks, legalUpdateModal, renderLegalTabs, showLegalModal } from "./ui/legal.js";
 import { closeSearch, searchOpen } from "./ui/search.js";
-import { decodeInvite, parseMessageLink, setMessageLinkHandler, setupLinkGuard } from "./ui/links.js";
+import { decodeInvite, parseMessageLink, setInviteLinkHandler, setMessageLinkHandler, setupLinkGuard } from "./ui/links.js";
 import { setupGestures } from "./ui/gestures.js";
 import * as router from "./router.js";
 import { closeFullscreen, closeModal, closePopover, confirmAction, fullscreenOpen, modalOpen, openModal, popoverOpen, toast } from "./ui/modals.js";
@@ -959,11 +959,16 @@ async function boot() {
   setupLinkGuard();
   setupGestures(actions);
   router.setupRouter(actions, { invalidate });
-  // A message link pasted into a message opens in place, if it's this server.
+  // Message and invite links pasted into a message open in place, if they're
+  // for this server.
   setMessageLinkHandler((jump) => {
-    if (!state.user) return false;
-    if (jump.server && state.url && jump.server !== new URL(state.url).host) return false;
+    if (!state.user || !isThisServer(jump.server)) return false;
     actions.jumpTo(jump.messageId, jump.channelId, jump.guildId);
+    return true;
+  });
+  setInviteLinkHandler((invite) => {
+    if (!state.user || !isThisServer(invite.server)) return false;
+    actions.openInvite(invite.code);
     return true;
   });
 

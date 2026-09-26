@@ -146,7 +146,9 @@ export function parseInviteLink(href) {
 
 // Set by main.js so ui/links.js doesn't have to import the whole app.
 let onMessageLink = null;
+let onInviteLink = null;
 export const setMessageLinkHandler = (fn) => { onMessageLink = fn; };
+export const setInviteLinkHandler = (fn) => { onInviteLink = fn; };
 
 export function setupLinkGuard() {
   document.addEventListener("click", (e) => {
@@ -155,9 +157,12 @@ export function setupLinkGuard() {
     if (!a) return;
     const href = a.href;
     if (!/^https?:$/.test(new URL(href, location.href).protocol)) return;
-    // A link to a message on this server opens in place: no dialog, no tab.
+    // A link to a message or an invite on this server opens in place: no
+    // dialog, no tab.
     const jump = parseMessageLink(href);
     if (jump && onMessageLink?.(jump)) { e.preventDefault(); e.stopPropagation(); return; }
+    const invite = parseInviteLink(href);
+    if (invite && onInviteLink?.(invite)) { e.preventDefault(); e.stopPropagation(); return; }
     if (isTrustedHost(hostOf(href))) return;
     e.preventDefault();
     e.stopPropagation();

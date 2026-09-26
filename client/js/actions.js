@@ -985,15 +985,18 @@ export function inviteLink(code) {
 
 export const openInviteDialog = () => inviteDialog(actions);
 
+export const resolveInvite = (code) => req(T.GUILD_INVITE_RESOLVE, { invite_code: code });
+
+// Join through an invite, or just open the guild if you're already in it.
+export async function acceptInvite(code, preview) {
+  if (preview.is_member) { await openGuild(preview.guild.guild_id); return; }
+  await joined((await req(T.GUILD_JOIN_BY_CODE, { invite_code: code })).guild);
+}
+
 export async function openInvite(code) {
   try {
-    const preview = await req(T.GUILD_INVITE_RESOLVE, { invite_code: code });
-    invitePreview(preview, {
-      onJoin: async () => {
-        if (preview.is_member) { await openGuild(preview.guild.guild_id); return; }
-        await joined((await req(T.GUILD_JOIN_BY_CODE, { invite_code: code })).guild);
-      },
-    });
+    const preview = await resolveInvite(code);
+    invitePreview(preview, { onJoin: () => acceptInvite(code, preview) });
   } catch (e) {
     toast(e.code === ERR.INVITE_EXPIRED ? t("invite_expired") : e.message, { error: true });
   }
@@ -1587,7 +1590,7 @@ export const actions = {
   markChannelRead, markGuildRead,
   stepChannel, stepUnread, stepGuild, openGuildAt, markCurrentRead, openComposerEmoji, openComposerUpload,
   showShortcuts,
-  inviteLink, openInviteDialog, openInvite, createInvite, setGuildIcon, setGuildIconMedia,
+  inviteLink, openInviteDialog, openInvite, resolveInvite, acceptInvite, createInvite, setGuildIcon, setGuildIconMedia,
   reorderChannels, sidebarOrder, toggleCategory, isCollapsed, joinVoice, leaveVoice, setVoiceFlags,
   changeNickname, staffItems, nameOf,
   sendSticker, emojiInfo, createEmoji, renameEmoji, deleteEmoji, listBadges, createBadge, updateBadge, deleteBadge, setUserBadges, createSticker, updateSticker, deleteSticker,

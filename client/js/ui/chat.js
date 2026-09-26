@@ -12,6 +12,7 @@ import { forwardCard, messageMenuHandlers } from "./messageMenu.js";
 import { isMediaOnly, renderEmbeds } from "./embeds.js";
 import { renderPoll } from "./polls.js";
 import { messageQuote } from "./quote.js";
+import { inviteCard } from "./invites.js";
 import { $, add, avatar, clear, fmtClock, fmtStamp, h, iconBtn, idGt } from "./dom.js";
 import { renderFriendsHeader, renderFriendsPage } from "./friends.js";
 import { QUICK_REACTIONS, customOf, emojiGlyph } from "./emoji.js";
@@ -63,7 +64,7 @@ export function mdContext(state, actions) {
     onEmoji: (emoji, el) => actions.emojiInfo(emoji, el),
     channel: channelById,
     onChannel: (id) => actions.openChannelById(id),
-    quote: (href) => messageQuote(href, actions),
+    quote: (href) => messageQuote(href, actions) || inviteCard(href, actions),
   };
 }
 

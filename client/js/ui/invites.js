@@ -1,10 +1,11 @@
 // Invites (PROTOCOL.md §5 Guilds, §4 Invite): the "Invite people" dialog,
-// the invite preview card, and Guild settings → Invites.
+// the invite preview card, invite cards in chat, and Guild settings → Invites.
 
 import { LIMITS, T } from "../protocol.js";
-import { can, currentGuild, state } from "../state.js";
+import { can, currentGuild, isThisServer, state } from "../state.js";
 import { add, avatar, avatarUrl, clear, displayName, fmtDateTime, h, imageEl, initials, mayAnimate } from "./dom.js";
 import { closeModal, confirmAction, openModal, toast } from "./modals.js";
+import { parseInviteLink } from "./links.js";
 import { copyText } from "./profile.js";
 import { scopedT } from "../strings.js";
 
@@ -108,6 +109,60 @@ export function invitePreview(p, { onJoin }) {
       join),
     cls: "invite-modal",
   });
+}
+
+// An invite link posted in chat, drawn as a card with a Join button
+// (markdown.js asks through mdContext's quote). Null when the link isn't an
+// invite on this server, so it stays a plain link.
+const resolved = new Map(); // code -> Promise<preview | null>, once per session
+
+export function inviteCard(href, actions) {
+  const invite = parseInviteLink(href);
+  if (!invite || !isThisServer(invite.server)) return null;
+  const card = h("div", { class: "invite-embed loading" },
+    h("div", { class: "invite-embed-title" }, t("embed_title")),
+    h("div", { class: "invite-embed-row" }, h("span", { class: "muted small" }, t("embed_loading"))));
+  if (!resolved.has(invite.code)) resolved.set(invite.code, actions.resolveInvite(invite.code).catch(() => null));
+  resolved.get(invite.code).then((p) => {
+    if (!card.isConnected) return;
+    card.classList.remove("loading");
+    const row = card.lastChild;
+    if (!p) {
+      card.classList.add("invalid");
+      clear(row,
+        h("div", { class: "guild-icon static", "aria-hidden": "true" }, "?"),
+        h("div", { class: "invite-embed-main" },
+          h("div", { class: "invite-embed-name" }, t("embed_invalid")),
+          h("div", { class: "muted small" }, t("embed_invalid_hint"))));
+      return;
+    }
+    const join = h("button", {
+      class: `btn ${p.is_member ? "" : "primary"}`, type: "button",
+      on: {
+        click: async () => {
+          join.disabled = true;
+          try {
+            await actions.acceptInvite(invite.code, p);
+            p.is_member = true;
+          } catch (e) {
+            toast(e.message, { error: true });
+          }
+          join.disabled = false;
+          join.textContent = t("embed_joined_btn");
+          join.classList.remove("primary");
+        },
+      },
+    }, p.is_member ? t("embed_joined_btn") : t("embed_join_btn"));
+    clear(row,
+      guildIcon(p.guild),
+      h("div", { class: "invite-embed-main" },
+        h("div", { class: "invite-embed-name" }, p.guild.name),
+        h("div", { class: "invite-counts small" },
+          h("span", {}, h("i", { class: "dot online", "aria-hidden": "true" }), t("online_count", { count: p.online_count })),
+          h("span", {}, h("i", { class: "dot offline", "aria-hidden": "true" }), t("member_count", { count: p.member_count })))),
+      join);
+  });
+  return card;
 }
 
 // Guild settings → Invites.

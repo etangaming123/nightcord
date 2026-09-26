@@ -238,6 +238,13 @@ export function channelTitle(ch) {
 
 export const memberById = (id) => state.members.find((m) => m.user.user_id === id);
 
+// Whether a shared link's ?server= (host:port, or ws://host:port for plain
+// ws) is the server we're on. No server in the link means this one.
+export function isThisServer(server) {
+  if (!server || !state.url) return true;
+  return server.replace(/^wss?:\/\//i, "").toLowerCase() === new URL(state.url).host.toLowerCase();
+}
+
 // Roles for a member, highest first.
 export function memberRoles(member) {
   if (!member) return [];

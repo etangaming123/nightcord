@@ -593,6 +593,14 @@ kbd {
 .quote-head { display: flex; align-items: baseline; gap: 6px; }
 .quote-body { font-size: 13px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .quote-card .btn.link { flex: none; font-size: 12px; }
+.invite-embed { margin: 4px 0; padding: 12px 14px; border-radius: 8px; background: var(--bg-1); border: 1px solid var(--line); max-width: 432px; display: grid; gap: 10px; }
+.invite-embed-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em; color: var(--text-2); }
+.invite-embed-row { display: flex; align-items: center; gap: 12px; min-height: 40px; }
+.invite-embed-main { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.invite-embed-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.invite-embed .invite-counts { gap: 12px; }
+.invite-embed .btn { flex: none; }
+.invite-embed.invalid .invite-embed-name { color: var(--danger); }
 
 .new-bar {
   /* Just under the 52px chat header, over the message list. */

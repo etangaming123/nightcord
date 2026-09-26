@@ -333,7 +333,7 @@ function renderToken(t, ctx) {
       // plainLinks: somewhere a link can't be clicked anyway (the header
       // topic is itself a button), so draw the text and skip the anchor.
       if (ctx.plainLinks) return document.createTextNode(t.children ? tokensText(t.children) : t.href);
-      // A bare link to another message becomes a quote card instead.
+      // A bare link to another message (or an invite) becomes a card instead.
       if (!t.children && ctx.quote) {
         const card = ctx.quote(t.href);
         if (card) return card;

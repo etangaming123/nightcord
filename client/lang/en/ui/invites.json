@@ -66,5 +66,11 @@
   "public_link_saved_toast": "Public link saved",
   "public_link_off_toast": "Public link turned off",
   "revoke_invite_title": "Revoke invite {code}?",
-  "revoke_invite_body": "The link stops working. People who already joined stay."
+  "revoke_invite_body": "The link stops working. People who already joined stay.",
+  "embed_title": "You've been summoned to a guild",
+  "embed_loading": "Looking up the invite…",
+  "embed_invalid": "Invalid invite",
+  "embed_invalid_hint": "It expired, ran out of uses or never existed. Ask for a new one.",
+  "embed_join_btn": "Join",
+  "embed_joined_btn": "Joined"
 }
