@@ -58,6 +58,9 @@ async function main() {
       bundle: true,
       minify: true,
       format: "iife",
+      // The single file runs from file://, where router.js leaves the address
+      // bar alone; this tells it so (and keeps esbuild from warning).
+      define: { "import.meta.url": "undefined" },
       write: false,
       plugins: [noPreview],
     }),
@@ -83,7 +86,7 @@ async function main() {
   let out = html
     .replace(
       '<link rel="stylesheet" href="css/styles.css">',
-      `<style>\n${css.replace("../assets/fonts/twemoji.woff2", twemojiUri)}\n</style>`
+      () => `<style>\n${css.replace("../assets/fonts/twemoji.woff2", twemojiUri)}\n</style>`
     )
     .replaceAll('href="assets/logo.png"', `href="${logoUri}"`)
     .replaceAll('src="assets/logo.png"', `src="${logoUri}"`)
@@ -92,7 +95,9 @@ async function main() {
       // The original is a module script, deferred until the DOM is parsed by
       // spec. This inline replacement sits in <head> too, so it needs the
       // same deferral or every document.getElementById() below runs too early.
-      `<script>window.__NIGHTCORD_LANG__ = ${JSON.stringify(lang)}; window.__NIGHTCORD_BUILD_VERSION__ = ${JSON.stringify(buildVersion)};</script>\n` +
+      // A function, not a string: minified code can contain "$&" (a variable
+      // named $ before &&), which a replacement string would expand.
+      () => `<script>window.__NIGHTCORD_LANG__ = ${JSON.stringify(lang)}; window.__NIGHTCORD_BUILD_VERSION__ = ${JSON.stringify(buildVersion)};</script>\n` +
         `<script>document.addEventListener("DOMContentLoaded", function () {\n${script}\n});</script>`
     );
 
