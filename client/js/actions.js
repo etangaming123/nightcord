@@ -7,6 +7,7 @@ import { addReminder, cancelReminder, listReminders, restoreReminders } from "./
 import { ERR, LIMITS, PERMS, T } from "./protocol.js";
 import { invalidate } from "./render.js";
 import { appUrl } from "./router.js";
+import { encodeInvite } from "./ui/links.js";
 import {
   can, channelTree, currentChannel, currentGuild, ensureReadState, isDm, isGuildOwner, isIncomingRequest, isStaff,
   isUnread, markRead, memberById, nameOf, pref, relationKind, rememberUser, resetMessages, sortChannels, sortDms,
@@ -976,8 +977,10 @@ export function serverParam() {
 }
 
 // A link that opens this client, connects to this server and shows the invite.
+// The server rides along base64'd (ui/links.js encodeInvite).
 export function inviteLink(code) {
-  return appUrl(`invite/${encodeURIComponent(code)}?server=${encodeURIComponent(serverParam())}`);
+  const token = encodeInvite(serverParam(), code);
+  return token ? appUrl(`invite/${token}`) : appUrl(`invite/${encodeURIComponent(code)}?server=${encodeURIComponent(serverParam())}`);
 }
 
 export const openInviteDialog = () => inviteDialog(actions);

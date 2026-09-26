@@ -8,7 +8,7 @@
 //   /app/settings/<section>
 //   /app/servers/<guild>/settings/<section>
 //   /app/servers/<guild>/<channel>/settings/<section>
-//   /app/invite/<code>?server=host
+//   /app/invite/<token>   (the server and code, base64: ui/links.js)
 //
 // Moving around pushes history, so Back and Forward walk it (and Back closes
 // settings or the long-press sheet first). The server isn't in the path —

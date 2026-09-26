@@ -32,6 +32,9 @@ export function guildIcon(g, cls = "") {
     url ? imageEl(g.icon_id, { animate: mayAnimate(g) }) : initials(g.name));
 }
 
+// The link carries the server's address, only base64'd (ui/links.js).
+const shareNotice = () => h("p", { class: "error-box info small" }, t("shares_address_notice"));
+
 function linkBox(text, label) {
   return h("div", { class: "row invite-link" },
     h("input", { value: text, readOnly: true, "aria-label": label, on: { focus: (e) => e.currentTarget.select() } }),
@@ -75,7 +78,8 @@ export function inviteDialog(actions) {
       h("div", { class: "row wrap invite-opts" }, h("label", {}, t("expire_after_label"), age), h("label", {}, t("max_uses_label"), uses)),
       h("div", { class: "row" }, generate),
       out,
-      g.vanity_code ? h("label", {}, t("public_link_label"), linkBox(actions.inviteLink(g.vanity_code), t("public_invite_link_aria"))) : null),
+      g.vanity_code ? h("label", {}, t("public_link_label"), linkBox(actions.inviteLink(g.vanity_code), t("public_invite_link_aria"))) : null,
+      shareNotice()),
     actions: [h("button", { class: "btn", type: "button", on: { click: closeModal } }, t("done_btn"))],
   });
 }
@@ -114,7 +118,8 @@ export async function invitesTab(el, actions) {
   add(el,
     h("div", { class: "row wrap" },
       h("p", { class: "muted grow" }, manage ? t("invites_manage_intro") : t("invites_own_intro")),
-      can("CREATE_INVITE") ? h("button", { class: "btn primary", type: "button", on: { click: () => inviteDialog(actions) } }, t("create_invite_btn")) : null));
+      can("CREATE_INVITE") ? h("button", { class: "btn primary", type: "button", on: { click: () => inviteDialog(actions) } }, t("create_invite_btn")) : null),
+    shareNotice());
   if (manage) add(el, vanityForm(g, actions));
   if (!invites.length) { add(el, h("p", { class: "muted" }, t("no_active_invites"))); return; }
   const table = h("div", { class: "list invites" });

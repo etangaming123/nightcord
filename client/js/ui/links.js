@@ -91,6 +91,59 @@ export function parseMessageLink(href) {
   };
 }
 
+// Invite links fold the server and the code into one token,
+//   <client>/invite/<base64url("host:port/CODE")>
+// so the address isn't sitting there in plain text. That's all it is: anyone
+// can decode it, which is why the invite dialog says the link shares it.
+const b64url = (s) => btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const INVITE_TOKEN = /^((?:wss?:\/\/)?[\w.\-[\]:]+)\/([\w-]{1,64})$/;
+
+export function encodeInvite(server, code) {
+  try {
+    return b64url(`${server}/${code}`);
+  } catch {
+    return null; // not plain ASCII; the caller falls back to ?server=
+  }
+}
+
+// { server, code } from a token, or null if it isn't one.
+export function decodeInvite(token) {
+  if (!/^[\w-]{4,200}$/.test(token || "")) return null;
+  let text;
+  try {
+    text = atob(token.replace(/-/g, "+").replace(/_/g, "/"));
+  } catch {
+    return null;
+  }
+  const m = text.match(INVITE_TOKEN);
+  return m ? { server: m[1], code: m[2] } : null;
+}
+
+// A Nightcord invite link, either
+//   <client>/invite/<token>                     (the form above)
+//   <client>/invite/<code>?server=<host>        (before the token)
+//   <client>/?server=<host>&invite=<code>       (the oldest form)
+// Returns { server, code } (server null for a code on this very client), or null.
+export function parseInviteLink(href) {
+  let url;
+  try {
+    url = new URL(href, location.href);
+  } catch {
+    return null;
+  }
+  const server = url.searchParams.get("server") || null;
+  const path = url.pathname.match(/\/invite\/([^/]+)\/?$/);
+  if (path) {
+    const seg = decodeURIComponent(path[1]);
+    if (server) return { server, code: seg };
+    const token = decodeInvite(seg);
+    if (token) return token;
+    return url.origin === location.origin ? { server: null, code: seg } : null;
+  }
+  const code = url.searchParams.get("invite");
+  return code && server ? { server, code } : null;
+}
+
 // Set by main.js so ui/links.js doesn't have to import the whole app.
 let onMessageLink = null;
 export const setMessageLinkHandler = (fn) => { onMessageLink = fn; };

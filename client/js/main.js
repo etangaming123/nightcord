@@ -20,7 +20,7 @@ import { clearPending } from "./uploads.js";
 import { focusComposer, setupDropZone } from "./ui/composer.js";
 import { legalLinks, legalUpdateModal, renderLegalTabs, showLegalModal } from "./ui/legal.js";
 import { closeSearch, searchOpen } from "./ui/search.js";
-import { parseMessageLink, setMessageLinkHandler, setupLinkGuard } from "./ui/links.js";
+import { decodeInvite, parseMessageLink, setMessageLinkHandler, setupLinkGuard } from "./ui/links.js";
 import { setupGestures } from "./ui/gestures.js";
 import * as router from "./router.js";
 import { closeFullscreen, closeModal, closePopover, confirmAction, fullscreenOpen, modalOpen, openModal, popoverOpen, toast } from "./ui/modals.js";
@@ -968,19 +968,22 @@ async function boot() {
   });
 
   // ?server=host:port lets a server operator share a direct link;
-  // &invite=CODE opens that guild invite once logged in;
+  // &invite=CODE (or /app/invite/…) opens that guild invite once logged in;
   // &jump=<guild|@me>/<channel>/<message> opens a message link.
   // ?preview opens the preview (the homepage links here); ?preview=owner or
   // ?preview=member skips the question.
   const params = new URLSearchParams(location.search);
-  const param = params.get("server");
+  let param = params.get("server");
   const previewParam = PREVIEW_AVAILABLE && params.has("preview") ? params.get("preview") : null;
   pendingInvite = params.get("invite");
   pendingJump = parseMessageLink(location.href);
   // /app/servers/…, /app/invite/CODE and friends (router.js).
   pendingRoute = router.initialRoute();
   if (pendingRoute?.kind === "invite") {
-    pendingInvite = pendingRoute.code;
+    // /app/invite/<token> carries the server too (ui/links.js encodeInvite).
+    const token = param ? null : decodeInvite(pendingRoute.code);
+    pendingInvite = token ? token.code : pendingRoute.code;
+    if (token) param = token.server;
     pendingRoute = null;
   }
   if (pendingJump) pendingRoute = null;

@@ -33,6 +33,7 @@
   "max_uses_label": "Max number of uses",
   "generate_btn": "Generate invite link",
   "generate_new_btn": "Generate a new link",
+  "shares_address_notice": "Heads up: invite links also carry this server's address (its IP or domain). It's scrambled, not secret, so anyone with the link can work it out. Only share it with people you'd give the address to.",
   "public_link_label": "Public link (never expires)",
   "public_invite_link_aria": "Public invite link",
   "done_btn": "Done",
