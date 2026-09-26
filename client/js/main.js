@@ -23,6 +23,7 @@ import { closeSearch, searchOpen } from "./ui/search.js";
 import { decodeInvite, parseMessageLink, setInviteLinkHandler, setMessageLinkHandler, setupLinkGuard } from "./ui/links.js";
 import { setupGestures } from "./ui/gestures.js";
 import * as router from "./router.js";
+import { setFaviconBadge } from "./ui/favicon.js";
 import { closeFullscreen, closeModal, closePopover, confirmAction, fullscreenOpen, modalOpen, openModal, popoverOpen, toast } from "./ui/modals.js";
 import { loadStrings, scopedT } from "./strings.js";
 import { icon } from "./ui/icons.js";
@@ -57,6 +58,7 @@ function showScreen(which) {
   renderUpdateFloat();
   if (which !== "app") {
     document.title = t("brand");
+    setFaviconBadge(0);
     router.clear();
   }
 }
