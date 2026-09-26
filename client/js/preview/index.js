@@ -14,6 +14,7 @@ import { Activity } from "./activity.js";
 import registerAccount from "./handlers/account.js";
 import registerAdmin from "./handlers/admin.js";
 import registerChat from "./handlers/chat.js";
+import registerDiscord from "./handlers/discord.js";
 import registerGuilds from "./handlers/guilds.js";
 import { MEMBER, OWNER, buildServer } from "./seed.js";
 import { PreviewError, newId } from "./server.js";
@@ -140,6 +141,7 @@ export function createPreview() {
   registerGuilds(server);
   registerChat(server);
   registerAdmin(server);
+  registerDiscord(server);
   const activity = new Activity(server);
 
   // Paths the client would fetch from the server's https origin.

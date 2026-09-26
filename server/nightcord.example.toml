@@ -17,3 +17,8 @@ allowed_origins = [
 # Behind a reverse proxy (nginx, Caddy, Cloudflare Tunnel)? Take client IPs
 # from X-Forwarded-For so IP bans work. Leave false when clients connect directly.
 trust_proxy = false
+
+# Optional: a Discord bot people can link their accounts to (README → Discord
+# bot). Needs `pip install -r requirements-discord.txt`. You can leave this out
+# and set NIGHTCORD_DISCORD_TOKEN in the environment instead.
+# discord_token = "your bot token"

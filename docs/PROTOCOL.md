@@ -1,6 +1,6 @@
 # Nightcord Protocol
 
-Version: `0.18`
+Version: `0.19`
 
 This document is the single source of truth for the wire format between the
 Nightcord client (GitHub Pages, vanilla JS) and a Nightcord server (Python).
@@ -21,6 +21,7 @@ Each protocol version arrived with one commit on `main`, named in the middle col
 | 0.6 | Friends, blocking and message requests | Friends and friend requests, one-sided blocking, per-user DM privacy with message requests, group DMs limited to friends, and user search as a server setting (off by default). |
 | 0.7 | Announcements inbox | A server-wide announcements inbox with per-account read state, and automatic entries when the Terms or Privacy Policy change. |
 | 0.8 | Account switcher | `max_accounts_per_client`, an advisory server setting for clients that keep several accounts. |
+| 0.19 | Link Nightcord accounts to Discord | An optional Discord bot the server runs (`discord_token`): `discord.*` to link an account with a one-time code, choose which notifications arrive as Discord DMs, copy the Discord name, avatar and banner onto the profile, and send a test DM; `server.info` says whether the server has one (`discord_link`); the `discord_unavailable` error. |
 | 0.18 | Data tab | `admin.storage` (how much space the server uses, by category) and `admin.storage.action` (clear the preview cache, `VACUUM`, purge unclaimed uploads). |
 | 0.17 | Accounts tab: sorting and filters | `admin.users.list` learns `sort`, `order`, `flags`, `seen` and `joined`; `AdminUser.online`; a session's `last_seen` now moves while connected and when it disconnects, not only at login. |
 | 0.16 | Discord-style link embeds | Embeds gain `gifv` and `video` media (proxied), `provider_url`, `author_url`, image/video sizes and `youtube_id`; oEmbed author/provider lines, YouTube titles, X/Twitter links read through fixupx (`fx_links`), and a preview cache that survives restarts. |
@@ -742,6 +743,32 @@ Read state is private to its user — there are no read receipts (§10).
 guild → client default: `all`). Muted targets don't show unread badges,
 only mention counts.
 
+### Discord link
+```json
+{
+  "discord_id": "string",
+  "discord_username": "string",
+  "linked_at": "ISO8601",
+  "notify": {
+    "mentions": true, "dms": true, "message_requests": true,
+    "friend_requests": true, "announcements": true
+  },
+  "only_when_away": true,
+  "include_content": true,
+  "dm_refused": false
+}
+```
+Your own link to a Discord account (§5 Discord link); nobody else ever sees
+it. `notify` switches each kind of Discord DM; all start on.
+`only_when_away` (default true) holds them back while any of your devices
+is connected and not away. `include_content` (default true) puts the
+message text in the DM — off, the DM only says who wrote where.
+`dm_refused` is true when Discord refused the bot's last DM to you.
+
+`DiscordBot` is `{ online, name, install_url }`: whether the bot is
+connected to Discord right now, its Discord username, and the link that
+adds it to a Discord account (null until it has logged in once).
+
 ### Limits
 | field | rule |
 |---|---|
@@ -814,7 +841,7 @@ only mention counts.
 | type | direction | payload |
 |---|---|---|
 | `server.info` | C→S | `{}` — sendable pre-auth |
-| `server.info.result` | S→C | `ServerConfig` plus `protocol_version`, `setup_required`, `legal_version`, `has_terms`, `has_privacy` |
+| `server.info.result` | S→C | `ServerConfig` plus `protocol_version`, `setup_required`, `legal_version`, `has_terms`, `has_privacy`, `discord_link` (whether the server runs a Discord bot, §5 Discord link) |
 | `server.config.update` | C→S | partial `ServerConfig` — **server owner only**. Turning `voice_enabled` off disconnects everyone from voice |
 | `server.config.update.result` | S→C | `{ config: ServerConfig }` |
 | `server.config.updated` | S→C | `ServerConfig` + `legal_version`, `has_terms`, `has_privacy` — to every logged-in connection after a config or legal change |
@@ -1182,6 +1209,62 @@ content, created_at, edited_at }`. `author_id` is null for automatic
 entries: the server posts a `legal` one whenever `admin.legal.set` changes
 the Terms or Privacy Policy. Read state is one `last_read_id` per account.
 
+### Discord link
+Only on servers whose owner gave the server a Discord bot token
+(`server.info` → `discord_link: true`); anywhere else every request here
+fails with `discord_unavailable`.
+
+| type | direction | payload |
+|---|---|---|
+| `discord.get` | C→S | `{}` |
+| `discord.get.result` | S→C | `{ bot: DiscordBot, link: DiscordLink \| null }` |
+| `discord.link.start` | C→S | `{ app_url?, server? }` — the client's own base URL (`https://…/app/`) and the `?server=` value that points it here, so notifications can link back in; both optional |
+| `discord.link.start.result` | S→C | `{ code, expires_at }` — a one-time code like `ABCD-EF23`, good for 10 minutes; asking again replaces it |
+| `discord.unlink` | C→S | `{}` — `not_found` when you aren't linked |
+| `discord.unlink.result` | S→C | `{}` |
+| `discord.settings.set` | C→S | `{ notify?: { kind: bool }, only_when_away?, include_content? }` — partial; `not_found` when you aren't linked |
+| `discord.settings.set.result` | S→C | `{ link: DiscordLink }` |
+| `discord.sync` | C→S | `{ fields?: ["display_name" \| "avatar" \| "banner"] }` — all three when omitted. `discord_unavailable` while the bot is offline, `rate_limited` within 10 seconds of the last one |
+| `discord.sync.result` | S→C | `{ user: User, synced: [field], skipped: { field: reason } }` |
+| `discord.test` | C→S | `{}` — the bot DMs you a test notification now; `rate_limited` within 10 seconds of the last one |
+| `discord.test.result` | S→C | `{ delivered }` — false when Discord refused the DM |
+| `discord.link.updated` | S→C | `{ link: DiscordLink \| null }` — to all your connections whenever your link appears, changes or goes |
+
+**Linking.** The client gets a code with `discord.link.start` and the
+person gives it to the bot as `/nightcord link <code>` on Discord. The code
+proves the Nightcord account and the slash command the Discord one, so
+nothing else is asked. One Discord account links to one Nightcord account
+per server: linking again moves the link, and unlinks whatever either side
+had before. Five wrong codes from one Discord account within ten minutes
+make it wait. The bot also has `/nightcord account`, `notifications` (the
+same switches as `discord.settings.set`), `sync`, `test` and `unlink`, and
+answers only the person who asked.
+
+**Notifications** are DMs from the bot, gathered for two seconds so a
+burst arrives as one message (at most ten, then "…and N more"):
+
+| kind | when |
+|---|---|
+| `mentions` | a guild message mentions or replies to you (or `@everyone`), unless that channel or guild is set to `level: "none"` or you blocked the author |
+| `dms` | a message in a DM or group DM you're in, unless you muted it or set it to `none` |
+| `message_requests` | a first message from someone waiting in your Message Requests |
+| `friend_requests` | someone sends you a friend request |
+| `announcements` | a new Inbox announcement, including rule changes |
+
+Nothing is sent while your presence is `dnd`, while your account isn't
+active, or — with `only_when_away` — while you're on Nightcord. Each DM
+links back into the client you linked from (`app_url` + the route +
+`?server=`), when it gave one. Message text goes to Discord only with
+`include_content` on.
+
+**Sync** makes the profile match Discord: `display_name` from the Discord
+display name, `avatar` and `banner` from the Discord ones (cleared when
+Discord has none). Images are stored as the server's own media (§4 Media)
+and follow §8d: a banner needs `profile_banner`, and an animated avatar or
+banner arrives as a still image without `animated_media`. What can't be
+copied is listed in `skipped` and the rest still happens. Bots can't read
+Discord bios or pronouns, so those stay as they are.
+
 ### Messaging
 | type | direction | payload |
 |---|---|---|
@@ -1493,7 +1576,8 @@ server-side failure; safe to retry), `setup_required`,
 privacy doesn't let you message them), `request_pending` (your message
 request hasn't been accepted yet), `already_friends`, `not_friends` (group
 DMs only take your friends), `embeds_disabled` (this server doesn't build
-link previews), `poll_ended` (that poll has closed).
+link previews), `poll_ended` (that poll has closed), `discord_unavailable`
+(this server has no Discord bot, or it's offline right now).
 This list will grow — append here rather than inventing undocumented codes.
 
 ---

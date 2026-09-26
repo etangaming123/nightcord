@@ -77,6 +77,8 @@ async def request(ctx, conn, payload):
         await _became_friends(ctx, conn.user_id, other)
     elif mine != "outgoing":
         ctx.db.set_relationships(conn.user_id, other, "outgoing", "incoming")
+        if ctx.discord is not None:
+            ctx.discord.on_friend_request(conn.user_id, other)
     await _push_both(ctx, conn.user_id, other)
     return {"relationship": ctx.db.get_relationship(conn.user_id, other)}
 

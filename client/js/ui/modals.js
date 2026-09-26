@@ -430,6 +430,8 @@ export function openFullscreen({ sections, initial, onClose, title, route = null
 }
 
 export const fullscreenOpen = () => !!page;
+// Which section of the open full-screen page is showing, if any.
+export const fullscreenSection = () => page?.active() ?? null;
 // Redraws the open section, keeping anything the user has typed but not saved.
 export const refreshFullscreen = () => page && page.show(page.active(), { keepEdits: true });
 

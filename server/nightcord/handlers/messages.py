@@ -209,6 +209,8 @@ async def send(ctx, conn, payload):
     message["guild_id"] = channel["guild_id"]
     await ctx.hub.send_to_channel_viewers(channel, P.frame(P.MESSAGE_NEW, message))
     spawn_embeds(ctx, channel, message)
+    if ctx.discord is not None:
+        ctx.discord.on_message(channel, message, pinged)
     return {"message_id": message["message_id"], "message": message}
 
 
@@ -276,6 +278,8 @@ async def forward(ctx, conn, payload):
     message["guild_id"] = target["guild_id"]
     await ctx.hub.send_to_channel_viewers(target, P.frame(P.MESSAGE_NEW, message))
     spawn_embeds(ctx, target, message)
+    if ctx.discord is not None:
+        ctx.discord.on_message(target, message, pinged)
     return {"message_id": message["message_id"], "message": message}
 
 

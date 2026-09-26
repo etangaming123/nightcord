@@ -38,6 +38,8 @@ async def post(ctx, author_id: str | None, kind: str, content: str) -> dict:
     """Creates an announcement and tells everyone online."""
     item = ctx.db.create_announcement(author_id, kind, content)
     await ctx.hub.send_to_everyone(P.frame(P.ANNOUNCEMENT_CREATED, item))
+    if ctx.discord is not None:
+        ctx.discord.on_announcement(item)
     return item
 
 

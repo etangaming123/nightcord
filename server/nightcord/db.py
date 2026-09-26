@@ -384,6 +384,20 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX embed_cache_expires ON embed_cache(expires_at)
     """,
+    # 13 — Discord link (PROTOCOL.md §5 Discord link): one Discord account per
+    # Nightcord account, what its bot may DM them about, and where the
+    # client lives, so a notification can link back into it.
+    """
+    CREATE TABLE discord_links (
+        user_id           TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+        discord_id        TEXT NOT NULL UNIQUE,
+        discord_username  TEXT NOT NULL,
+        linked_at         TEXT NOT NULL,
+        settings          TEXT NOT NULL DEFAULT '{}',
+        app_url           TEXT,
+        server_address    TEXT
+    )
+    """,
 ]
 
 MIGRATION_2 = """
@@ -975,6 +989,7 @@ class Database:
             self._exec("DELETE FROM saved_messages WHERE user_id = ?", user_id)
             self._exec("DELETE FROM user_notes WHERE user_id = ? OR target_id = ?", user_id, user_id)
             self._exec("DELETE FROM user_badges WHERE user_id = ?", user_id)
+            self._exec("DELETE FROM discord_links WHERE user_id = ?", user_id)
         return {"avatar_id": row["avatar_id"], "banner_id": row["banner_id"], "attachment_ids": attachment_ids}
 
     def search_users(self, query: str, *, exclude: str, limit: int = 20) -> list[dict]:
@@ -2417,6 +2432,70 @@ class Database:
                 user_id, target_id, level, int(muted),
             )
         return {"target_id": target_id, "level": level, "muted": muted}
+
+    # --- Discord link (PROTOCOL.md §5 Discord link) -----------------------------
+
+    @staticmethod
+    def discord_link_of(r: sqlite3.Row) -> dict:
+        stored = json.loads(r["settings"] or "{}")
+        notify = stored.get("notify") or {}
+        return {
+            "discord_id": r["discord_id"],
+            "discord_username": r["discord_username"],
+            "linked_at": r["linked_at"],
+            "notify": {k: bool(notify.get(k, True)) for k in P.DISCORD_NOTIFY_KINDS},
+            "only_when_away": bool(stored.get("only_when_away", True)),
+            "include_content": bool(stored.get("include_content", True)),
+        }
+
+    def discord_link_row(self, user_id: str) -> sqlite3.Row | None:
+        return self._one("SELECT * FROM discord_links WHERE user_id = ?", user_id)
+
+    def discord_link(self, user_id: str) -> dict | None:
+        r = self.discord_link_row(user_id)
+        return self.discord_link_of(r) if r else None
+
+    def user_id_for_discord(self, discord_id: str) -> str | None:
+        r = self._one("SELECT user_id FROM discord_links WHERE discord_id = ?", discord_id)
+        return r["user_id"] if r else None
+
+    def set_discord_link(
+        self, user_id: str, discord_id: str, discord_username: str, *, app_url: str | None, server_address: str | None
+    ) -> dict:
+        """Links user_id to discord_id, replacing any link either side had.
+        Relinking the same Discord account keeps the notification settings."""
+        with self._tx():
+            old = self.discord_link_row(user_id)
+            settings = old["settings"] if old and old["discord_id"] == discord_id else "{}"
+            self._exec("DELETE FROM discord_links WHERE user_id = ? OR discord_id = ?", user_id, discord_id)
+            self._exec(
+                "INSERT INTO discord_links(user_id, discord_id, discord_username, linked_at, settings, app_url, "
+                "server_address) VALUES (?,?,?,?,?,?,?)",
+                user_id, discord_id, discord_username, now_iso(), settings, app_url, server_address,
+            )
+        return self.discord_link(user_id)
+
+    def update_discord_link(self, user_id: str, *, settings: dict | None = None, discord_username: str | None = None) -> dict | None:
+        r = self.discord_link_row(user_id)
+        if r is None:
+            return None
+        if settings is not None:
+            merged = {**json.loads(r["settings"] or "{}"), **settings}
+            self._exec("UPDATE discord_links SET settings = ? WHERE user_id = ?", json.dumps(merged), user_id)
+        if discord_username:
+            self._exec("UPDATE discord_links SET discord_username = ? WHERE user_id = ?", discord_username, user_id)
+        return self.discord_link(user_id)
+
+    def delete_discord_link(self, user_id: str) -> bool:
+        return self._exec("DELETE FROM discord_links WHERE user_id = ?", user_id).rowcount > 0
+
+    def discord_linked_user_ids(self) -> list[str]:
+        """Active accounts with a Discord link."""
+        return [
+            r["user_id"] for r in self._all(
+                "SELECT d.user_id FROM discord_links d JOIN users u ON u.user_id = d.user_id WHERE u.status = 'active'"
+            )
+        ]
 
     # --- invites -------------------------------------------------------------
 

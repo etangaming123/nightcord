@@ -772,6 +772,7 @@ export class PreviewServer {
       legal_version: this.legal.version,
       has_terms: !!this.legal.terms,
       has_privacy: !!this.legal.privacy,
+      discord_link: true,
     };
   }
 }

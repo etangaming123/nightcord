@@ -99,7 +99,7 @@ async def upload(request: web.Request) -> web.StreamResponse:
         return _error(ctx, request, 400, P.BAD_REQUEST, f"'kind' must be one of {', '.join(P.MEDIA_KINDS)}")
     if ctx.db.pending_media_count(user_id) >= MAX_PENDING_MEDIA:
         return _error(ctx, request, 429, P.RATE_LIMITED, "Too many unused uploads; wait a bit")
-    limit, max_dim = P.MEDIA_KINDS[kind]
+    limit, _ = P.MEDIA_KINDS[kind]
     too_big = f"Images for this can be at most {limit // 1024} KB"
     if request.content_length is not None and request.content_length > limit:
         return _error(ctx, request, 413, P.FILE_TOO_LARGE, too_big)
@@ -110,24 +110,42 @@ async def upload(request: web.Request) -> web.StreamResponse:
             return _error(ctx, request, 413, P.FILE_TOO_LARGE, too_big)
         chunks.append(chunk)
     data = b"".join(chunks)
+    problem = image_problem(data, kind)
+    if problem is not None:
+        return _error(ctx, request, *problem)
+    return web.json_response({"media": save_media(ctx, user_id, kind, data)}, headers=cors_headers(ctx, request))
+
+
+def image_problem(data: bytes, kind: str) -> tuple[int, str, str] | None:
+    """What's wrong with `data` as an image of `kind`, as (HTTP status, error
+    code, message), or None when it's fine. The size limit is checked here
+    too, for callers that didn't stream it in."""
+    limit, max_dim = P.MEDIA_KINDS[kind]
+    if len(data) > limit:
+        return 413, P.FILE_TOO_LARGE, f"Images for this can be at most {limit // 1024} KB"
     content_type = F.sniff(data[:4096], "image")
     info = F.image_info(data) if content_type in P.MEDIA_TYPES else None
     if info is None:
-        return _error(ctx, request, 415, P.MEDIA_INVALID, "Images must be PNG, JPEG, GIF or WebP")
-    width, height, animated = info
+        return 415, P.MEDIA_INVALID, "Images must be PNG, JPEG, GIF or WebP"
+    width, height, _ = info
     if not width or not height:
-        return _error(ctx, request, 415, P.MEDIA_INVALID, "That image has no size")
+        return 415, P.MEDIA_INVALID, "That image has no size"
     if max_dim and (width > max_dim or height > max_dim):
-        return _error(ctx, request, 400, P.MEDIA_INVALID, f"Images for this can be at most {max_dim}×{max_dim} pixels")
+        return 400, P.MEDIA_INVALID, f"Images for this can be at most {max_dim}×{max_dim} pixels"
+    return None
+
+
+def save_media(ctx, user_id: str, kind: str, data: bytes) -> dict:
+    """Stores an image image_problem() passed as an unclaimed upload by user_id."""
+    width, height, animated = F.image_info(data)
     media_id = new_id()
     folder = media_dir(ctx)
     folder.mkdir(parents=True, exist_ok=True)
     (folder / media_id).write_bytes(data)
-    media = ctx.db.create_media(
-        media_id, uploader_id=user_id, kind=kind, content_type=content_type, size=size, width=width, height=height,
-        animated=animated,
+    return ctx.db.create_media(
+        media_id, uploader_id=user_id, kind=kind, content_type=F.sniff(data[:4096], "image"), size=len(data),
+        width=width, height=height, animated=animated,
     )
-    return web.json_response({"media": media}, headers=cors_headers(ctx, request))
 
 
 async def serve(request: web.Request) -> web.StreamResponse:

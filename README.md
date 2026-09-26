@@ -69,6 +69,10 @@ A web-based messaging app, built for selfhosting. A parody of Discord.
   after an hour (or whenever you like) and nobody sees it while you're invisible.
 - **Private notes** on people, readable only by you
 - **Badges:** the server owner uploads their own and hands them out, plus a blue Verified check that's built in
+- **Discord link**, if the server owner [sets up a bot](#discord-bot-optional): link your Discord account in
+  *Settings → Connections*, get mentions, DMs, requests and announcements as Discord DMs while you're away (each one
+  switchable), and copy your Discord name, avatar and banner over with `/nightcord sync`. Yes, the Discord parody
+  can ping you on Discord.
 
 ### Running a server
 - Roles and permissions with per-channel overrides, kicks, bans, timeouts and audit logs
@@ -171,6 +175,31 @@ serve `site/` at the root and `client/` at `/app/`.
 > Deep links like `/app/servers/…` don't exist as files. GitHub Pages serves `site/404.html` for them, which bounces
 > to `/app/?route=…` and the client puts the address back. On another host, point unknown paths under `/app/` at that
 > 404 page (or just at `/app/?route=<the rest>`); without it, links and reloads land on `/app/` instead.
+
+### Discord bot (optional)
+Give your server its own Discord bot and people can link their Nightcord account to their Discord account: the bot
+DMs them about mentions, DMs, message and friend requests and announcements while they're away, and
+`/nightcord sync` copies their Discord display name, avatar and banner onto their Nightcord profile. One bot per
+Nightcord server; the server runs it itself, so there's nothing else to keep running.
+
+1. Make an application in the [Discord Developer Portal](https://discord.com/developers/applications). Under
+   *Installation*, tick **User Install** (and Guild Install if you like), with the `applications.commands` scope.
+   Under *Bot*, reset and copy the token. No privileged intents needed.
+2. Install discord.py next to the server: `pip install -r requirements-discord.txt`
+3. Put the token in `nightcord.toml` as `discord_token = "..."`, or in the `NIGHTCORD_DISCORD_TOKEN` environment
+   variable to keep it out of the file. Restart. The log says when the bot's logged in, with the link to add it.
+4. Everyone else: *Settings → Connections* in the client walks you through it. Add the bot to your Discord account,
+   press *Get a code*, then type `/nightcord link` on Discord and paste it. After that, `/nightcord notifications`,
+   `sync`, `test`, `account` and `unlink` all work from anywhere on Discord, and only you see the replies.
+
+> [!WARNING]
+> **Notifications go through Discord.** With the text switched on (the default), Discord gets to read the messages
+> it's telling you about. Each person can turn the text off, or turn notifications off, in *Settings → Connections*.
+> The server also makes outbound requests to Discord for as long as the bot runs.
+
+> [!NOTE]
+> Discord doesn't let every bot DM everyone. If `/nightcord test` says it can't DM you, keep the bot added to your
+> account, allow DMs from apps in Discord's *Content & Social* settings, or share a Discord server with the bot.
 
 ## Customising
 

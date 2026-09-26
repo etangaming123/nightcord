@@ -1700,3 +1700,16 @@ canvas.still { display: block; }
 .pad-x { padding: 0 8px; }
 .account-footer { border-top: 1px solid var(--line); margin-top: 8px; padding: 10px 8px 4px; }
 
+
+/* Settings → Connections (ui/connections.js) */
+.link-steps { margin: 0 0 16px; padding-left: 22px; display: grid; gap: 18px; }
+.link-steps li { padding-left: 4px; }
+.link-steps li > * { display: block; margin-top: 6px; }
+.link-steps li > strong { margin-top: 0; }
+.link-steps li > .btn { display: inline-flex; }
+.link-steps li::marker { font-weight: 700; color: var(--text-2); }
+.discord-code { display: grid; gap: 4px; }
+.discord-code-value { font-size: 22px; font-weight: 700; letter-spacing: .12em; padding: 6px 12px; border-radius: 8px; background: var(--bg-1); border: 1px solid var(--line); }
+.discord-command { width: fit-content; max-width: 100%; padding: 4px 8px; border-radius: 6px; background: var(--bg-1); font-size: 13px; overflow-wrap: anywhere; }
+.discord-actions { margin: 12px 0; }
+.discord-options { margin-top: 10px; }

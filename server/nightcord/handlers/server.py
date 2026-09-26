@@ -67,6 +67,7 @@ async def info(ctx, conn, payload):
         **legal_info(ctx),
         "protocol_version": P.PROTOCOL_VERSION,
         "setup_required": setup_required(ctx),
+        "discord_link": ctx.discord is not None,
     }
 
 

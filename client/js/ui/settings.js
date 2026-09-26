@@ -16,6 +16,7 @@ import { profileBanner, profileThemeAttrs } from "./names.js";
 import { closeFullscreen, confirmAction, confirmModal, openFullscreen, refreshFullscreen, toast } from "./modals.js";
 import { scopedT } from "../strings.js";
 import { icon } from "./icons.js";
+import { connections, discordAvailable } from "./connections.js";
 
 const t = scopedT("ui/settings");
 const tl = scopedT("ui/links");
@@ -37,6 +38,7 @@ export function userSettings(actions, initial) {
       { id: "profile", label: t("section_profile"), render: (el) => profile(el, actions) },
       { id: "privacy", label: t("section_privacy"), render: (el) => privacy(el, actions) },
       { id: "devices", label: t("section_devices"), render: (el) => devices(el, actions) },
+      discordAvailable() ? { id: "connections", label: t("section_connections"), render: (el) => connections(el, actions) } : null,
       { heading: t("heading_app_settings") },
       { id: "appearance", label: t("section_appearance"), render: (el) => appearance(el, actions) },
       { id: "notifications", label: t("section_notifications"), render: (el) => notifications(el, actions) },

@@ -2,7 +2,7 @@
 // server/nightcord/protocol.py — edit that file, then regenerate. Both follow
 // docs/PROTOCOL.md; server/tests/test_protocol_sync.py checks all three agree.
 
-export const PROTOCOL_VERSION = "0.18";
+export const PROTOCOL_VERSION = "0.19";
 
 export const T = Object.freeze({
   SETUP_CLAIM: "setup.claim",
@@ -305,6 +305,19 @@ export const T = Object.freeze({
   ANNOUNCEMENT_UPDATED: "announcement.updated",
   ANNOUNCEMENT_DELETED: "announcement.deleted",
   ANNOUNCEMENT_ACKED: "announcement.acked",
+  DISCORD_GET: "discord.get",
+  DISCORD_GET_RESULT: "discord.get.result",
+  DISCORD_LINK_START: "discord.link.start",
+  DISCORD_LINK_START_RESULT: "discord.link.start.result",
+  DISCORD_UNLINK: "discord.unlink",
+  DISCORD_UNLINK_RESULT: "discord.unlink.result",
+  DISCORD_SETTINGS_SET: "discord.settings.set",
+  DISCORD_SETTINGS_SET_RESULT: "discord.settings.set.result",
+  DISCORD_SYNC: "discord.sync",
+  DISCORD_SYNC_RESULT: "discord.sync.result",
+  DISCORD_TEST: "discord.test",
+  DISCORD_TEST_RESULT: "discord.test.result",
+  DISCORD_LINK_UPDATED: "discord.link.updated",
   ERROR: "error",
 });
 
@@ -318,6 +331,7 @@ export const ERR = Object.freeze({
   BLOCKED: "blocked",
   CONTENT_TOO_LONG: "content_too_long",
   DEVICE_BANNED: "device_banned",
+  DISCORD_UNAVAILABLE: "discord_unavailable",
   DM_LIMIT: "dm_limit",
   DM_NOT_ALLOWED: "dm_not_allowed",
   EMBEDS_DISABLED: "embeds_disabled",
