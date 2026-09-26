@@ -888,7 +888,8 @@ a.embed-title:hover { text-decoration: underline; }
 
 /* ---------- popovers, menus, emoji picker, profile ---------- */
 .popover {
-  position: fixed; z-index: 80; background: var(--bg-1); border: 1px solid var(--line); border-radius: 10px;
+  /* Above .sheet-root (85): a profile sheet's menus open over it. */
+  position: fixed; z-index: 86; background: var(--bg-1); border: 1px solid var(--line); border-radius: 10px;
   box-shadow: var(--shadow); animation: pop .1s ease-out; max-height: calc(100vh - 16px); overflow-y: auto;
 }
 .menu { display: grid; padding: 6px; min-width: 220px; }
@@ -927,6 +928,13 @@ a.embed-title:hover { text-decoration: underline; }
 .sheet .menu { min-width: 0; padding: 0; background: var(--bg-2); border-radius: 10px; }
 .sheet .menu-item { padding: 13px 14px; font-size: 16px; }
 .sheet .menu-icon { width: 22px; }
+.sheet.profile-sheet { max-height: 88vh; padding: 0 0 env(safe-area-inset-bottom); position: relative; }
+/* The handle floats over the banner rather than pushing the profile down. */
+.profile-sheet .sheet-handle { position: absolute; top: 6px; left: 50%; margin: 0 0 0 -20px; z-index: 1; background: rgba(255,255,255,.6); }
+.profile-sheet .profile-banner { height: 90px; }
+.profile-sheet .profile-avatar { top: 44px; }
+.profile-sheet .profile-card { margin-top: 56px; }
+.profile-sheet .profile-actions .btn { padding-block: 10px; }
 @media (prefers-reduced-motion: reduce) {
   .sheet-root, .sheet, .msg:not(.swiping) { transition: none; }
 }

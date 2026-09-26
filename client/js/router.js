@@ -176,7 +176,9 @@ export const appUrl = (path) => `${ENABLED ? `${location.origin}${APP_BASE}` : H
 
 // Called after every render (render.js flush) and when an overlay changes.
 export function sync() {
-  if (!ENABLED || !started || applying) return;
+  // skipPop: one of our history.back() calls hasn't landed yet; pushing now
+  // would get undone by it. onPop syncs once it has.
+  if (!ENABLED || !started || applying || skipPop) return;
   const path = currentPath();
   if (path === null) return;
   const place = currentPath(false);
@@ -289,7 +291,7 @@ export async function apply(route) {
 }
 
 async function onPop() {
-  if (skipPop) { skipPop--; return; }
+  if (skipPop) { skipPop--; sync(); return; }
   if (!started) return;
   if (sheetOpen()) { closeSheet(); return; }
   const route = parseRoute(location.pathname);

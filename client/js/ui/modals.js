@@ -25,6 +25,7 @@ export const modalOpen = () => !!current;
 export function openModal({ title, subtitle, content, actions = [], onClose, wide = false, dismissable = true, cls = "" }) {
   closeModal();
   closePopover();
+  closeSheet(); // it would sit on top of the modal
   const modal = h(
     "div",
     { class: `modal ${wide ? "wide" : ""} ${cls}`, role: "dialog", "aria-modal": "true", "aria-label": title },
@@ -269,6 +270,9 @@ const SHEET_DRAG_CLOSE_PX = 80;
 
 export const sheetOpen = () => !!sheet;
 
+// A phone: touch only and narrow. Profiles open as a sheet there, not a popover.
+export const phoneUi = () => matchMedia("(hover: none) and (pointer: coarse) and (max-width: 720px)").matches;
+
 export function closeSheet() {
   if (!sheet) return;
   const { el, onKey, onClose } = sheet;
@@ -283,13 +287,14 @@ export function closeSheet() {
 }
 
 // top: an optional row above the items (e.g. quick reactions).
-export function openSheet({ label, top = null, items = [], onClose } = {}) {
+// content: something else to show instead of a list of items (a profile).
+export function openSheet({ label, top = null, items = [], content = null, cls = "", onClose } = {}) {
   closeSheet();
   closePopover();
-  const panel = h("div", { class: "sheet", role: "dialog", "aria-modal": "true", "aria-label": label },
+  const panel = h("div", { class: `sheet ${cls}`, role: "dialog", "aria-modal": "true", "aria-label": label },
     h("div", { class: "sheet-handle", "aria-hidden": "true" }),
     top,
-    menuList(items, closeSheet));
+    content || menuList(items, closeSheet));
   const el = h("div", { class: "sheet-root", on: { click: (e) => { if (e.target === el) closeSheet(); } } }, panel);
   // Drag the panel down to dismiss it (only from its top, so lists can scroll).
   let startY = null;
@@ -343,6 +348,7 @@ export function closeFullscreen({ reopening = false } = {}) {
 export function openFullscreen({ sections, initial, onClose, title, route = null }) {
   closeFullscreen({ reopening: true });
   closePopover();
+  closeSheet();
   const nav = h("nav", { class: "fs-nav", "aria-label": title });
   const body = h("div", { class: "fs-body" });
   const content = h("div", { class: "fs-content" });
