@@ -12,13 +12,19 @@ from __future__ import annotations
 import ipaddress
 import secrets
 
+import shutil
+
+from .. import embeds as E
 from .. import protocol as P
+from .. import storage
 from ..db import iso_in
 from ..protocol import ProtocolError
 from . import handles
 from ._access import ADMIN, MODERATOR, OWNER, require_guild, require_outranks, require_staff, staff_level
 from .auth import hash_password
 from .guilds import remove_guild
+from . import media as media_routes
+from . import proxy as proxy_routes
 
 USER_STATUSES = ("pending", "active", "rejected", "disabled")
 # Allowed admin.users.set_status transitions.
@@ -53,7 +59,21 @@ async def users_list(ctx, conn, payload):
     require_staff(conn, MODERATOR)
     status = P.opt_enum(payload, "status", USER_STATUSES)
     query = P.opt_text(payload, "query", 64) or None
-    return {"users": ctx.db.list_users(status=status, query=query)}
+    flags = payload.get("flags") or []
+    if not isinstance(flags, list) or any(f not in P.ADMIN_USER_FLAGS for f in flags):
+        raise ProtocolError(P.BAD_REQUEST, f"'flags' must be a list of {P.ADMIN_USER_FLAGS}")
+    users = ctx.db.list_users(
+        status=status, query=query,
+        sort=P.opt_enum(payload, "sort", P.ADMIN_USER_SORTS) or "joined",
+        order=P.opt_enum(payload, "order", ("asc", "desc")) or "asc",
+        flags=[f for f in flags if f != "online"],
+        seen=P.opt_enum(payload, "seen", P.ADMIN_USER_SEEN),
+        joined=P.opt_enum(payload, "joined", P.ADMIN_USER_JOINED),
+        only_ids=ctx.hub.online_user_ids() if "online" in flags else None,
+    )
+    for u in users:
+        u["online"] = ctx.hub.is_online(u["user_id"])
+    return {"users": users}
 
 
 @handles(P.ADMIN_USERS_SET_STATUS)
@@ -245,6 +265,44 @@ async def device_bans_remove(ctx, conn, payload):
 
 
 # --- server overview ------------------------------------------------------------
+
+
+@handles(P.ADMIN_STORAGE)
+async def storage_usage(ctx, conn, payload):
+    """Data tab: how much space everything takes (owner only; it shows the
+    whole server's footprint)."""
+    require_staff(conn, OWNER)
+    return storage.breakdown(ctx.db, ctx.config.data_dir)
+
+
+@handles(P.ADMIN_STORAGE_ACTION)
+async def storage_action(ctx, conn, payload):
+    require_staff(conn, OWNER)
+    action = P.opt_enum(payload, "action", P.STORAGE_ACTIONS)
+    if action is None:
+        raise ProtocolError(P.BAD_REQUEST, f"'action' must be one of {P.STORAGE_ACTIONS}")
+    details: dict = {}
+    if action == "clear_previews":
+        # Stored previews on messages stay; only the cache and the proxied
+        # files go, and come back the next time someone views them.
+        E.cache_clear()
+        details["rows"] = ctx.db.embed_cache_clear()
+        folder = proxy_routes.proxy_dir(ctx)
+        if folder.is_dir():
+            shutil.rmtree(folder, ignore_errors=True)
+    elif action == "vacuum":
+        before = ctx.db.conn.execute("PRAGMA page_count").fetchone()[0]
+        ctx.db.conn.execute("VACUUM")
+        ctx.db.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        after = ctx.db.conn.execute("PRAGMA page_count").fetchone()[0]
+        details["pages_freed"] = before - after
+    elif action == "purge_unclaimed":
+        # Five minutes' grace so an upload someone is finishing right now survives.
+        details["files"] = media_routes.sweep(ctx, max_age=300)
+    _audit(ctx, conn, f"storage.{action}", None, details)
+    return storage.breakdown(ctx.db, ctx.config.data_dir)
+
+
 
 
 @handles(P.ADMIN_AUDIT_LOG)

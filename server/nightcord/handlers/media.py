@@ -152,9 +152,10 @@ async def serve(request: web.Request) -> web.StreamResponse:
     })
 
 
-def sweep(ctx) -> int:
-    """Deletes uploads never claimed, and files without a row. Returns files removed."""
-    stale = ctx.db.stale_media_ids(iso_in(-UNCLAIMED_TTL_SECONDS))
+def sweep(ctx, max_age: int = UNCLAIMED_TTL_SECONDS) -> int:
+    """Deletes uploads never claimed (older than max_age seconds), and files
+    without a row. Returns files removed."""
+    stale = ctx.db.stale_media_ids(iso_in(-max_age))
     folder = media_dir(ctx)
     for media_id in stale:
         (folder / media_id).unlink(missing_ok=True)

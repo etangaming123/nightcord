@@ -2,6 +2,7 @@
 // can't inject markup.
 
 import { scopedT } from "../strings.js";
+import { hasIcon, icon } from "./icons.js";
 
 const t = scopedT("ui/dom");
 
@@ -58,6 +59,10 @@ export function displayName(user) {
 // Where avatar images and files live: the server's https origin (same host as /ws).
 let avatarBase = null;
 let httpBase = null;
+// The preview (client/js/preview) has no https origin: it answers server
+// paths like /media/123 or /files/… itself, with data: and blob: URLs.
+let resolveUrl = null;
+export const setUrlResolver = (fn) => { resolveUrl = fn; };
 export function setAvatarBase(wsUrl) {
   if (!wsUrl) { avatarBase = null; httpBase = null; return; }
   const u = new URL(wsUrl);
@@ -69,12 +74,17 @@ export function setAvatarBase(wsUrl) {
 // Image references (PROTOCOL.md §4 User): "123.png" is a small upload under
 // /avatars/, "123" a /media upload and "a_123" an animated one.
 const MEDIA_REF = /^(a_)?(\d{1,20})$/;
-export const mediaUrl = (mediaId) => (httpBase && mediaId ? `${httpBase}/media/${encodeURIComponent(mediaId)}` : null);
+export const mediaUrl = (mediaId) => {
+  if (!mediaId) return null;
+  if (resolveUrl) return resolveUrl(`/media/${mediaId}`);
+  return httpBase ? `${httpBase}/media/${encodeURIComponent(mediaId)}` : null;
+};
 export const isAnimatedRef = (ref) => typeof ref === "string" && ref.startsWith("a_");
 export function avatarUrl(ref) {
   if (!ref) return null;
   const m = MEDIA_REF.exec(ref);
   if (m) return mediaUrl(m[2]);
+  if (resolveUrl) return resolveUrl(`/avatars/${ref}`);
   return avatarBase ? avatarBase + encodeURIComponent(ref) : null;
 }
 export const imageUrl = avatarUrl;
@@ -103,7 +113,7 @@ export function imageEl(ref, { animate = true, alt = "", cls = "", lazy = true }
   return canvas;
 }
 // An absolute URL for a server path like /files/… or /upload.
-export const serverUrl = (path) => (httpBase ? httpBase + path : null);
+export const serverUrl = (path) => (resolveUrl ? resolveUrl(path) : httpBase ? httpBase + path : null);
 
 export function fmtBytes(n) {
   if (n < 1024) return `${n} B`;
@@ -139,11 +149,12 @@ export function initials(name) {
   return letters.join("").toUpperCase();
 }
 
+// glyph: an icon name from icons.js, or any node/text (e.g. an emoji).
 export function iconBtn(glyph, label, onClick, { cls = "" } = {}) {
   return h("button", {
     class: `icon-btn ${cls}`, type: "button", title: label, "aria-label": label,
     on: { click: (e) => { e.stopPropagation(); onClick(e); } },
-  }, glyph);
+  }, hasIcon(glyph) ? icon(glyph) : glyph);
 }
 
 // Compare snowflake id strings numerically.
@@ -157,3 +168,66 @@ const shortFmt = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 const fullFmt = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 export const fmtDate = (iso) => (iso ? shortFmt.format(new Date(iso)) : "");
 export const fmtDateTime = (iso) => (iso ? fullFmt.format(new Date(iso)) : "");
+
+// Message times, Discord-style and the same on every browser: "Today at
+// 3:18pm", "Yesterday at 3:00am", "13/11/26 at 12:00pm". The date order and
+// clock come from Appearance (prefs.dateFormat / prefs.clock), handed in by
+// main.js — importing prefs.js here would make an import cycle.
+let stampPrefs = () => ({});
+export const setStampPrefs = (get) => { stampPrefs = get; };
+const pad = (n) => String(n).padStart(2, "0");
+const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+export function fmtClock(date, { clock = stampPrefs().clock } = {}) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (clock === "24h") return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getHours() % 12 || 12}:${pad(d.getMinutes())}${d.getHours() < 12 ? "am" : "pm"}`;
+}
+
+export function fmtShortDate(date, { dateFormat = stampPrefs().dateFormat } = {}) {
+  const d = date instanceof Date ? date : new Date(date);
+  const [dd, mm, yy] = [pad(d.getDate()), pad(d.getMonth() + 1), pad(d.getFullYear() % 100)];
+  if (dateFormat === "mdy") return `${mm}/${dd}/${yy}`;
+  if (dateFormat === "ymd") return `${yy}/${mm}/${dd}`;
+  return `${dd}/${mm}/${yy}`;
+}
+
+export function fmtStamp(date, opts = {}) {
+  if (!date) return "";
+  const d = date instanceof Date ? date : new Date(date);
+  const now = new Date();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const day = sameDay(d, now) ? t("today") : sameDay(d, yesterday) ? t("yesterday") : fmtShortDate(d, opts);
+  return t("stamp", { day, time: fmtClock(d, opts) });
+}
+
+const RELATIVE_UNITS = [
+  ["year", 31536000], ["month", 2592000], ["week", 604800], ["day", 86400],
+  ["hour", 3600], ["minute", 60], ["second", 1],
+];
+let relFmt = null;
+
+// "3 hours ago", "in 2 days": a Date or ISO string relative to now.
+export function fmtRelative(date) {
+  if (!date) return "";
+  const d = date instanceof Date ? date : new Date(date);
+  relFmt ??= new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+  const diff = (d.getTime() - Date.now()) / 1000;
+  for (const [unit, secs] of RELATIVE_UNITS) {
+    if (Math.abs(diff) >= secs || unit === "second") {
+      return relFmt.format(Math.round(diff / secs), unit);
+    }
+  }
+  return "";
+}
+
+// A "last seen" time in the viewer's chosen style (prefs.lastSeenFormat):
+// datetime | date | relative | both ("3 hours ago (25 Sept 2026, 9:40 am)").
+export function fmtSeen(iso, format) {
+  if (!iso) return "";
+  if (format === "date") return fmtDate(iso);
+  if (format === "relative") return fmtRelative(iso);
+  if (format === "both") return `${fmtRelative(iso)} (${fmtDateTime(iso)})`;
+  return fmtDateTime(iso);
+}

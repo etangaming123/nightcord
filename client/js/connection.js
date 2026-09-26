@@ -29,7 +29,12 @@ export function normalizeServerUrl(input) {
     // requires an explicit ws:// or http:// prefix.
     s = `wss://${s}`;
   }
-  const url = new URL(s);
+  let url;
+  try {
+    url = new URL(s);
+  } catch {
+    throw new Error(t("invalid_server_address"));
+  }
   url.pathname = "/ws";
   url.search = "";
   url.hash = "";

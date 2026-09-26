@@ -1,15 +1,19 @@
 // Profile popout: avatar, names, status, bio, roles in this guild, and
 // actions (message, edit profile, moderation) the viewer is allowed to use.
+// On a phone it's a bottom sheet instead, like Discord's app.
 
 import { LIMITS, T } from "../protocol.js";
 import { STAFF_LABEL, can, customStatusOf, memberById, memberRoles, state, statusOf, userById } from "../state.js";
 import { add, avatar, clear, displayName, fmtDate, h, statusLabel } from "./dom.js";
-import { closePopover, confirmAction, openMenu, openPopover, repositionPopover, toast } from "./modals.js";
+import { closePopover, closeSheet, confirmAction, openMenu, openPopover, openSheet, phoneUi, repositionPopover, toast } from "./modals.js";
 import { renderInline } from "./markdown.js";
 import { badgeEl, badgeEls, nameAttrs, profileBanner, profileThemeAttrs, roleIconOf, roleSwatch } from "./names.js";
 import { scopedT } from "../strings.js";
 
 const t = scopedT("ui/profile");
+
+// Whichever the profile is in.
+const close = () => { closePopover(); closeSheet(); };
 
 export function openProfile(userId, anchor, actions, { placement = "right" } = {}) {
   const cached = userById(userId) || memberById(userId)?.user;
@@ -58,16 +62,17 @@ export function openProfile(userId, anchor, actions, { placement = "right" } = {
           ? h("p", { class: "timeout-note" }, t("timed_out_note", { until: new Date(member.timed_out_until).toLocaleString() })) : null,
         h("div", { class: "profile-actions" },
           me
-            ? h("button", { class: "btn wide", type: "button", on: { click: () => { closePopover(); actions.userSettings("profile"); } } }, t("edit_profile"))
-            : h("button", { class: "btn primary wide", type: "button", on: { click: () => { closePopover(); actions.messageUser(user.user_id); } } }, t("message_button")),
-          me && member && can("CHANGE_NICKNAME") ? h("button", { class: "btn wide", type: "button", on: { click: () => { closePopover(); actions.changeNickname(user.user_id); } } }, t("nickname_button")) : null,
+            ? h("button", { class: "btn wide", type: "button", on: { click: () => { close(); actions.userSettings("profile"); } } }, t("edit_profile"))
+            : h("button", { class: "btn primary wide", type: "button", on: { click: () => { close(); actions.messageUser(user.user_id); } } }, t("message_button")),
+          me && member && can("CHANGE_NICKNAME") ? h("button", { class: "btn wide", type: "button", on: { click: () => { close(); actions.changeNickname(user.user_id); } } }, t("nickname_button")) : null,
           !me ? friendButton(user, actions) : null,
           !me ? modButton(user, actions, member) : null)));
     repositionPopover();
   };
   if (cached) draw(cached);
   else add(body, h("p", { class: "muted pad" }, t("loading")));
-  if (!openPopover(anchor, body, { placement, cls: "profile-pop", key: `profile:${userId}` })) return;
+  if (phoneUi()) openSheet({ label: t("sheet_label"), content: body, cls: "profile-sheet" });
+  else if (!openPopover(anchor, body, { placement, cls: "profile-pop", key: `profile:${userId}` })) return;
   actions.req(T.USER_PROFILE, { user_id: userId }).then(({ user, note }) => {
     if (!body.isConnected) return;
     actions.applyUserNote({ user_id: userId, note });
@@ -151,7 +156,7 @@ function friendButton(user, actions) {
   const items = actions.friendItems(user.user_id);
   if (!items.length) return null;
   if (items[0].key === "add") {
-    return h("button", { class: "btn", type: "button", on: { click: () => { closePopover(); items[0].onClick(); } } }, t("add_friend_label"));
+    return h("button", { class: "btn", type: "button", on: { click: () => { close(); items[0].onClick(); } } }, t("add_friend_label"));
   }
   return h("button", {
     class: "btn", type: "button", "aria-haspopup": "menu",

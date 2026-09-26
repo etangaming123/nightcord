@@ -9,6 +9,7 @@ import { CHANNEL_PERM_KEYS, PERM_INFO } from "./guildSettings.js";
 import { closeFullscreen, confirmModal, openFullscreen, toast } from "./modals.js";
 import { normalizeChannelName } from "./dialogs.js";
 import { scopedT } from "../strings.js";
+import { icon } from "./icons.js";
 
 const t = scopedT("ui/channelSettings");
 
@@ -23,6 +24,7 @@ export function channelSettings(channel, actions, initial) {
   openFullscreen({
     title: t("settings_title", { title: titleOf(channel) }),
     initial,
+    route: { kind: "channel", guildId: channel.guild_id, channelId: channel.channel_id },
     sections: [
       { heading: titleOf(channel) },
       { id: "overview", label: t("tab_overview"), render: (el) => overview(el, channel, actions) },
@@ -137,7 +139,7 @@ function permissions(el, channel, actions) {
       }, glyph);
       add(grid, h("div", { class: "perm-row" },
         h("span", { class: "meta" }, h("span", { class: "name" }, labels[key].label), h("span", { class: "sub" }, labels[key].desc)),
-        h("span", { class: "tri-group", role: "group" }, btn("deny", "✕", t("deny_label")), btn("inherit", "／", t("inherit_label")), btn("allow", "✓", t("allow_label")))));
+        h("span", { class: "tri-group", role: "group" }, btn("deny", icon("x"), t("deny_label")), btn("inherit", icon("slash"), t("inherit_label")), btn("allow", icon("check"), t("allow_label")))));
     }
     add(grid, h("div", { class: "row sticky-actions" },
       h("button", {

@@ -71,6 +71,7 @@
   "theme_presets_aria": "Theme presets",
   "chat_font_size_label": "Chat font size",
   "compact_message_layout": "Compact message layout",
+  "twemoji_label": "Discord-style emoji (Twemoji) instead of your device's own",
   "colour_n_aria": "Colour {n}",
   "remove_colour_title": "Remove colour",
   "remove_colour_n_aria": "Remove colour {n}",
@@ -122,6 +123,7 @@
     "one": "1 other session ends right away.",
     "other": "{count} other sessions end right away."
   },
+  "auto_reconnect_label": "Reconnect to my last server on startup",
   "touch_grass_label": "Touch grass reminder",
   "touch_grass_hint": "After about three hours of unbroken use, suggest going outside. It's a parody app; it's also good advice.",
   "reminders_heading": "Reminders",
@@ -130,5 +132,13 @@
   "cancel_reminder": "Cancel",
   "shortcuts_heading": "Keyboard shortcuts",
   "shortcuts_note": "Ctrl+/ (⌘/ on a Mac) opens this list from anywhere.",
-  "shortcuts_button": "Show shortcuts"
+  "shortcuts_button": "Show shortcuts",
+  "last_seen_format_label": "Show \"last seen\" times as",
+  "last_seen_datetime": "Date and time (25 Sept 2026, 9:40 am)",
+  "last_seen_date": "Date (25 Sept 2026)",
+  "last_seen_relative": "Relative (3 hours ago)",
+  "last_seen_both": "Both (3 hours ago, with the date)",
+  "date_format_label": "Message dates",
+  "clock_label": "Message times",
+  "message_time_example": "Older messages look like: {example}"
 }

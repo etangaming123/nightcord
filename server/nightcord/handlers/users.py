@@ -8,6 +8,7 @@ import binascii
 import datetime as dt
 import logging
 import re
+import time
 
 from aiohttp import web
 
@@ -277,6 +278,7 @@ async def search(ctx, conn, payload):
 # --- custom statuses that clear themselves ------------------------------------
 
 STATUS_SWEEP_EVERY = 30
+SEEN_EVERY = 300  # how often live connections refresh their session's last_seen
 
 
 async def clear_expired_statuses(ctx) -> int:
@@ -290,13 +292,19 @@ async def clear_expired_statuses(ctx) -> int:
 
 
 async def status_sweeper(app: "web.Application") -> None:
+    """Clears expired custom statuses, and every SEEN_EVERY seconds marks the
+    sessions of everyone connected as seen (admin "last seen")."""
     from ..app import CTX_KEY
 
     ctx = app[CTX_KEY]
+    last_seen_touch = time.monotonic()
     while True:
         await asyncio.sleep(STATUS_SWEEP_EVERY)
         try:
             await clear_expired_statuses(ctx)
+            if time.monotonic() - last_seen_touch >= SEEN_EVERY:
+                last_seen_touch = time.monotonic()
+                ctx.db.touch_sessions(ctx.hub.live_session_tokens())
         except asyncio.CancelledError:
             raise
         except Exception:

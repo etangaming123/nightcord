@@ -1,11 +1,45 @@
 // localStorage wrapper. Every access is guarded: storage can be unavailable
 // (private windows, blocked site data) and the app must still work.
+//
+// While the preview runs (client/js/preview), storage is volatile: writes go
+// to memory and reads look there first, so trying things out never changes
+// what this browser remembers.
 
 const PREFIX = "nightcord.";
 
+let volatile = null; // Map of full key -> string while the preview runs
+
+export function setVolatile(on) {
+  volatile = on ? new Map() : null;
+}
+
+// Raw string access by full key, for modules that keep their own keys
+// (prefs.js, reminders.js, update-check.js).
+export function rawGet(key) {
+  if (volatile?.has(key)) return volatile.get(key);
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+export function rawSet(key, value) {
+  if (volatile) {
+    volatile.set(key, value);
+    return;
+  }
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch {
+    /* storage unavailable; nothing to do */
+  }
+}
+
 function read(key, fallback) {
   try {
-    const raw = localStorage.getItem(PREFIX + key);
+    const raw = rawGet(PREFIX + key);
     return raw === null ? fallback : JSON.parse(raw);
   } catch {
     return fallback;
@@ -13,12 +47,7 @@ function read(key, fallback) {
 }
 
 function write(key, value) {
-  try {
-    if (value === undefined || value === null) localStorage.removeItem(PREFIX + key);
-    else localStorage.setItem(PREFIX + key, JSON.stringify(value));
-  } catch {
-    /* storage unavailable; nothing to do */
-  }
+  rawSet(PREFIX + key, value === undefined || value === null ? null : JSON.stringify(value));
 }
 
 // Saved servers: [{ url, label, maxAccounts }], most recently used first.

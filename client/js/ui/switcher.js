@@ -6,6 +6,7 @@ import { dmTitle, nameOf, state, userById } from "../state.js";
 import { avatar, clear, h, initials } from "./dom.js";
 import { closeModal, openModal } from "./modals.js";
 import { scopedT } from "../strings.js";
+import { icon } from "./icons.js";
 
 const t = scopedT("ui/switcher");
 
@@ -34,7 +35,7 @@ function entries() {
       if (c.kind === "category") continue;
       const voice = c.kind === "voice";
       out.push({
-        kind: "channel", label: c.name, sub: g.name, icon: h("span", { class: "sw-hash", "aria-hidden": "true" }, voice ? "🔊" : "#"),
+        kind: "channel", label: c.name, sub: g.name, icon: h("span", { class: "sw-hash", "aria-hidden": "true" }, voice ? icon("volume-2") : "#"),
         go: (a) => (voice ? a.openGuild(g.guild_id).then(() => a.joinVoice(c)) : a.openGuild(g.guild_id, c.channel_id)),
       });
     }
@@ -45,7 +46,7 @@ function entries() {
     if (other) seen.add(other.user_id);
     out.push({
       kind: other ? "person" : "group", label: dmTitle(ch), sub: other ? other.username : t("group_label"),
-      icon: other ? avatar(userById(other.user_id) || other, { size: "xs" }) : h("span", { class: "sw-hash", "aria-hidden": "true" }, "👥"),
+      icon: other ? avatar(userById(other.user_id) || other, { size: "xs" }) : h("span", { class: "sw-hash", "aria-hidden": "true" }, icon("users")),
       go: (a) => a.openDm(ch.channel_id),
     });
   }

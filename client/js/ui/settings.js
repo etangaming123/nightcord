@@ -7,7 +7,7 @@ import { STAFF_LABEL, state } from "../state.js";
 import { lockedReason, userCan } from "../perks.js";
 import { MAX_THEME_COLORS, PRESETS, gradientCss, normalizeCustom } from "../themes.js";
 import { adminSections } from "./admin.js";
-import { add, avatar, clear, displayName, fmtDate, fmtDateTime, h } from "./dom.js";
+import { add, avatar, clear, displayName, fmtDate, fmtDateTime, fmtSeen, fmtStamp, h } from "./dom.js";
 import { cropImage } from "./cropper.js";
 import { pickImage, uploadImage } from "./images.js";
 import { renderInline } from "./markdown.js";
@@ -15,6 +15,7 @@ import { untrustDomain } from "./links.js";
 import { profileBanner, profileThemeAttrs } from "./names.js";
 import { closeFullscreen, confirmAction, confirmModal, openFullscreen, refreshFullscreen, toast } from "./modals.js";
 import { scopedT } from "../strings.js";
+import { icon } from "./icons.js";
 
 const t = scopedT("ui/settings");
 const tl = scopedT("ui/links");
@@ -29,6 +30,7 @@ export function userSettings(actions, initial) {
   openFullscreen({
     title: t("title_user_settings"),
     initial,
+    route: { kind: "settings" },
     sections: [
       { heading: t("title_user_settings") },
       { id: "account", label: t("section_my_account"), render: (el) => account(el, actions) },
@@ -111,7 +113,7 @@ function trustedDomainList() {
     h("p", { class: "muted small" }, tl("trusted_note")),
     domains.length
       ? h("div", { class: "list" }, domains.map((d) => h("div", { class: "list-row" },
-        h("span", { class: "list-icon", "aria-hidden": "true" }, "🔗"),
+        h("span", { class: "list-icon", "aria-hidden": "true" }, icon("link")),
         h("span", { class: "grow mono" }, d),
         h("button", {
           class: "btn small", type: "button",
@@ -297,7 +299,7 @@ function profile(el, actions) {
     h("div", { class: "field" },
       h("span", { class: "field-label" }, t("profile_banner_label")),
       bannerLocked
-        ? h("div", { class: "locked-note" }, "🔒 ", bannerLocked)
+        ? h("div", { class: "locked-note" }, icon("lock"), " ", bannerLocked)
         : h("div", { class: "row" },
           h("button", { class: "btn", type: "button", on: { click: changeBanner } }, me.banner_id ? t("change_banner") : t("upload_banner")),
           me.banner_id ? h("button", {
@@ -322,7 +324,7 @@ function profile(el, actions) {
     h("div", { class: "field" },
       h("span", { class: "field-label" }, t("profile_colours_label")),
       themeLocked
-        ? h("div", { class: "locked-note" }, "🔒 ", themeLocked)
+        ? h("div", { class: "locked-note" }, icon("lock"), " ", themeLocked)
         : h("div", { class: "row" },
           h("label", { class: "check" }, h("input", {
             type: "checkbox", checked: draft.themeOn, on: { change: (e) => { draft.themeOn = e.currentTarget.checked; drawPreview(); } },
@@ -373,10 +375,10 @@ async function devices(el, actions) {
   const list = h("div", { class: "list" });
   for (const s of sessions) {
     add(list, h("div", { class: "list-row" },
-      h("span", { class: "list-icon", "aria-hidden": "true" }, "💻"),
+      h("span", { class: "list-icon", "aria-hidden": "true" }, icon("laptop")),
       h("span", { class: "meta" },
         h("span", { class: "name" }, describeAgent(s.user_agent), s.current ? h("span", { class: "tag ok" }, t("this_device_tag")) : null),
-        h("span", { class: "sub" }, t("device_last_active", { lastActive: fmtDateTime(s.last_seen), signedIn: fmtDate(s.created_at) }))),
+        h("span", { class: "sub" }, t("device_last_active", { lastActive: fmtSeen(s.last_seen, getPrefs().lastSeenFormat), signedIn: fmtDate(s.created_at) }))),
       s.current ? null : h("button", {
         class: "btn", type: "button",
         on: {
@@ -443,7 +445,7 @@ function appearance(el, actions) {
         radio("theme", "system", t("theme_sync_system"), p.theme, (v) => setPrefs({ theme: v }))),
       p.themePreset && p.themePreset !== "default" && !locked ? h("span", { class: "muted small" }, t("theme_own_look_note")) : null),
     h("div", { class: "field" }, h("span", { class: "field-label" }, t("theme_label")),
-      locked ? h("div", { class: "locked-note" }, "🔒 ", locked) : null,
+      locked ? h("div", { class: "locked-note" }, icon("lock"), " ", locked) : null,
       presetCards),
     p.themePreset === "custom" && !locked ? themeEditor() : null,
     h("label", {}, t("chat_font_size_label"),
@@ -454,6 +456,14 @@ function appearance(el, actions) {
     h("label", { class: "check" }, h("input", {
       type: "checkbox", checked: p.compact, on: { change: (e) => setPrefs({ compact: e.currentTarget.checked }) },
     }), t("compact_message_layout")),
+    messageTimeFields(actions),
+    h("label", {}, t("last_seen_format_label"), lastSeenSelect()),
+    h("label", { class: "check" }, h("input", {
+      type: "checkbox", checked: p.twemoji, on: { change: (e) => setPrefs({ twemoji: e.currentTarget.checked }) },
+    }), t("twemoji_label")),
+    h("label", { class: "check" }, h("input", {
+      type: "checkbox", checked: p.autoReconnect, on: { change: (e) => setPrefs({ autoReconnect: e.currentTarget.checked }) },
+    }), t("auto_reconnect_label")),
     h("h3", {}, t("shortcuts_heading")),
     h("p", { class: "muted small" }, t("shortcuts_note")),
     h("div", {}, h("button", {
@@ -480,7 +490,7 @@ function themeEditor() {
       c.colors.length > 1 ? h("button", {
         class: "icon-btn", type: "button", title: t("remove_colour_title"), "aria-label": t("remove_colour_n_aria", { n: i + 1 }),
         on: { click: () => { c.colors.splice(i, 1); save({}, true); } },
-      }, "✕") : null)),
+      }, icon("x")) : null)),
     c.colors.length < MAX_THEME_COLORS ? h("button", {
       class: "btn", type: "button",
       on: { click: () => { c.colors.push(c.colors[c.colors.length - 1]); save({}, true); } },
@@ -548,7 +558,7 @@ function reminderList(actions) {
     h("p", { class: "muted small" }, t("reminders_note")),
     reminders.length
       ? h("div", { class: "list" }, reminders.map((r) => h("div", { class: "list-row" },
-        h("span", { class: "list-icon", "aria-hidden": "true" }, "⏰"),
+        h("span", { class: "list-icon", "aria-hidden": "true" }, icon("alarm-clock")),
         h("span", { class: "meta" },
           h("span", { class: "name" }, r.text),
           h("span", { class: "sub" }, fmtDateTime(new Date(r.at).toISOString()))),
@@ -557,6 +567,32 @@ function reminderList(actions) {
           on: { click: () => { actions.cancelReminder(r.id); refreshFullscreen(); } },
         }, t("cancel_reminder")))))
       : h("p", { class: "muted small" }, t("reminders_none")));
+}
+
+// How message timestamps read ("13/11/26 at 3:18pm"), with a live example.
+function messageTimeFields(actions) {
+  const example = h("span", { class: "muted small" });
+  const sample = new Date(2026, 10, 13, 15, 18);
+  const drawExample = () => { example.textContent = t("message_time_example", { example: fmtStamp(sample) }); };
+  const select = (key, label, options) => h("label", {}, label, h("select", {
+    on: { change: (e) => { setPrefs({ [key]: e.currentTarget.value }); drawExample(); actions.refreshChat(); } },
+  }, options.map(([v, text]) => h("option", { value: v, selected: v === getPrefs()[key] }, text))));
+  drawExample();
+  return h("div", { class: "field" },
+    h("div", { class: "row wrap gap" },
+      select("dateFormat", t("date_format_label"), [["dmy", "13/11/26"], ["mdy", "11/13/26"], ["ymd", "26/11/13"]]),
+      select("clock", t("clock_label"), [["12h", "3:18pm"], ["24h", "15:18"]])),
+    example);
+}
+
+// "Last seen" style, shared by Appearance and the admin Accounts tab.
+export function lastSeenSelect(onChange = null) {
+  const cur = getPrefs().lastSeenFormat;
+  return h("select", {
+    "aria-label": t("last_seen_format_label"),
+    on: { change: (e) => { setPrefs({ lastSeenFormat: e.currentTarget.value }); onChange?.(); } },
+  }, [["datetime", t("last_seen_datetime")], ["date", t("last_seen_date")], ["relative", t("last_seen_relative")], ["both", t("last_seen_both")]]
+    .map(([v, label]) => h("option", { value: v, selected: v === cur }, label)));
 }
 
 // --- Local Options (standalone build only) ------------------------------------

@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-PROTOCOL_VERSION = "0.14"
+PROTOCOL_VERSION = "0.18"
 
 # --- Message types -----------------------------------------------------------
 
@@ -75,6 +75,10 @@ ADMIN_AUDIT_LOG = "admin.audit_log"
 ADMIN_AUDIT_LOG_RESULT = "admin.audit_log.result"
 ADMIN_STATS = "admin.stats"
 ADMIN_STATS_RESULT = "admin.stats.result"
+ADMIN_STORAGE = "admin.storage"
+ADMIN_STORAGE_RESULT = "admin.storage.result"
+ADMIN_STORAGE_ACTION = "admin.storage.action"
+ADMIN_STORAGE_ACTION_RESULT = "admin.storage.action.result"
 ADMIN_LEGAL_SET = "admin.legal.set"
 ADMIN_LEGAL_SET_RESULT = "admin.legal.set.result"
 ADMIN_USERS_SET_PERKS = "admin.users.set_perks"
@@ -468,6 +472,7 @@ PASSWORD_MAX_BYTES = 72
 CONTENT_MAX_CHARS = 2000
 GUILD_NAME_MAX = 100
 SERVER_NAME_MAX = 64
+SERVER_DESCRIPTION_MAX = 2000
 CHANNEL_NAME_RE = re.compile(r"^[a-z0-9_-]{1,32}$")
 HISTORY_DEFAULT_LIMIT = 50
 HISTORY_MAX_LIMIT = 100
@@ -554,11 +559,22 @@ DM_PRIVACY = ("everyone", "requests", "friends")
 USER_SEARCH_MODES = ("off", "staff", "on")
 ANNOUNCEMENT_MAX_CHARS = 4000
 # Link embeds (§4 Embed): the server fetches pages people post.
+# admin.users.list (§5 Admin): sort keys, narrowing flags, activity windows.
+ADMIN_USER_SORTS = ("joined", "seen", "name", "devices")
+# admin.storage.action (§5 Admin): what the Data tab can tidy up.
+STORAGE_ACTIONS = ("clear_previews", "vacuum", "purge_unclaimed")
+ADMIN_USER_FLAGS = ("staff", "muted", "perks", "badges", "online")
+ADMIN_USER_SEEN = ("7d", "30d", "inactive30", "never")
+ADMIN_USER_JOINED = ("7d", "30d")
 MAX_EMBEDS_PER_MESSAGE = 5
 EMBED_FETCH_TIMEOUT = 5
 EMBED_PAGE_MAX_BYTES = 1024 * 1024
 EMBED_IMAGE_MAX_BYTES = 8 * 1024 * 1024
-EMBED_CACHE_SECONDS = 3600
+EMBED_VIDEO_MAX_BYTES = 25 * 1024 * 1024
+EMBED_VIDEO_FETCH_TIMEOUT = 30
+EMBED_CACHE_SECONDS = 24 * 3600
+EMBED_FAIL_CACHE_SECONDS = 600
+EMBED_CACHE_MAX_ROWS = 20000
 PROXY_CACHE_DAYS = 7
 
 # Slash commands the server rolls, so nobody can fake a result (§4 Message).
@@ -728,6 +744,15 @@ def validate_guild_name(name: Any) -> str:
     if len(name) > GUILD_NAME_MAX:
         raise ProtocolError(BAD_REQUEST, "Guild name must be at most 100 characters")
     return name
+
+
+def validate_server_description(text: Any) -> str:
+    if not isinstance(text, str):
+        raise ProtocolError(BAD_REQUEST, "Server description must be a string")
+    text = text.strip()
+    if len(text) > SERVER_DESCRIPTION_MAX:
+        raise ProtocolError(BAD_REQUEST, f"Server description must be at most {SERVER_DESCRIPTION_MAX} characters")
+    return text
 
 
 def validate_server_name(name: Any) -> str:

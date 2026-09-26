@@ -1,7 +1,6 @@
 {
   "today": "Today",
   "yesterday": "Yesterday",
-  "time_full": "{day} at {time}",
   "open_nav": "Open guilds and channels",
   "pinned_messages": "Pinned messages",
   "rename_group": "Rename group",

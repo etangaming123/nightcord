@@ -1,6 +1,11 @@
 {
   "hide_previews": "Hide previews",
-  "open_image": "Open in a new tab",
+  "open_image": "Open image",
   "play_on_site": "Watch on {site}",
-  "the_site": "the site"
+  "the_site": "the site",
+  "image": "Image",
+  "gif": "GIF",
+  "video": "Video",
+  "play_here": "Play video",
+  "video_unavailable": "This video can't be played here."
 }

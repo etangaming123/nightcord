@@ -7,6 +7,9 @@ import { scopedT } from "./strings.js";
 
 const t = scopedT("state");
 
+// When this page was opened, for the Home page's "Nightcord uptime".
+export const APP_OPENED = Date.now();
+
 export const state = {
   url: null, // canonical ws(s)://…/ws of the connected server
   conn: null,
@@ -27,7 +30,7 @@ export const state = {
   notes: new Map(), // user_id -> your private note about them
 
   view: "guild", // guild | home
-  homeTab: "online", // Friends page tab: online | all | pending | blocked | requests | inbox | add
+  homeTab: "home", // Home page, or a Friends page tab: online | all | pending | blocked | requests | inbox | add
   guildId: null,
   channels: [], // current guild's visible channels, sorted
   roles: [], // current guild's roles, highest first
@@ -234,6 +237,13 @@ export function channelTitle(ch) {
 }
 
 export const memberById = (id) => state.members.find((m) => m.user.user_id === id);
+
+// Whether a shared link's ?server= (host:port, or ws://host:port for plain
+// ws) is the server we're on. No server in the link means this one.
+export function isThisServer(server) {
+  if (!server || !state.url) return true;
+  return server.replace(/^wss?:\/\//i, "").toLowerCase() === new URL(state.url).host.toLowerCase();
+}
 
 // Roles for a member, highest first.
 export function memberRoles(member) {

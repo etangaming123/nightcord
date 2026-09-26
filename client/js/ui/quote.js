@@ -6,8 +6,8 @@
 // happens here, and one that fails just leaves the link as a link.
 
 import { T } from "../protocol.js";
-import { nameOf, state, userById } from "../state.js";
-import { avatar, clear, fmtDateTime, h } from "./dom.js";
+import { isThisServer, nameOf, userById } from "../state.js";
+import { avatar, clear, fmtStamp, h } from "./dom.js";
 import { parseMessageLink } from "./links.js";
 import { scopedT } from "../strings.js";
 
@@ -31,7 +31,7 @@ function lookup(actions, jump) {
 export function messageQuote(href, actions) {
   const jump = parseMessageLink(href);
   if (!jump) return null;
-  if (jump.server && state.url && jump.server !== new URL(state.url).host) return null;
+  if (!isThisServer(jump.server)) return null;
   const card = h("div", { class: "quote-card loading" }, h("span", { class: "muted small" }, t("loading")));
   lookup(actions, jump).then((m) => {
     if (!card.isConnected) return;
@@ -47,7 +47,7 @@ export function messageQuote(href, actions) {
       h("div", { class: "quote-main" },
         h("div", { class: "quote-head" },
           h("strong", {}, nameOf(author)),
-          h("span", { class: "muted small" }, fmtDateTime(m.sent_at))),
+          h("span", { class: "muted small" }, fmtStamp(m.sent_at))),
         h("div", { class: "quote-body" }, (m.content || t("no_text")).slice(0, 300))),
       h("button", {
         class: "btn link", type: "button",

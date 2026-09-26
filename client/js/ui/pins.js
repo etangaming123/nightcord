@@ -2,7 +2,7 @@
 
 import { T } from "../protocol.js";
 import { can, currentChannel, isDm, nameOf, state, userById } from "../state.js";
-import { add, avatar, clear, fmtDateTime, h, iconBtn } from "./dom.js";
+import { add, avatar, clear, fmtStamp, h, iconBtn } from "./dom.js";
 import { mdContext } from "./chat.js";
 import { render as renderMarkdown } from "./markdown.js";
 import { closePopover, openPopover, toast } from "./modals.js";
@@ -36,12 +36,12 @@ export async function openPins(anchor, actions) {
       add(list, h("div", { class: "pin" },
         avatar(author, { size: "sm" }),
         h("div", { class: "pin-main" },
-          h("div", { class: "pin-head" }, h("strong", {}, nameOf(author)), h("span", { class: "muted small" }, fmtDateTime(m.sent_at))),
+          h("div", { class: "pin-head" }, h("strong", {}, nameOf(author)), h("span", { class: "muted small" }, fmtStamp(m.sent_at))),
           h("div", { class: "pin-body" }, renderMarkdown(m.content, mdContext(state, actions)),
             m.attachments?.length ? h("div", { class: "muted small" }, t("attachment_count", { count: m.attachments.length })) : null)),
         h("div", { class: "pin-actions" },
           h("button", { class: "btn small", type: "button", on: { click: () => { closePopover(); actions.jumpTo(m.message_id, m.channel_id); } } }, t("jump")),
-          canUnpin ? iconBtn("✕", t("unpin"), async (e) => {
+          canUnpin ? iconBtn("x", t("unpin"), async (e) => {
             if (!await actions.unpinMessage(m, e.shiftKey)) return;
             try { await draw(); } catch (err) { toast(err.message, { error: true }); }
           }) : null)));

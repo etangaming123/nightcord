@@ -2,7 +2,7 @@
 // server/nightcord/protocol.py — edit that file, then regenerate. Both follow
 // docs/PROTOCOL.md; server/tests/test_protocol_sync.py checks all three agree.
 
-export const PROTOCOL_VERSION = "0.14";
+export const PROTOCOL_VERSION = "0.18";
 
 export const T = Object.freeze({
   SETUP_CLAIM: "setup.claim",
@@ -57,6 +57,10 @@ export const T = Object.freeze({
   ADMIN_AUDIT_LOG_RESULT: "admin.audit_log.result",
   ADMIN_STATS: "admin.stats",
   ADMIN_STATS_RESULT: "admin.stats.result",
+  ADMIN_STORAGE: "admin.storage",
+  ADMIN_STORAGE_RESULT: "admin.storage.result",
+  ADMIN_STORAGE_ACTION: "admin.storage.action",
+  ADMIN_STORAGE_ACTION_RESULT: "admin.storage.action.result",
   ADMIN_LEGAL_SET: "admin.legal.set",
   ADMIN_LEGAL_SET_RESULT: "admin.legal.set.result",
   ADMIN_USERS_SET_PERKS: "admin.users.set_perks",
@@ -390,6 +394,7 @@ export const LIMITS = Object.freeze({
   CONTENT_MAX_CHARS: 2000,
   GUILD_NAME_MAX: 100,
   SERVER_NAME_MAX: 64,
+  SERVER_DESCRIPTION_MAX: 2000,
   CHANNEL_NAME_RE: /^[a-z0-9_-]{1,32}$/,
   HISTORY_PAGE: 50,
   DISPLAY_NAME_MAX: 32,

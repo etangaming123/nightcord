@@ -1,10 +1,11 @@
 // Invites (PROTOCOL.md §5 Guilds, §4 Invite): the "Invite people" dialog,
-// the invite preview card, and Guild settings → Invites.
+// the invite preview card, invite cards in chat, and Guild settings → Invites.
 
 import { LIMITS, T } from "../protocol.js";
-import { can, currentGuild, state } from "../state.js";
+import { can, currentGuild, isThisServer, state } from "../state.js";
 import { add, avatar, avatarUrl, clear, displayName, fmtDateTime, h, imageEl, initials, mayAnimate } from "./dom.js";
 import { closeModal, confirmAction, openModal, toast } from "./modals.js";
+import { parseInviteLink } from "./links.js";
 import { copyText } from "./profile.js";
 import { scopedT } from "../strings.js";
 
@@ -32,12 +33,17 @@ export function guildIcon(g, cls = "") {
     url ? imageEl(g.icon_id, { animate: mayAnimate(g) }) : initials(g.name));
 }
 
+// The link carries the server's address, only base64'd (ui/links.js).
+const shareNotice = () => h("p", { class: "error-box info small" }, t("shares_address_notice"));
+
 function linkBox(text, label) {
   return h("div", { class: "row invite-link" },
     h("input", { value: text, readOnly: true, "aria-label": label, on: { focus: (e) => e.currentTarget.select() } }),
     h("button", { class: "btn primary", type: "button", on: { click: () => copyText(text, t("copied_toast")) } }, t("copy_btn")));
 }
 
+// Pick the options first, then make the code: nothing is created just by
+// opening the dialog, and the same options never make a second code.
 export function inviteDialog(actions) {
   const g = currentGuild();
   if (!g) return;
@@ -45,27 +51,38 @@ export function inviteDialog(actions) {
   const age = h("select", { name: "age" }, LIMITS.INVITE_MAX_AGES.map((v) => h("option", { value: v, selected: v === 604800 }, ageLabel[v] || t("age_seconds", { seconds: v }))));
   const uses = h("select", { name: "uses" }, LIMITS.INVITE_MAX_USES.map((v) => h("option", { value: v }, USES_LABEL(v))));
   const out = h("div", { class: "stack" });
-  const make = async () => {
+  let made = null; // the options the shown link was made with
+  const opts = () => `${age.value}/${uses.value}`;
+  const generate = h("button", { class: "btn primary", type: "button" }, t("generate_btn"));
+  const refresh = () => {
+    generate.disabled = made === opts();
+    generate.textContent = made ? t("generate_new_btn") : t("generate_btn");
+  };
+  generate.addEventListener("click", async () => {
+    generate.disabled = true;
     try {
       const inv = await actions.createInvite({ max_age_seconds: Number(age.value), max_uses: Number(uses.value) });
+      made = opts();
       clear(out,
         h("label", {}, t("share_link_label"), linkBox(actions.inviteLink(inv.code), t("invite_link_aria"))),
         h("p", { class: "muted small" }, t("or_code_before"), h("strong", { class: "mono" }, inv.code), t("invite_summary", { expires: expiresIn(inv.expires_at), uses: USES_LABEL(inv.max_uses) })));
     } catch (e) {
       toast(e.message, { error: true });
     }
-  };
-  age.addEventListener("change", make);
-  uses.addEventListener("change", make);
+    refresh();
+  });
+  age.addEventListener("change", refresh);
+  uses.addEventListener("change", refresh);
   openModal({
     title: t("invite_to_guild_title", { guild: g.name }),
     content: h("div", { class: "stack" },
-      out,
       h("div", { class: "row wrap invite-opts" }, h("label", {}, t("expire_after_label"), age), h("label", {}, t("max_uses_label"), uses)),
-      g.vanity_code ? h("label", {}, t("public_link_label"), linkBox(actions.inviteLink(g.vanity_code), t("public_invite_link_aria"))) : null),
+      h("div", { class: "row" }, generate),
+      out,
+      g.vanity_code ? h("label", {}, t("public_link_label"), linkBox(actions.inviteLink(g.vanity_code), t("public_invite_link_aria"))) : null,
+      shareNotice()),
     actions: [h("button", { class: "btn", type: "button", on: { click: closeModal } }, t("done_btn"))],
   });
-  make();
 }
 
 // "You've been invited to join …" card.
@@ -94,6 +111,60 @@ export function invitePreview(p, { onJoin }) {
   });
 }
 
+// An invite link posted in chat, drawn as a card with a Join button
+// (markdown.js asks through mdContext's quote). Null when the link isn't an
+// invite on this server, so it stays a plain link.
+const resolved = new Map(); // code -> Promise<preview | null>, once per session
+
+export function inviteCard(href, actions) {
+  const invite = parseInviteLink(href);
+  if (!invite || !isThisServer(invite.server)) return null;
+  const card = h("div", { class: "invite-embed loading" },
+    h("div", { class: "invite-embed-title" }, t("embed_title")),
+    h("div", { class: "invite-embed-row" }, h("span", { class: "muted small" }, t("embed_loading"))));
+  if (!resolved.has(invite.code)) resolved.set(invite.code, actions.resolveInvite(invite.code).catch(() => null));
+  resolved.get(invite.code).then((p) => {
+    if (!card.isConnected) return;
+    card.classList.remove("loading");
+    const row = card.lastChild;
+    if (!p) {
+      card.classList.add("invalid");
+      clear(row,
+        h("div", { class: "guild-icon static", "aria-hidden": "true" }, "?"),
+        h("div", { class: "invite-embed-main" },
+          h("div", { class: "invite-embed-name" }, t("embed_invalid")),
+          h("div", { class: "muted small" }, t("embed_invalid_hint"))));
+      return;
+    }
+    const join = h("button", {
+      class: `btn ${p.is_member ? "" : "primary"}`, type: "button",
+      on: {
+        click: async () => {
+          join.disabled = true;
+          try {
+            await actions.acceptInvite(invite.code, p);
+            p.is_member = true;
+          } catch (e) {
+            toast(e.message, { error: true });
+          }
+          join.disabled = false;
+          join.textContent = t("embed_joined_btn");
+          join.classList.remove("primary");
+        },
+      },
+    }, p.is_member ? t("embed_joined_btn") : t("embed_join_btn"));
+    clear(row,
+      guildIcon(p.guild),
+      h("div", { class: "invite-embed-main" },
+        h("div", { class: "invite-embed-name" }, p.guild.name),
+        h("div", { class: "invite-counts small" },
+          h("span", {}, h("i", { class: "dot online", "aria-hidden": "true" }), t("online_count", { count: p.online_count })),
+          h("span", {}, h("i", { class: "dot offline", "aria-hidden": "true" }), t("member_count", { count: p.member_count })))),
+      join);
+  });
+  return card;
+}
+
 // Guild settings → Invites.
 export async function invitesTab(el, actions) {
   const g = currentGuild();
@@ -102,7 +173,8 @@ export async function invitesTab(el, actions) {
   add(el,
     h("div", { class: "row wrap" },
       h("p", { class: "muted grow" }, manage ? t("invites_manage_intro") : t("invites_own_intro")),
-      can("CREATE_INVITE") ? h("button", { class: "btn primary", type: "button", on: { click: () => inviteDialog(actions) } }, t("create_invite_btn")) : null));
+      can("CREATE_INVITE") ? h("button", { class: "btn primary", type: "button", on: { click: () => inviteDialog(actions) } }, t("create_invite_btn")) : null),
+    shareNotice());
   if (manage) add(el, vanityForm(g, actions));
   if (!invites.length) { add(el, h("p", { class: "muted" }, t("no_active_invites"))); return; }
   const table = h("div", { class: "list invites" });

@@ -3,7 +3,7 @@
   "type": "module",
   "scripts": {
     "build:standalone": "node scripts/build-standalone.mjs",
-    "test": "node tests/markdown.test.mjs && node tests/lang-keys.mjs"
+    "test": "node tests/markdown.test.mjs && node tests/lang-keys.mjs && node tests/preview.test.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.24.0"

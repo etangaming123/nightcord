@@ -1,4 +1,5 @@
 {
+  "invalid_server_address": "That doesn't look like a server address. Try something like chat.example.com:8765.",
   "enter_server_address": "Enter a server address",
   "could_not_connect": "Could not connect to the server",
   "not_connected": "Not connected",

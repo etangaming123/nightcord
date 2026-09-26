@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 import secrets
 
 from aiohttp import WSMsgType, web
@@ -49,6 +50,10 @@ LANDING_HTML = """<!doctype html>
   h1 { font-size: 1.35rem; margin: 0 0 .5rem; }
   p { color: #c9bcd2; }
   small { color: #9a8ca6; }
+  a { color: #ddaacc; }
+  .desc { color: #f4ecf6; }
+  .desc p { color: inherit; }
+  .desc code { background: rgba(255,255,255,.08); padding: 1px 4px; border-radius: 4px; }
 </style></head>
 <body><main>
   <svg width="56" height="56" viewBox="0 0 32 32" aria-hidden="true">
@@ -58,21 +63,49 @@ LANDING_HTML = """<!doctype html>
     <path d="M19.5 7.5a9.3 9.3 0 1 0 6.3 14.6A10.6 10.6 0 0 1 19.5 7.5z" fill="#ddaacc"/>
   </svg>
   <h1>{name}</h1>
-  <p>This Nightcord server is reachable, and your browser now trusts its certificate.</p>
-  <p>You can close this tab and go back to Nightcord to connect.</p>
-  <p><small>Protocol {version}</small></p>
+  {body}
+  <p><small>You can close this tab and go back to Nightcord to connect. Protocol {version}</small></p>
 </main></body></html>
 """
 
 
+TRUST_NOTE = "<p>This Nightcord server is reachable, and your browser now trusts its certificate.</p>"
+
+_URL_RE = re.compile(r"https?://[^\s<]+[^\s<.,:;!?)\]'\"]")
+_INLINE = (
+    (re.compile(r"`([^`\n]+)`"), r"<code>\1</code>"),
+    (re.compile(r"\*\*([^*\n]+)\*\*"), r"<strong>\1</strong>"),
+    (re.compile(r"(?<![*\w])\*([^*\n]+)\*(?!\w)"), r"<em>\1</em>"),
+)
+
+
 def _escape(s: str) -> str:
-    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+
+def description_html(text: str) -> str:
+    """The server description as safe HTML: paragraphs, line breaks, bare
+    links and a little inline Markdown (bold, italics, code). Everything is
+    escaped first, so nothing the owner types can become a tag."""
+    out = []
+    for para in re.split(r"\n\s*\n", text.strip()):
+        html = _escape(para)
+        for pattern, repl in _INLINE:
+            html = pattern.sub(repl, html)
+        html = _URL_RE.sub(lambda m: f'<a href="{m.group(0)}" rel="noopener noreferrer">{m.group(0)}</a>', html)
+        out.append("<p>" + html.replace("\n", "<br>") + "</p>")
+    return "\n  ".join(out)
 
 
 async def landing(request: web.Request) -> web.Response:
     ctx = request.app[CTX_KEY]
-    html = LANDING_HTML.replace("{name}", _escape(public_config(ctx)["server_name"])).replace(
-        "{version}", P.PROTOCOL_VERSION
+    cfg = public_config(ctx)
+    desc = cfg.get("server_description") or ""
+    body = f'<div class="desc">{description_html(desc)}</div>' if desc else TRUST_NOTE
+    html = (
+        LANDING_HTML.replace("{name}", _escape(cfg["server_name"]))
+        .replace("{version}", P.PROTOCOL_VERSION)
+        .replace("{body}", body)
     )
     return web.Response(text=html, content_type="text/html")
 
@@ -151,7 +184,7 @@ def new_setup_code() -> str:
 def create_app(config: Config, db: Database | None = None, *, setup_code: str | None = None) -> web.Application:
     """setup_code: the one-time code that claims a server with no owner yet.
     If the server needs one and none is given, a code is generated and logged."""
-    db = db or Database(config.db_path)
+    db = db or Database(config.db_path, backup_dir=config.data_dir.parent / "backups")
     perms = PermissionService(db)
     ctx = Ctx(db=db, hub=Hub(db, perms), perms=perms, config=config, login_throttle=LoginThrottle())
     # Serialised PublicUsers hide the custom status of anyone who reads as

@@ -31,6 +31,9 @@
   "invite_to_guild_title": "Invite friends to {guild}",
   "expire_after_label": "Expire after",
   "max_uses_label": "Max number of uses",
+  "generate_btn": "Generate invite link",
+  "generate_new_btn": "Generate a new link",
+  "shares_address_notice": "Heads up: invite links also carry this server's address (its IP or domain). It's scrambled, not secret, so anyone with the link can work it out. Only share it with people you'd give the address to.",
   "public_link_label": "Public link (never expires)",
   "public_invite_link_aria": "Public invite link",
   "done_btn": "Done",
@@ -63,5 +66,11 @@
   "public_link_saved_toast": "Public link saved",
   "public_link_off_toast": "Public link turned off",
   "revoke_invite_title": "Revoke invite {code}?",
-  "revoke_invite_body": "The link stops working. People who already joined stay."
+  "revoke_invite_body": "The link stops working. People who already joined stay.",
+  "embed_title": "You've been summoned to a guild",
+  "embed_loading": "Looking up the invite…",
+  "embed_invalid": "Invalid invite",
+  "embed_invalid_hint": "It expired, ran out of uses or never existed. Ask for a new one.",
+  "embed_join_btn": "Join",
+  "embed_joined_btn": "Joined"
 }

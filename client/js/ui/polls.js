@@ -7,6 +7,7 @@ import { add, clear, h } from "./dom.js";
 import { emojiGlyph } from "./emoji.js";
 import { confirmAction } from "./modals.js";
 import { scopedT } from "../strings.js";
+import { icon } from "./icons.js";
 
 const t = scopedT("ui/polls");
 
@@ -72,7 +73,7 @@ export function renderPoll(m, actions) {
         },
       },
       showResults ? h("span", { class: "poll-bar", style: `width:${share}%` }) : null,
-      h("span", { class: "poll-tick", "aria-hidden": "true" }, mine ? "✓" : ""),
+      h("span", { class: "poll-tick", "aria-hidden": "true" }, mine ? icon("check") : ""),
       a.emoji ? emojiGlyph(a.emoji, { cls: "poll-emoji" }) : null,
       h("span", { class: "poll-text" }, a.text),
       showResults ? h("span", { class: "poll-count" }, `${share}%`) : null);
@@ -116,7 +117,7 @@ export function pollDialog(onSend, { formModal, openEmojiPicker }) {
             draw();
           }, { custom: false, placement: "bottom", key: `poll-emoji-${i}` }),
         },
-      }, a.emoji ? emojiGlyph(a.emoji) : "☺");
+      }, a.emoji ? emojiGlyph(a.emoji) : icon("smile-plus"));
       add(rows, h("div", { class: "poll-row" },
         emojiBtn,
         h("input", {
@@ -128,7 +129,7 @@ export function pollDialog(onSend, { formModal, openEmojiPicker }) {
           ? h("button", {
             class: "icon-btn", type: "button", title: t("remove_answer"), "aria-label": t("remove_answer"),
             on: { click: () => { answers.splice(i, 1); draw(); } },
-          }, "✕")
+          }, icon("x"))
           : null));
     });
     if (answers.length < LIMITS.POLL_MAX_ANSWERS) {

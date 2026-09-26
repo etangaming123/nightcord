@@ -6,6 +6,7 @@ import { mediaLoaded } from "./chat.js";
 import { add, clear, fmtBytes, h, serverUrl } from "./dom.js";
 import { openModal, toast } from "./modals.js";
 import { scopedT } from "../strings.js";
+import { icon } from "./icons.js";
 
 const t = scopedT("ui/attachments");
 const tc = scopedT("common");
@@ -25,11 +26,11 @@ const kind = (a) => {
 
 function fileIcon(a) {
   const ext = (a.filename.split(".").pop() || "").toLowerCase();
-  if (["zip", "rar", "7z", "tar", "gz", "xz"].includes(ext)) return "🗜️";
-  if (["pdf"].includes(ext)) return "📕";
-  if (kind(a) === "audio") return "🎵";
-  if (kind(a) === "text") return "📄";
-  return "📦";
+  if (["zip", "rar", "7z", "tar", "gz", "xz"].includes(ext)) return "file-archive";
+  if (["pdf"].includes(ext)) return "file-text";
+  if (kind(a) === "audio") return "music";
+  if (kind(a) === "text") return "file-text";
+  return "package";
 }
 
 // Keep the box's size before the media loads, so the chat doesn't jump.
@@ -41,13 +42,13 @@ function fitted(a) {
 
 function card(a, url, { onOpen } = {}) {
   return h("div", { class: "file-card" },
-    h("span", { class: "file-icon", "aria-hidden": "true" }, fileIcon(a)),
+    h("span", { class: "file-icon", "aria-hidden": "true" }, icon(fileIcon(a))),
     h("span", { class: "file-meta" },
       onOpen
         ? h("button", { class: "file-name btn link", type: "button", on: { click: onOpen } }, a.filename)
         : h("a", { class: "file-name", href: url, download: a.filename, target: "_blank", rel: "noopener" }, a.filename),
       h("span", { class: "file-size" }, fmtBytes(a.size))),
-    h("a", { class: "icon-btn", href: url, download: a.filename, target: "_blank", rel: "noopener", title: t("download"), "aria-label": t("download_aria", { name: a.filename }) }, "⤓"));
+    h("a", { class: "icon-btn", href: url, download: a.filename, target: "_blank", rel: "noopener", title: t("download"), "aria-label": t("download_aria", { name: a.filename }) }, icon("download")));
 }
 
 export function renderAttachments(message) {
@@ -95,9 +96,9 @@ export function openLightbox(images, index = 0) {
   const modal = openModal({
     title: t("image_modal_title"),
     content: h("div", { class: "lightbox" },
-      images.length > 1 ? h("button", { class: "icon-btn lb-prev", type: "button", "aria-label": t("previous_image"), on: { click: () => step(-1) } }, "‹") : null,
+      images.length > 1 ? h("button", { class: "icon-btn lb-prev", type: "button", "aria-label": t("previous_image"), on: { click: () => step(-1) } }, icon("chevron-left")) : null,
       img,
-      images.length > 1 ? h("button", { class: "icon-btn lb-next", type: "button", "aria-label": t("next_image"), on: { click: () => step(1) } }, "›") : null,
+      images.length > 1 ? h("button", { class: "icon-btn lb-next", type: "button", "aria-label": t("next_image"), on: { click: () => step(1) } }, icon("chevron-right")) : null,
       caption),
     cls: "lightbox-modal",
   });

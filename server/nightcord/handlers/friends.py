@@ -34,6 +34,14 @@ async def _became_friends(ctx, a: str, b: str) -> None:
             await ctx.hub.send_to_user(y, P.frame(P.PRESENCE_UPDATE, {"user_id": x, "status": status}))
 
 
+async def _stopped_seeing(ctx, a: str, b: str) -> None:
+    """After unfriending or blocking: if a and b no longer share a guild or DM,
+    each stops getting the other's presence, so tell both they're offline."""
+    for x, y in ((a, b), (b, a)):
+        if y not in ctx.db.audience_of(x):
+            await ctx.hub.send_to_user(y, P.frame(P.PRESENCE_UPDATE, {"user_id": x, "status": "offline"}))
+
+
 def _target(ctx, conn, payload) -> dict:
     """The other person, by user_id or exact username."""
     if payload.get("user_id") is not None:
@@ -90,16 +98,22 @@ async def remove(ctx, conn, payload):
     other = P.req_id(payload, "user_id")
     if ctx.db.relationship(conn.user_id, other) not in ("friend", "outgoing", "incoming"):
         raise ProtocolError(P.NOT_FOUND, "You aren't friends and there's no request")
+    was_friend = ctx.db.relationship(conn.user_id, other) == "friend"
     ctx.db.set_relationships(conn.user_id, other, None, None)
     await _push_both(ctx, conn.user_id, other)
+    if was_friend:
+        await _stopped_seeing(ctx, conn.user_id, other)
     return {}
 
 
 @handles(P.USER_BLOCK)
 async def block(ctx, conn, payload):
     other = _target(ctx, conn, payload)["user_id"]
+    was_friend = ctx.db.relationship(conn.user_id, other) == "friend"
     ctx.db.set_relationships(conn.user_id, other, "blocked", None)
     await _push_both(ctx, conn.user_id, other)
+    if was_friend:
+        await _stopped_seeing(ctx, conn.user_id, other)
     return {"relationship": ctx.db.get_relationship(conn.user_id, other)}
 
 

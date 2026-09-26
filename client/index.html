@@ -17,10 +17,12 @@
   <!-- Pick / add a server -->
   <section id="screen-connect" class="screen" hidden>
     <div class="card">
+      <div class="update-banner" hidden></div>
+      <a class="btn link home-link" id="home-link" href="https://nightcord.etangaming.xyz/" rel="noopener" data-i18n="home_link">← Home page</a>
       <h1 class="brand"><img class="brand-mark" src="assets/logo.png" alt=""><span data-i18n="brand">Nightcord</span></h1>
       <p class="muted">
         <span data-i18n="connect_tagline">Connect to a Nightcord server.</span>
-        <button type="button" class="whats-this" id="whats-this" data-i18n="whats_this_label" data-i18n-title="whats_this_body" title="What's this?">What's this?</button>
+        <button type="button" class="whats-this" id="whats-this" data-i18n="whats_this_label" aria-haspopup="dialog">What's this?</button>
       </p>
 
       <div class="tabs inline" id="connect-tabs" role="tablist">
@@ -54,8 +56,14 @@
         <span id="connect-status" class="muted small" hidden></span>
         <button type="button" class="btn" id="connect-cancel" data-i18n="connect_cancel" hidden>Cancel</button>
       </div>
+      <label class="check connect-option"><input type="checkbox" id="auto-reconnect"><span data-i18n="auto_reconnect_label">Reconnect to my last server on startup</span></label>
       <p id="connect-hint" class="muted small" hidden data-i18n="still_trying">Still trying…</p>
       <div id="connect-error" class="error-box" hidden></div>
+      <div id="connect-preview-box" class="connect-preview" hidden>
+        <span class="connect-or" data-i18n="preview_or">or</span>
+        <button type="button" class="btn block" id="connect-preview" data-i18n="preview_button">Try a preview</button>
+        <p class="muted small" data-i18n="preview_hint">No server needed: a pretend one runs in this tab, and nothing you do leaves it.</p>
+      </div>
     </div>
   </section>
 
@@ -134,16 +142,24 @@
   <!-- Log in / register on the chosen server -->
   <section id="screen-auth" class="screen" hidden>
     <div class="card">
+      <div class="update-banner" hidden></div>
       <button id="auth-back" class="btn link" type="button" data-i18n="back_to_servers">← Servers</button>
       <h1 id="auth-server-name" class="server-title"></h1>
       <p id="auth-server-url" class="muted small mono"></p>
+      <div id="auth-server-desc" class="auth-desc" hidden></div>
+      <p id="auth-notice" class="auth-notice"></p>
       <div id="auth-tabs" class="tabs" role="tablist"></div>
       <form id="auth-form" class="stack">
         <label><span data-i18n="username_label">Username</span>
           <input name="username" autocomplete="username" required minlength="3" maxlength="32" spellcheck="false" autocapitalize="off">
+          <span id="auth-username-hint" class="field-hint" hidden data-i18n="username_requirements_hint">3–32 characters: letters, digits, _ . -</span>
         </label>
         <label><span data-i18n="password_label">Password</span>
           <input name="password" type="password" autocomplete="current-password" required minlength="8">
+        </label>
+        <label id="auth-confirm-field" hidden><span data-i18n="confirm_password_label">Confirm password</span>
+          <input name="password2" type="password" autocomplete="new-password" minlength="8">
+          <span id="auth-confirm-hint" class="field-hint bad" hidden data-i18n="passwords_dont_match">The passwords don't match.</span>
         </label>
         <label id="auth-note-field" hidden><span data-i18n="note_for_owner">Note for the server owner</span> <span class="muted" data-i18n="note_optional">(optional)</span>
           <textarea name="note" rows="2" maxlength="500"></textarea>
@@ -153,6 +169,10 @@
       <div id="auth-message" class="error-box" hidden></div>
     </div>
   </section>
+
+  <!-- Slim update reminder for every screen that has no big banner -->
+  <div id="update-float" class="update-float" role="status" hidden></div>
+  <div id="preview-bar" class="preview-bar" role="region" data-i18n-aria-label="preview_bar_aria" aria-label="Preview" hidden></div>
 
   <!-- Main app -->
   <div id="app" hidden>

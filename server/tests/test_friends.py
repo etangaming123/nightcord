@@ -29,6 +29,16 @@ async def test_friend_request_flow(user):
     assert "relationship.removed" in types(await b.drain())
 
 
+async def test_unfriend_sends_offline_when_nothing_shared(user):
+    a, b = await user("alice"), await user("bob")
+    await befriend(a, b)
+    await a.drain(), await b.drain()
+    await a.ok("friend.remove", {"user_id": b.uid})
+    for me, other in ((a, b), (b, a)):
+        ev = [e["payload"] for e in await me.drain() if e["type"] == "presence.update"]
+        assert {"user_id": other.uid, "status": "offline"} in ev
+
+
 async def test_crossing_requests_make_friends(user):
     a, b = await user("alice"), await user("bob")
     await a.ok("friend.request", {"user_id": b.uid})

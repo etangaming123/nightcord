@@ -13,6 +13,7 @@ import { showLegalModal } from "./legal.js";
 import { render as renderMarkdown } from "./markdown.js";
 import { toast } from "./modals.js";
 import { scopedT } from "../strings.js";
+import { icon } from "./icons.js";
 
 const t = scopedT("ui/friends");
 
@@ -31,7 +32,7 @@ export function renderFriendsHeader(header, state, actions) {
     on: { click: () => actions.openFriends(id) },
   }, label, count(n));
   add(header,
-    h("span", { class: "hash", "aria-hidden": "true" }, "👋"),
+    h("span", { class: "hash", "aria-hidden": "true" }, icon("users")),
     h("span", { class: "title friends-title" }, t("title")),
     h("div", { class: "friends-tabs", role: "tablist", "aria-label": t("title") },
       tab("online", t("tab_online")),
@@ -107,8 +108,8 @@ function friendsTab(page, actions, onlineOnly) {
       sub: customStatusOf(u) || statusLabel(statusOf(u.user_id)),
       onClick: () => actions.messageUser(u.user_id),
       buttons: [
-        iconBtn("💬", t("message"), () => actions.messageUser(u.user_id)),
-        iconBtn("⋮", t("more"), (e) => actions.memberMenu(u.user_id, e.currentTarget)),
+        iconBtn("message-circle", t("message"), () => actions.messageUser(u.user_id)),
+        iconBtn("ellipsis-vertical", t("more"), (e) => actions.memberMenu(u.user_id, e.currentTarget)),
       ],
     }));
   }
@@ -126,8 +127,8 @@ function pendingTab(page, actions) {
     add(page, personRow(r.user, {
       sub: t("incoming_sub"),
       buttons: [
-        iconBtn("✓", t("accept"), () => actions.acceptFriend(r.user.user_id), { cls: "ok" }),
-        iconBtn("✕", t("decline"), () => actions.removeFriend(r.user.user_id), { cls: "danger" }),
+        iconBtn("check", t("accept"), () => actions.acceptFriend(r.user.user_id), { cls: "ok" }),
+        iconBtn("x", t("decline"), () => actions.removeFriend(r.user.user_id), { cls: "danger" }),
       ],
     }));
   }
@@ -135,7 +136,7 @@ function pendingTab(page, actions) {
   for (const r of outgoing) {
     add(page, personRow(r.user, {
       sub: t("outgoing_sub"),
-      buttons: [iconBtn("✕", t("cancel_request"), () => actions.removeFriend(r.user.user_id), { cls: "danger" })],
+      buttons: [iconBtn("x", t("cancel_request"), () => actions.removeFriend(r.user.user_id), { cls: "danger" })],
     }));
   }
 }
@@ -286,7 +287,7 @@ function updateAnnouncementCard(update) {
         h("strong", {}, t("update_available_title")),
         h("span", { class: "tag" }, t("tag_update")),
         h("span", { class: "grow" }),
-        iconBtn("✕", t("update_available_dismiss"), () => { updateDismissed = true; invalidate("chat"); })),
+        iconBtn("x", t("update_available_dismiss"), () => { updateDismissed = true; invalidate("chat"); })),
       h("div", { class: "announcement-content" },
         t("update_available_body", { latest: update.latest, current: update.current }),
         " ",
@@ -342,8 +343,8 @@ function announcementCard(item, actions, isNew) {
         h("time", { class: "muted small", datetime: item.created_at, title: fmtDateTime(item.created_at) }, fmtDateTime(item.created_at)),
         item.edited_at ? h("span", { class: "muted small" }, t("edited")) : null,
         h("span", { class: "grow" }),
-        canEdit && !legal ? iconBtn("✎", t("edit"), () => actions.editAnnouncement(item)) : null,
-        canEdit ? iconBtn("🗑", t("delete"), () => actions.deleteAnnouncement(item), { cls: "danger" }) : null),
+        canEdit && !legal ? iconBtn("pencil", t("edit"), () => actions.editAnnouncement(item)) : null,
+        canEdit ? iconBtn("trash-2", t("delete"), () => actions.deleteAnnouncement(item), { cls: "danger" }) : null),
       h("div", { class: "announcement-content" }, renderMarkdown(item.content, mdContext(state, actions))),
       legal ? h("button", {
         class: "btn small", type: "button",

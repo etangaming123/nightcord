@@ -43,6 +43,13 @@ function setProgress(item) {
 }
 
 function upload(item, channelId) {
+  // The preview keeps uploads in memory (client/js/preview).
+  if (state.conn?.preview) {
+    return state.conn.upload(item.file, { channelId, filename: item.name, width: item.width, height: item.height }, (p) => {
+      item.progress = p;
+      setProgress(item);
+    });
+  }
   return new Promise((resolve, reject) => {
     const params = new URLSearchParams({ channel_id: channelId, filename: item.name });
     if (item.width) params.set("width", item.width);
@@ -135,6 +142,7 @@ export async function uploadMedia(kind, blob) {
   if (cap && blob.size > cap.maxBytes) {
     throw new Error(t("media_too_large", { max: fmtBytes(cap.maxBytes) }));
   }
+  if (state.conn?.preview) return state.conn.uploadMedia(kind, blob);
   let res;
   try {
     res = await fetch(serverUrl(`/media?kind=${encodeURIComponent(kind)}`), {

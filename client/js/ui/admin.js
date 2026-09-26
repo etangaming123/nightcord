@@ -3,14 +3,17 @@
 // moderators enforce, admins also manage accounts and guilds, and only the
 // owner changes server config, legal documents and appoints admins.
 
+import { getPrefs } from "../prefs.js";
 import { LIMITS, T } from "../protocol.js";
 import { STAFF_LABEL, staffLevel, state } from "../state.js";
-import { add, avatar, clear, displayName, fmtBytes, fmtDate, fmtDateTime, h, initials } from "./dom.js";
+import { add, avatar, clear, displayName, fmtBytes, fmtDate, fmtDateTime, fmtSeen, h, initials } from "./dom.js";
+import { lastSeenSelect } from "./settings.js";
 import { renderDocument } from "./markdown.js";
 import { closeFullscreen, confirmAction, confirmModal, formModal, openMenu, openModal, refreshFullscreen, toast } from "./modals.js";
 import { badgesSection, giveBadgesDialog } from "./adminBadges.js";
 import { copyText } from "./profile.js";
 import { scopedT } from "../strings.js";
+import { icon } from "./icons.js";
 
 const t = scopedT("ui/admin");
 
@@ -43,6 +46,7 @@ export function adminSections(actions) {
     { id: "bans", label: t("tab_bans"), render: (el) => bansSection(el, actions) },
     lvl >= ADMIN ? { id: "guilds", label: t("tab_guilds"), render: (el) => guildsSection(el, actions) } : null,
     { id: "server-audit", label: t("tab_audit_log"), render: (el) => auditSection(el, actions) },
+    lvl >= OWNER ? { id: "data", label: t("tab_data"), render: (el) => dataSection(el, actions) } : null,
   ];
 }
 
@@ -76,7 +80,8 @@ async function overview(el, actions) {
     h("p", { class: "muted" }, t("overview_role_line", { role: STAFF_LABEL[state.user.server_role] || t("staff_member_fallback"), server: state.info.server_name })),
     h("div", { class: "stats" },
       stat(s.users, t("stat_active_accounts")), stat(s.guilds, t("stat_guilds")), stat(s.messages, t("stat_messages")),
-      stat(fmtBytes(s.attachments.bytes), t("stat_files_label", { count: s.attachments.count }))),
+      stat(fmtBytes(s.attachments.bytes), t("stat_files_label", { count: s.attachments.count })),
+      s.media ? stat(fmtBytes(s.media.bytes), t("stat_media_label", { count: s.media.count })) : null),
     h("p", { class: "muted small" }, t("overview_limits", { limit: fmtBytes(state.info.max_upload_bytes), voice: state.info.voice_enabled ? t("voice_on") : t("voice_off") })));
 }
 
@@ -88,6 +93,9 @@ function serverSection(el, actions) {
     h("select", { name }, options.map(([v, label]) => h("option", { value: v, selected: v === value }, label)));
   add(el, formRow(h("form", { class: "stack narrow" },
     h("label", {}, t("server_name_label"), h("input", { name: "server_name", required: true, maxLength: LIMITS.SERVER_NAME_MAX, value: info.server_name })),
+    h("label", {}, t("server_description_label"),
+      h("textarea", { name: "server_description", rows: 5, maxLength: LIMITS.SERVER_DESCRIPTION_MAX, text: info.server_description || "", placeholder: t("server_description_placeholder") }),
+      h("span", { class: "muted small block" }, t("server_description_hint"))),
     h("label", {}, t("account_creation_label"), select("account_creation", info.account_creation, [
       ["on", t("account_creation_open")],
       ["request", t("account_creation_request")],
@@ -112,6 +120,8 @@ function serverSection(el, actions) {
       h("span", {}, t("announcements_admins_label"), h("span", { class: "muted small block" }, t("announcements_admins_hint")))),
     h("label", { class: "check" }, h("input", { type: "checkbox", name: "link_embeds", checked: info.link_embeds !== false }),
       h("span", {}, t("link_embeds_label"), h("span", { class: "muted small block" }, t("link_embeds_hint")))),
+    h("label", { class: "check" }, h("input", { type: "checkbox", name: "fx_links", checked: info.fx_links !== false }),
+      h("span", {}, t("fx_links_label"), h("span", { class: "muted small block" }, t("fx_links_hint")))),
     h("label", {}, t("max_accounts_label"),
       h("input", { name: "max_accounts_per_client", type: "number", min: 0, max: LIMITS.MAX_ACCOUNTS_PER_CLIENT, required: true, value: info.max_accounts_per_client || 0 }),
       h("span", { class: "muted small block" }, t("max_accounts_hint"))),
@@ -119,6 +129,7 @@ function serverSection(el, actions) {
   async (fd) => {
     const res = await actions.req(T.SERVER_CONFIG_UPDATE, {
       server_name: String(fd.get("server_name")).trim(),
+      server_description: String(fd.get("server_description") || "").trim(),
       account_creation: fd.get("account_creation"),
       guild_creation: fd.get("guild_creation"),
       guild_list_visible: fd.get("guild_list_visible") === "on",
@@ -127,6 +138,7 @@ function serverSection(el, actions) {
       user_search: fd.get("user_search"),
       announcements_admins: fd.get("announcements_admins") === "on",
       link_embeds: fd.get("link_embeds") === "on",
+      fx_links: fd.get("fx_links") === "on",
       max_accounts_per_client: Math.max(0, Math.min(LIMITS.MAX_ACCOUNTS_PER_CLIENT, Math.floor(Number(fd.get("max_accounts_per_client")) || 0))),
     });
     actions.setServerInfo(res.config);
@@ -250,15 +262,42 @@ async function legalSection(el, actions) {
 
 // --- accounts ---------------------------------------------------------------------
 
+// Sort / filter choices survive switching tabs while the settings are open.
+const accountView = { sort: "joined", order: "asc", flags: new Set(), seen: "", joined: "" };
+
 async function accountsSection(el, actions) {
   let filter = state.pendingAccounts ? "pending" : "";
+  const v = accountView;
   const tabs = h("div", { class: "tabs inline" });
   const search = h("input", { type: "search", placeholder: t("search_accounts_placeholder"), "aria-label": t("search_accounts_aria") });
   const list = h("div", { class: "list" });
+  const count = h("span", { class: "muted small" });
+  const select = (label, value, options, set) => h("label", { class: "inline-field" }, h("span", {}, label),
+    h("select", { on: { change: (e) => { set(e.currentTarget.value); draw(); } } },
+      options.map(([val, text]) => h("option", { value: val, selected: val === value }, text))));
+  const orderBtn = h("button", { class: "btn small", type: "button", on: { click: () => { v.order = v.order === "asc" ? "desc" : "asc"; draw(); } } });
+  const chips = h("div", { class: "chips filter-chips", role: "group", "aria-label": t("filter_flags_aria") });
+  const drawChips = () => clear(chips, [["online", t("flag_online")], ["staff", t("flag_staff")], ["muted", t("flag_muted")], ["perks", t("flag_perks")], ["badges", t("flag_badges")]].map(([f, label]) =>
+    h("button", {
+      class: `chip ${v.flags.has(f) ? "on" : ""}`, type: "button", "aria-pressed": String(v.flags.has(f)),
+      on: { click: () => { v.flags.has(f) ? v.flags.delete(f) : v.flags.add(f); draw(); } },
+    }, label)));
+  const toolbar = h("div", { class: "account-tools" },
+    select(t("sort_label"), v.sort, [["joined", t("sort_joined")], ["seen", t("sort_seen")], ["name", t("sort_name")], ["devices", t("sort_devices")]], (x) => { v.sort = x; }),
+    orderBtn,
+    select(t("seen_filter_label"), v.seen, [["", t("any_time")], ["7d", t("seen_7d")], ["30d", t("seen_30d")], ["inactive30", t("seen_inactive30")], ["never", t("seen_never")]], (x) => { v.seen = x; }),
+    select(t("joined_filter_label"), v.joined, [["", t("any_time")], ["7d", t("joined_7d")], ["30d", t("joined_30d")]], (x) => { v.joined = x; }),
+    h("label", { class: "inline-field" }, h("span", {}, t("seen_format_label")), lastSeenSelect(() => draw())));
   const draw = async () => {
-    clear(tabs, [["", t("filter_all")], ["pending", t("filter_pending")], ["active", t("filter_active")], ["disabled", t("filter_disabled")], ["rejected", t("filter_rejected")]].map(([v, l]) =>
-      h("button", { class: "tab", type: "button", "aria-selected": String(filter === v), on: { click: () => { filter = v; draw(); } } }, l)));
-    const { users } = await actions.req(T.ADMIN_USERS_LIST, { status: filter || undefined, query: search.value.trim() || undefined });
+    clear(tabs, [["", t("filter_all")], ["pending", t("filter_pending")], ["active", t("filter_active")], ["disabled", t("filter_disabled")], ["rejected", t("filter_rejected")]].map(([val, l]) =>
+      h("button", { class: "tab", type: "button", "aria-selected": String(filter === val), on: { click: () => { filter = val; draw(); } } }, l)));
+    drawChips();
+    clear(orderBtn, icon(v.order === "asc" ? "arrow-up" : "arrow-down"), " ", v.order === "asc" ? t("order_asc") : t("order_desc"));
+    const { users } = await actions.req(T.ADMIN_USERS_LIST, {
+      status: filter || undefined, query: search.value.trim() || undefined,
+      sort: v.sort, order: v.order, flags: [...v.flags], seen: v.seen || undefined, joined: v.joined || undefined,
+    });
+    count.textContent = t("accounts_count", { count: users.length });
     if (filter === "pending" || !filter) {
       state.pendingAccounts = users.filter((u) => u.status === "pending").length || (filter === "pending" ? 0 : state.pendingAccounts);
       actions.refreshChrome();
@@ -269,7 +308,7 @@ async function accountsSection(el, actions) {
   };
   let timer;
   search.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(draw, 200); });
-  add(el, h("p", { class: "muted small" }, t("ip_visibility_note")), h("div", { class: "row wrap" }, tabs, search), list);
+  add(el, h("p", { class: "muted small" }, t("ip_visibility_note")), h("div", { class: "row wrap" }, tabs, search), toolbar, chips, count, list);
   await draw();
 }
 
@@ -311,7 +350,7 @@ function accountRow(u, actions, redraw) {
   const facts = [
     t("joined_fact", { date: fmtDate(u.created_at) }),
     u.last_ip ? t("ip_fact", { ip: u.last_ip }) : null,
-    u.last_seen ? t("seen_fact", { date: fmtDateTime(u.last_seen) }) : null,
+    u.online ? t("online_now_fact") : u.last_seen ? t("seen_fact", { date: fmtSeen(u.last_seen, getPrefs().lastSeenFormat) }) : t("never_seen_fact"),
     u.device_count ? t("device_count_fact", { count: u.device_count }) : null,
     u.note ? t("note_fact", { note: u.note }) : null,
   ].filter(Boolean).join(" · ");
@@ -334,16 +373,16 @@ export function adminModeration(u, actions, after = () => {}) {
   const muted = isMuted(u);
   return [
     muted
-      ? { label: t("unmute_label"), icon: "🔊", onClick: () => done(actions.req(T.ADMIN_USERS_MUTE, { user_id: u.user_id }).then(() => toast(t("unmuted_toast", { name })))) }
-      : { label: t("mute_label"), icon: "🔇", onClick: () => muteDialog(u, (payload) => done(actions.req(T.ADMIN_USERS_MUTE, { user_id: u.user_id, ...payload }).then(() => toast(t("muted_toast", { name }))))) },
-    { label: t("disable_account_label"), icon: "⛔", danger: true, onClick: () => confirmModal({
+      ? { label: t("unmute_label"), icon: "volume-2", onClick: () => done(actions.req(T.ADMIN_USERS_MUTE, { user_id: u.user_id }).then(() => toast(t("unmuted_toast", { name })))) }
+      : { label: t("mute_label"), icon: "volume-x", onClick: () => muteDialog(u, (payload) => done(actions.req(T.ADMIN_USERS_MUTE, { user_id: u.user_id, ...payload }).then(() => toast(t("muted_toast", { name }))))) },
+    { label: t("disable_account_label"), icon: "ban", danger: true, onClick: () => confirmModal({
       title: t("disable_confirm_title", { name }), message: t("disable_confirm_message"), confirmLabel: t("disable_confirm_btn"),
       onConfirm: () => done(actions.req(T.ADMIN_USERS_SET_STATUS, { user_id: u.user_id, status: "disabled" })),
     }) },
-    { label: t("ban_devices_label"), icon: "📵", danger: true, onClick: () => reasonDialog(t("ban_devices_title", { name }),
+    { label: t("ban_devices_label"), icon: "smartphone", danger: true, onClick: () => reasonDialog(t("ban_devices_title", { name }),
       t("ban_devices_message"),
       t("ban_devices_btn"), (reason) => done(actions.req(T.ADMIN_DEVICE_BANS_ADD, { user_id: u.user_id, reason }).then(() => toast(t("devices_banned_toast"))))) },
-    { label: t("ban_ip_label"), icon: "🌐", danger: true, onClick: async () => {
+    { label: t("ban_ip_label"), icon: "globe", danger: true, onClick: async () => {
       try {
         const { users } = await actions.req(T.ADMIN_USERS_LIST, { query: u.username });
         const ip = users.find((x) => x.user_id === u.user_id)?.last_ip;
@@ -353,7 +392,7 @@ export function adminModeration(u, actions, after = () => {}) {
       } catch (e) { fail(e); }
     } },
     lvl >= ADMIN ? "-" : null,
-    lvl >= ADMIN ? { label: t("reset_password_label"), icon: "🔑", onClick: () => confirmModal({
+    lvl >= ADMIN ? { label: t("reset_password_label"), icon: "key-round", onClick: () => confirmModal({
       title: t("reset_password_title", { name }), message: t("reset_password_message"), confirmLabel: t("reset_password_btn"),
       onConfirm: async () => {
         const { password } = await actions.req(T.ADMIN_USERS_RESET_PASSWORD, { user_id: u.user_id });
@@ -364,9 +403,9 @@ export function adminModeration(u, actions, after = () => {}) {
         }));
       },
     }) } : null,
-    lvl >= ADMIN ? { label: u.perks ? t("remove_perks_label") : t("give_perks_btn"), icon: "✨", hint: t("give_perks_hint"), onClick: () => done(actions.req(T.ADMIN_USERS_SET_PERKS, { user_id: u.user_id, perks: !u.perks }).then(() => toast(u.perks ? t("perks_removed_toast2") : t("perks_given_toast2")))) } : null,
-    lvl >= OWNER && u.status === "active" ? { label: t("badges_label"), icon: "🏅", hint: t("badges_hint"), onClick: () => giveBadgesDialog(u, actions, after) } : null,
-    lvl >= ADMIN ? { label: t("delete_account_label"), icon: "🗑", danger: true, onClick: () => deleteAccountDialog(u, () => done(actions.req(T.ADMIN_USERS_DELETE, { user_id: u.user_id }).then(() => toast(t("account_deleted_toast", { name }))))) } : null,
+    lvl >= ADMIN ? { label: u.perks ? t("remove_perks_label") : t("give_perks_btn"), icon: "sparkles", hint: t("give_perks_hint"), onClick: () => done(actions.req(T.ADMIN_USERS_SET_PERKS, { user_id: u.user_id, perks: !u.perks }).then(() => toast(u.perks ? t("perks_removed_toast2") : t("perks_given_toast2")))) } : null,
+    lvl >= OWNER && u.status === "active" ? { label: t("badges_label"), icon: "award", hint: t("badges_hint"), onClick: () => giveBadgesDialog(u, actions, after) } : null,
+    lvl >= ADMIN ? { label: t("delete_account_label"), icon: "trash-2", danger: true, onClick: () => deleteAccountDialog(u, () => done(actions.req(T.ADMIN_USERS_DELETE, { user_id: u.user_id }).then(() => toast(t("account_deleted_toast", { name }))))) } : null,
   ];
 }
 
@@ -479,7 +518,7 @@ async function bansSection(el, actions) {
   const ipList = h("div", { class: "list" });
   if (!ips.length) add(ipList, h("p", { class: "muted" }, t("no_ip_bans")));
   for (const b of ips) {
-    add(ipList, h("div", { class: "list-row" }, h("span", { class: "list-icon", "aria-hidden": "true" }, "🌐"),
+    add(ipList, h("div", { class: "list-row" }, h("span", { class: "list-icon", "aria-hidden": "true" }, icon("globe")),
       h("span", { class: "meta" }, h("span", { class: "name mono" }, b.cidr),
         h("span", { class: "sub" }, [b.reason ? t("note_fact", { note: b.reason }) : null, b.banned_by ? t("banned_by_fact", { name: displayName(b.banned_by) }) : null, fmtDateTime(b.created_at)].filter(Boolean).join(" · "))),
       h("button", {
@@ -500,7 +539,7 @@ async function bansSection(el, actions) {
   const devList = h("div", { class: "list" });
   if (!devices.length) add(devList, h("p", { class: "muted" }, t("no_device_bans")));
   for (const b of devices) {
-    add(devList, h("div", { class: "list-row" }, h("span", { class: "list-icon", "aria-hidden": "true" }, "📵"),
+    add(devList, h("div", { class: "list-row" }, h("span", { class: "list-icon", "aria-hidden": "true" }, icon("smartphone")),
       h("span", { class: "meta" }, h("span", { class: "name" }, b.user ? displayName(b.user) : t("unknown_user"), h("span", { class: "muted small mono" }, ` ${b.device_id.slice(0, 8)}…`)),
         h("span", { class: "sub" }, [b.reason ? t("note_fact", { note: b.reason }) : null, fmtDateTime(b.created_at)].filter(Boolean).join(" · "))),
       h("button", {
@@ -574,6 +613,115 @@ const AUDIT_TEXT = {
   "config.update": (d) => t("audit_config_update", { keys: Object.keys(d).join(", ") }),
   "legal.update": (d) => t("audit_legal_update", { documents: (d.documents || []).join(" and ") }),
 };
+
+// --- data (owner): what the server's storage goes on -------------------------------
+
+// Slice order is fixed and colour follows the category, never its rank, so a
+// category keeps its colour when others come and go. `other` and `free` are
+// neutral: they aren't a kind of data anyone chose to keep.
+const DATA_KEYS = ["messages", "attachments", "emoji", "images", "previews", "users", "servers", "logs", "other", "free"];
+const DATA_COLOR = (key) => `var(--data-${key})`;
+
+function donut(slices, total, { onHover }) {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", "0 0 200 200");
+  svg.setAttribute("class", "data-donut");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", t("data_chart_aria"));
+  const R = 92;
+  const r = 60;
+  let angle = -Math.PI / 2;
+  const point = (rad, a) => [100 + rad * Math.cos(a), 100 + rad * Math.sin(a)];
+  const shown = slices.filter((s) => s.bytes > 0);
+  for (const s of shown) {
+    const sweep = Math.min((s.bytes / total) * Math.PI * 2, Math.PI * 2 - 1e-4);
+    const a0 = angle;
+    const a1 = angle + sweep;
+    angle = a1;
+    const large = sweep > Math.PI ? 1 : 0;
+    const [x0, y0] = point(R, a0);
+    const [x1, y1] = point(R, a1);
+    const [x2, y2] = point(r, a1);
+    const [x3, y3] = point(r, a0);
+    const path = document.createElementNS(NS, "path");
+    path.setAttribute("d", `M${x0} ${y0}A${R} ${R} 0 ${large} 1 ${x1} ${y1}L${x2} ${y2}A${r} ${r} 0 ${large} 0 ${x3} ${y3}Z`);
+    path.setAttribute("class", `slice slice-${s.key}`);
+    path.setAttribute("fill", s.key === "free" ? "url(#data-free-hatch)" : DATA_COLOR(s.key));
+    path.dataset.key = s.key;
+    path.addEventListener("mouseenter", () => onHover(s.key));
+    path.addEventListener("mouseleave", () => onHover(null));
+    const title = document.createElementNS(NS, "title");
+    title.textContent = `${t(`data_${s.key}`)}: ${fmtBytes(s.bytes)}`;
+    path.append(title);
+    svg.append(path);
+  }
+  // Free space is hatched, so it reads as "not data" without a colour.
+  const defs = document.createElementNS(NS, "defs");
+  defs.innerHTML = '<pattern id="data-free-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">'
+    + '<rect width="6" height="6" fill="var(--data-free)"/><line x1="0" y1="0" x2="0" y2="6" stroke="var(--data-other)" stroke-width="2"/></pattern>';
+  svg.prepend(defs);
+  return svg;
+}
+
+async function dataSection(el, actions) {
+  const body = h("div", { class: "data-tab" });
+  const draw = (s) => {
+    const total = s.total_bytes || 0;
+    const slices = DATA_KEYS.map((key) => s.categories.find((c) => c.key === key) || { key, bytes: 0, db_bytes: 0, file_bytes: 0, files: 0 });
+    const centre = h("div", { class: "data-centre" });
+    const showCentre = (key) => {
+      const c = key && slices.find((x) => x.key === key);
+      clear(centre,
+        h("div", { class: "data-centre-n" }, fmtBytes(c ? c.bytes : total)),
+        h("div", { class: "data-centre-l" }, c ? t(`data_${c.key}`) : t("data_total")));
+      for (const row of legend.children) row.classList.toggle("hover", row.dataset.key === key);
+      for (const p of chart.querySelectorAll(".slice")) p.classList.toggle("dim", !!key && p.dataset.key !== key);
+    };
+    const pct = (b) => (total ? `${((b / total) * 100).toFixed(b / total < 0.01 ? 1 : 0)}%` : "0%");
+    const legend = h("ul", { class: "data-legend" }, slices.map((c) => h("li", {
+      class: c.bytes ? "" : "empty", dataset: { key: c.key },
+      on: { mouseenter: () => showCentre(c.key), mouseleave: () => showCentre(null) },
+    },
+    h("span", { class: `data-swatch ${c.key}`, style: `background:${DATA_COLOR(c.key)}` }),
+    h("span", { class: "data-name" }, t(`data_${c.key}`),
+      h("span", { class: "muted small block" }, [
+        c.db_bytes ? t("data_in_db", { size: fmtBytes(c.db_bytes) }) : null,
+        c.file_bytes ? t("data_in_files", { size: fmtBytes(c.file_bytes), count: c.files }) : null,
+      ].filter(Boolean).join(" · ") || t("data_nothing"))),
+    h("span", { class: "data-size" }, fmtBytes(c.bytes)),
+    h("span", { class: "data-pct muted" }, pct(c.bytes)))));
+    const chart = donut(slices, total || 1, { onHover: showCentre });
+    showCentre(null);
+    const db = s.database;
+    const action = (key, label, hint, danger = false) => h("div", { class: "list-row" },
+      h("span", { class: "meta" }, h("span", { class: "name" }, label), h("span", { class: "sub" }, hint)),
+      h("button", {
+        class: `btn ${danger ? "danger" : ""}`, type: "button",
+        on: {
+          click: (e) => confirmAction(e, {
+            title: label, message: t(`data_${key}_confirm`), confirmLabel: t(`data_${key}_btn`),
+            onConfirm: async () => { draw(await actions.req(T.ADMIN_STORAGE_ACTION, { action: key })); toast(t(`data_${key}_done`)); },
+          }),
+        },
+      }, t(`data_${key}_btn`)));
+    clear(body,
+      h("div", { class: "data-summary" },
+        h("div", { class: "data-chart" }, chart, centre),
+        legend),
+      h("p", { class: "muted small" },
+        t("data_db_line", { file: fmtBytes(db.file_bytes), wal: fmtBytes(db.wal_bytes), free: fmtBytes(db.free_bytes) }),
+        " ", db.exact ? t("data_exact") : t("data_estimated")),
+      h("h3", {}, t("data_tidy_heading")),
+      h("div", { class: "list" },
+        action("clear_previews", t("data_clear_previews_label"), t("data_clear_previews_hint", { count: s.cached_previews })),
+        action("purge_unclaimed", t("data_purge_unclaimed_label"), t("data_purge_unclaimed_hint", { count: s.unclaimed_media.count, size: fmtBytes(s.unclaimed_media.bytes) })),
+        action("vacuum", t("data_vacuum_label"), t("data_vacuum_hint", { size: fmtBytes(db.free_bytes) }))));
+  };
+  add(el, h("p", { class: "muted" }, t("data_intro")), body);
+  add(body, h("p", { class: "muted" }, t("data_loading")));
+  draw(await actions.req(T.ADMIN_STORAGE));
+}
 
 async function auditSection(el, actions) {
   const box = h("div", { class: "list" });

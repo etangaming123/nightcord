@@ -12,6 +12,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
+import logging
 import secrets
 import sqlite3
 import time
@@ -21,12 +22,17 @@ from typing import Any, Iterable
 from . import files as F
 from .ids import new_id
 from .permissions import DEFAULT_EVERYONE, OWNER_RANK
+from . import protocol as P
 from .protocol import BADGE_VERIFIED
+
+log = logging.getLogger("nightcord.db")
 
 SESSION_TTL_SECONDS = 30 * 24 * 3600
 
 DEFAULT_SERVER_CONFIG = {
     "server_name": None,  # None: use the config file's server_name
+    # Markdown shown on the server's address page and the client's About tab.
+    "server_description": "",
     "guild_creation": "on",
     "account_creation": "on",
     "guild_list_visible": True,
@@ -51,6 +57,9 @@ DEFAULT_SERVER_CONFIG = {
     # Fetch pages people link to and show a preview (PROTOCOL.md §4 Embed).
     # Off means the server never makes outbound requests for messages.
     "link_embeds": True,
+    # Read X/Twitter status links through fixupx, which serves a proper
+    # preview (tweet text, media, stats) where x.com serves nothing useful.
+    "fx_links": True,
 }
 
 STAFF_LEVELS = {"none": 0, "moderator": 1, "admin": 2, "owner": 3}
@@ -364,6 +373,17 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX user_badges_badge ON user_badges(badge_id)
     """,
+    # 12 — link preview cache (PROTOCOL.md §4 Embed): what a URL looked like
+    # last time, so a restart doesn't mean fetching every link again.
+    """
+    CREATE TABLE embed_cache (
+        url TEXT PRIMARY KEY,
+        data TEXT NOT NULL,
+        fetched_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+    );
+    CREATE INDEX embed_cache_expires ON embed_cache(expires_at)
+    """,
 ]
 
 MIGRATION_2 = """
@@ -466,6 +486,11 @@ def _migration_2(conn: sqlite3.Connection) -> None:
 
 INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O/1/I
 REPLY_PREVIEW_CHARS = 120
+
+
+def _iso_days_ago(days: int) -> str:
+    then = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)
+    return then.isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def now_iso() -> str:
@@ -596,10 +621,28 @@ def _role(row: sqlite3.Row) -> dict:
     }
 
 
+# Pre-migration snapshots kept per backup folder (older ones are deleted).
+PRE_MIGRATE_KEEP = 3
+
+
+def snapshot_db(conn: sqlite3.Connection, target: Path) -> None:
+    """A consistent copy of an open database (SQLite's online backup API)."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    dst = sqlite3.connect(str(target))
+    try:
+        conn.backup(dst)
+    finally:
+        dst.close()
+
+
 class Database:
-    def __init__(self, path: Path | str):
-        if path != ":memory:":
-            Path(path).parent.mkdir(parents=True, exist_ok=True)
+    def __init__(self, path: Path | str, *, backup_dir: Path | None = None):
+        """backup_dir: where a snapshot goes before migrations run on an
+        existing database (default: a backups/ folder next to the file)."""
+        self.path = None if path == ":memory:" else Path(path)
+        if self.path:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.backup_dir = backup_dir or (self.path.parent / "backups" if self.path else None)
         self.conn = sqlite3.connect(str(path), isolation_level=None, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
@@ -616,6 +659,8 @@ class Database:
                 "This database was created by Nightcord v1 and can't be upgraded. "
                 "Move or delete the data directory and start again."
             )
+        if 0 < version < len(MIGRATIONS):
+            self._backup_before_migrating(version)
         for i, sql in enumerate(MIGRATIONS[version:], start=version + 1):
             self.conn.execute("BEGIN IMMEDIATE")
             try:
@@ -631,6 +676,25 @@ class Database:
                 self.conn.execute("ROLLBACK")
                 raise
         self.has_fts = self._one("SELECT 1 FROM sqlite_master WHERE name = 'messages_fts'") is not None
+
+    def _backup_before_migrating(self, version: int) -> None:
+        """Upgrades are automatic, so keep a copy of the old database first:
+        if a migration ever goes wrong, the data from before it is still
+        there. Only the newest PRE_MIGRATE_KEEP copies are kept."""
+        if not self.backup_dir:
+            return
+        stamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        base = f"pre-migrate-v{version}-to-v{len(MIGRATIONS)}-{stamp}"
+        target = self.backup_dir / f"{base}.db"
+        n = 1
+        while target.exists():
+            n += 1
+            target = self.backup_dir / f"{base}-{n}.db"
+        snapshot_db(self.conn, target)
+        log.info("Upgrading the database from version %d to %d; saved a copy to %s", version, len(MIGRATIONS), target)
+        old = sorted(self.backup_dir.glob("pre-migrate-*.db"), key=lambda p: p.stat().st_mtime, reverse=True)
+        for stale in old[PRE_MIGRATE_KEEP:]:
+            stale.unlink(missing_ok=True)
 
     def set_status_source(self, fn) -> None:
         """Tell the serializer who is online, so custom statuses can be hidden
@@ -808,19 +872,69 @@ class Database:
             "device_count": devices,
         }
 
-    def list_users(self, *, status: str | None = None, query: str | None = None, limit: int = 200) -> list[dict]:
-        sql = "SELECT * FROM users WHERE 1=1"
+    # admin.users.list sorting (PROTOCOL.md §5 Admin): column expressions over
+    # the query below, never anything the client sends.
+    _USER_SORTS = {
+        "joined": "u.created_at",
+        "seen": "seen_at",
+        "name": "lower(COALESCE(NULLIF(u.display_name, ''), u.username))",
+        "devices": "devices",
+    }
+
+    def list_users(
+        self, *, status: str | None = None, query: str | None = None, limit: int = 200,
+        sort: str = "joined", order: str = "asc", flags: Iterable[str] = (), seen: str | None = None,
+        joined: str | None = None, only_ids: Iterable[str] | None = None,
+    ) -> list[dict]:
+        """Accounts for the admin list. flags: staff | muted | perks | badges
+        (each narrows the list); seen: 7d | 30d | inactive30 | never;
+        joined: 7d | 30d; only_ids: restrict to these users (e.g. who's online)."""
+        sql = (
+            "SELECT u.*, "
+            "(SELECT MAX(s.last_seen) FROM sessions s WHERE s.user_id = u.user_id AND s.last_ip IS NOT NULL) AS seen_at, "
+            "(SELECT COUNT(DISTINCT s.device_id) FROM sessions s WHERE s.user_id = u.user_id AND s.device_id IS NOT NULL) AS devices "
+            "FROM users u WHERE 1=1"
+        )
         args: list[Any] = []
         if status:
-            sql += " AND status = ?"
+            sql += " AND u.status = ?"
             args.append(status)
         else:
-            sql += " AND status != 'deleted'"
+            sql += " AND u.status != 'deleted'"
         if query:
-            sql += " AND (username_lower LIKE ? ESCAPE '\\' OR lower(display_name) LIKE ? ESCAPE '\\')"
+            sql += " AND (u.username_lower LIKE ? ESCAPE '\\' OR lower(u.display_name) LIKE ? ESCAPE '\\')"
             like = "%" + _like_escape(query.lower()) + "%"
             args += [like, like]
-        sql += " ORDER BY created_at LIMIT ?"
+        flags = set(flags)
+        if "staff" in flags:
+            sql += " AND (u.server_role != 'none' OR u.is_server_owner = 1)"
+        if "muted" in flags:
+            sql += " AND u.muted_until IS NOT NULL AND (u.muted_until = 'permanent' OR u.muted_until > ?)"
+            args.append(now_iso())
+        if "perks" in flags:
+            sql += " AND u.perks = 1"
+        if "badges" in flags:
+            sql += " AND EXISTS (SELECT 1 FROM user_badges b WHERE b.user_id = u.user_id)"
+        if only_ids is not None:
+            ids = list(only_ids)
+            sql += f" AND u.user_id IN ({','.join('?' * len(ids)) or 'NULL'})"
+            args += ids
+        ago = lambda days: _iso_days_ago(days)  # noqa: E731
+        if seen in ("7d", "30d"):
+            sql += " AND seen_at >= ?"
+            args.append(ago(int(seen[:-1])))
+        elif seen == "inactive30":
+            sql += " AND (seen_at IS NULL OR seen_at < ?)"
+            args.append(ago(30))
+        elif seen == "never":
+            sql += " AND seen_at IS NULL"
+        if joined in ("7d", "30d"):
+            sql += " AND u.created_at >= ?"
+            args.append(ago(int(joined[:-1])))
+        column = self._USER_SORTS.get(sort, "u.created_at")
+        direction = "DESC" if order == "desc" else "ASC"
+        # Never-seen accounts go last either way.
+        sql += f" ORDER BY ({column}) IS NULL, {column} {direction}, u.created_at LIMIT ?"
         args.append(limit)
         return [self._admin_user(r) for r in self._all(sql, *args)]
 
@@ -933,6 +1047,14 @@ class Database:
             time.time() + SESSION_TTL_SECONDS, now_iso(), (user_agent or "")[:300] or None, th,
         )
         return row["user_id"]
+
+    def touch_sessions(self, tokens: Iterable[str]) -> None:
+        """Marks sessions as seen now: a live connection is activity too, not
+        just the moment someone logs in (admin "last seen")."""
+        now = now_iso()
+        self.conn.executemany(
+            "UPDATE sessions SET last_seen = ? WHERE token_hash = ?", [(now, hash_token(t)) for t in tokens]
+        )
 
     def session_exists(self, token: str) -> bool:
         return self._one("SELECT 1 FROM sessions WHERE token_hash = ?", hash_token(token)) is not None
@@ -2012,6 +2134,34 @@ class Database:
         """Fills in link previews without touching edited_at (PROTOCOL.md §4 Embed)."""
         self._exec("UPDATE messages SET embeds = ? WHERE message_id = ?", json.dumps(embeds), message_id)
         return self.get_message(message_id)
+
+    # --- link preview cache (embeds.py) -----------------------------------------
+
+    def embed_cache_get(self, url: str) -> tuple[dict, int] | None:
+        """(embed, expires_at) if url was looked at recently; {} = nothing to show."""
+        row = self._one("SELECT data, expires_at FROM embed_cache WHERE url = ? AND expires_at > ?", url, int(time.time()))
+        return (json.loads(row["data"]), row["expires_at"]) if row else None
+
+    def embed_cache_put(self, url: str, embed: dict, expires_at: int) -> None:
+        self._exec(
+            "INSERT INTO embed_cache(url, data, fetched_at, expires_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(url) DO UPDATE SET data = excluded.data, fetched_at = excluded.fetched_at, "
+            "expires_at = excluded.expires_at",
+            url, json.dumps(embed), int(time.time()), expires_at,
+        )
+
+    def embed_cache_prune(self, max_rows: int = P.EMBED_CACHE_MAX_ROWS) -> int:
+        """Drops expired rows, then the oldest beyond max_rows. Returns rows removed."""
+        with self._tx():
+            n = self.conn.execute("DELETE FROM embed_cache WHERE expires_at <= ?", (int(time.time()),)).rowcount
+            n += self.conn.execute(
+                "DELETE FROM embed_cache WHERE url IN (SELECT url FROM embed_cache ORDER BY fetched_at DESC LIMIT -1 OFFSET ?)",
+                (max_rows,),
+            ).rowcount
+        return n
+
+    def embed_cache_clear(self) -> int:
+        return self.conn.execute("DELETE FROM embed_cache").rowcount
 
     def suppress_embeds(self, message_id: int, suppressed: bool) -> dict | None:
         self._exec(

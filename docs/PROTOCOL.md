@@ -1,6 +1,6 @@
 # Nightcord Protocol
 
-Version: `0.14`
+Version: `0.18`
 
 This document is the single source of truth for the wire format between the
 Nightcord client (GitHub Pages, vanilla JS) and a Nightcord server (Python).
@@ -21,6 +21,10 @@ Each protocol version arrived with one commit on `main`, named in the middle col
 | 0.6 | Friends, blocking and message requests | Friends and friend requests, one-sided blocking, per-user DM privacy with message requests, group DMs limited to friends, and user search as a server setting (off by default). |
 | 0.7 | Announcements inbox | A server-wide announcements inbox with per-account read state, and automatic entries when the Terms or Privacy Policy change. |
 | 0.8 | Account switcher | `max_accounts_per_client`, an advisory server setting for clients that keep several accounts. |
+| 0.18 | Data tab | `admin.storage` (how much space the server uses, by category) and `admin.storage.action` (clear the preview cache, `VACUUM`, purge unclaimed uploads). |
+| 0.17 | Accounts tab: sorting and filters | `admin.users.list` learns `sort`, `order`, `flags`, `seen` and `joined`; `AdminUser.online`; a session's `last_seen` now moves while connected and when it disconnects, not only at login. |
+| 0.16 | Discord-style link embeds | Embeds gain `gifv` and `video` media (proxied), `provider_url`, `author_url`, image/video sizes and `youtube_id`; oEmbed author/provider lines, YouTube titles, X/Twitter links read through fixupx (`fx_links`), and a preview cache that survives restarts. |
+| 0.15 | Server description | `server_description`, a Markdown blurb the owner writes; shown on the server's address page (`GET /`) and the client's About tab. |
 | 0.14 | Badges | Badges the server owner uploads and hands out, plus a built-in Verified badge (`badge.*`, `admin.users.set_badges`, `PublicUser.badges`, the `badge` media kind). |
 | 0.13 | Status privacy and expiry | A custom status is hidden from everyone else while you're offline or invisible, and can be set to clear itself after 30m, 1h, 4h or at the end of the day. |
 | 0.12 | Message tools | `message.forward` (a snapshot, not a reference), and `read_state.ack` learning to move backwards so a message can be marked unread. |
@@ -125,12 +129,13 @@ Besides `/ws`, the server answers:
   after an hour. Uploading needs no customisation perks; using an image
   may (§8d).
 - `GET /media/{media_id}` — a stored image. Public and immutable.
-- `GET /proxy/{signature}/{url}` — one image from a link preview (§4
-  Embed). `url` is the remote image's URL, base64url-encoded; `signature`
+- `GET /proxy/{signature}/{url}` — one image or video from a link preview
+  (§4 Embed). `url` is the remote file's URL, base64url-encoded; `signature`
   is HMAC-SHA256 over it with a per-server secret, so this can't be used as
   an open proxy. The server fetches it with the same guards as a preview
-  (public addresses only, `image/*` only, 8 MB cap) and keeps the bytes for
-  a week. No authentication: an embed's images are as public as the message
+  (public addresses only; `image/*` up to 8 MB, `video/mp4` and
+  `video/webm` up to 25 MB) and keeps the bytes for a week; cached files
+  answer `Range` requests so videos can seek. No authentication: an embed's images are as public as the message
   they're on.
 
 ---
@@ -244,6 +249,7 @@ Password is never sent to the client; the server stores only a bcrypt hash.
 ```json
 {
   "server_name": "string",
+  "server_description": "string",
   "guild_creation": "off | on",
   "account_creation": "off | request | on",
   "guild_list_visible": true,
@@ -258,14 +264,18 @@ Password is never sent to the client; the server stores only a bcrypt hash.
   "user_search": "off | staff | on",
   "announcements_admins": false,
   "max_accounts_per_client": 0,
-  "link_embeds": true
+  "link_embeds": true,
+  "fx_links": true
 }
 ```
 Defaults: `guild_creation: "on"`, `account_creation: "on"`,
 `guild_list_visible: true`, `max_upload_bytes` 25 MB (1 MB – 1 GB),
 `voice_enabled: false`, `customization_mode: "on"` with every feature
 on, `server_name` from the server's config file
-until the owner sets one. `guild_list_visible` gates whether a server-wide
+until the owner sets one, `server_description: ""`. `server_description`
+(0–2000 chars, Markdown, trimmed) tells people what the server is; the
+landing page at `GET /` shows it in place of the certificate note, and
+clients show it on an About page. `guild_list_visible` gates whether a server-wide
 "open guild list" can exist at all — a guild's own `listed` flag still needs
 to be true for it to appear.
 
@@ -278,7 +288,10 @@ switcher stop offering "Add account" for this server once they hold that
 many; the server doesn't enforce it. `link_embeds` (default true) decides
 whether the server fetches pages people link to and builds previews (§4
 Embed); with it off the server makes no outbound requests for messages at
-all, and `/proxy` stops serving anything new.
+all, and `/proxy` stops serving anything new. `fx_links` (default true)
+reads X/Twitter status links through fixupx.com, which serves a real
+preview (tweet text, media, stats) where x.com serves nothing useful to a
+bot; the embed's `url` stays the link as posted.
 
 ### Guild
 ```json
@@ -538,39 +551,97 @@ in a viewer, and offer everything else as a download.
 ### Embed
 ```json
 {
-  "kind": "link | image | video",
+  "kind": "link | image | gifv | video",
   "url": "https://…",
   "title": "string | null",
   "description": "string | null",
   "site_name": "string | null",
+  "provider_url": "https://… | null",
   "author": "string | null",
+  "author_url": "https://… | null",
   "color": "#rrggbb | null",
   "image": "/proxy/… | null",
-  "thumbnail": "/proxy/… | null"
+  "image_width": "number | null",
+  "image_height": "number | null",
+  "thumbnail": "/proxy/… | null",
+  "video": "/proxy/… | null",
+  "video_width": "number | null",
+  "video_height": "number | null",
+  "youtube_id": "string | null"
 }
 ```
-A preview the server built for a link somebody posted. The server reads at
+A preview the server built for a link somebody posted, laid out like
+Discord's: provider line (`site_name`, linking to `provider_url`), author
+line (`author` → `author_url`), title linking to `url`, description (plain
+text with line breaks, up to 1000 chars), then media. The server reads at
 most 5 links per message — skipping code spans, spoilers and the `<url>`
 "no preview" forms of §4 Message — fetches each page and keeps `og:*`,
-`twitter:*`, `<title>`, `<meta name="description">` and `theme-color`.
+`twitter:*`, `<title>`, `<meta name="description">`, `theme-color` and the
+page's oEmbed link (`<link rel="alternate" type="application/json+oembed">`),
+whose `author_name`/`author_url`/`provider_name`/`provider_url` fill the
+author and provider lines.
 
-A URL that answers with an image is a `kind: "image"` embed; a YouTube
-watch, `youtu.be` or shorts link is a `kind: "video"` card with the video's
-thumbnail. Nothing is ever embedded as an iframe.
+- `link`: a page. A `twitter:card` of `summary_large_image` or `player`
+  gets a big `image`; any other page image is a small `thumbnail` beside
+  the text (Discord's rule). A page with a playable `og:video` (mp4/webm)
+  is a `video` instead.
+- `image`: the URL answered with an image. Clients show it bare, like an
+  attachment.
+- `gifv`: a GIF site (Tenor, Giphy) whose page has an mp4. Clients play
+  `video` muted and looping with no controls, bare like an attachment,
+  `image` as the poster.
+- `video`: a page with a playable video, or a direct mp4/webm link. Clients
+  play `video` inline with controls (`image` as the poster). A YouTube
+  watch, `youtu.be`, shorts or live link is a `video` with `youtube_id`, the
+  title and channel from YouTube's oEmbed and the thumbnail as `image`, but
+  no `video`: clients show the thumbnail and load YouTube's player (an
+  iframe from `youtube-nocookie.com`) only when the viewer presses play.
+  That is the one time a viewer's browser talks to the previewed site.
 
-`image` and `thumbnail` are **always** paths on this server
-(`/proxy/{signature}/{url}`, §2 HTTP), never third-party URLs: a link in a
-message must not be usable to collect every reader's IP address. The server
-fetches the real image once and caches it.
+`image`, `thumbnail` and `video` are paths on this server
+(`/proxy/{signature}/{url}`, §2 HTTP), never third-party URLs (YouTube
+thumbnails included): a link in a message must not be usable to collect
+every reader's IP address. The server fetches the real file once and caches it (images up to
+8 MB, videos up to 25 MB; past that the proxy answers 404 and clients fall
+back to the poster image and a link).
+
+Built previews are cached by URL for a day (ten minutes for a URL with
+nothing to show) in memory and in the database, so restarts don't refetch
+everything. Fields a server doesn't know are absent or null; clients must
+treat embeds from older servers (no sizes, no `video`) the same way.
 
 Previews arrive after the message: `message.new` carries `embeds: []`, and
 a `message.updated` follows with them filled in. That update does **not**
 set `edited_at`, so it isn't shown as an edit. Editing a message clears its
-previews and looks again.
+previews and looks again. A message whose text is nothing but links that
+became `image` / `gifv` embeds may be shown as just the media.
 
 `message.embeds.suppress` hides them (author, or `MANAGE_MESSAGES` in a
 guild); `embeds_suppressed` then stays true and `embeds` reads empty.
 Embeds are off entirely when the server's `link_embeds` setting is false.
+
+### StorageUsage
+```json
+{
+  "total_bytes": 12345678,
+  "database": { "file_bytes": 0, "wal_bytes": 0, "page_size": 4096, "page_count": 0, "free_bytes": 0, "exact": false },
+  "categories": [ { "key": "messages", "bytes": 0, "db_bytes": 0, "file_bytes": 0, "files": 0 } ],
+  "unclaimed_media": { "count": 0, "bytes": 0 },
+  "cached_previews": 0
+}
+```
+What the server's data takes up (`admin.storage`). `categories` always
+lists, in this order: `messages` (messages, reactions, polls, the search
+index), `attachments` (files people sent), `emoji` (custom emoji and
+stickers), `images` (avatars, banners, icons, badges), `previews` (link
+preview cache and proxied media), `users` (accounts, sessions, friends,
+read states), `servers` (guilds, channels, roles, invites), `logs` (audit
+logs, announcements, bans), `other` (everything else, including the WAL
+file and the rules pages) and `free` (empty database pages a `vacuum`
+would give back). `db_bytes` is the category's share of the database,
+`file_bytes` what it keeps on disk. Per-table sizes are exact when the
+server's SQLite has `dbstat` (`database.exact`); otherwise they're
+estimated from what's stored and scaled to the pages in use.
 
 ### Badge
 ```json
@@ -678,6 +749,7 @@ only mention counts.
 | password | 8–72 bytes UTF-8 (bcrypt limit) |
 | message `content` | 1–2000 chars after trimming |
 | server `server_name` | 1–64 chars |
+| server `server_description` | 0–2000 chars after trimming |
 | guild `name` | 1–100 chars |
 | channel `name` | 1–32 chars, `[a-z0-9_-]` (client lowercases / replaces spaces with `-`) |
 | role `name` | 1–32 chars; at most 50 roles per guild |
@@ -754,8 +826,8 @@ target's server role to be strictly below the actor's.
 
 | type | direction | payload |
 |---|---|---|
-| `admin.users.list` | C→S | `{ status?: "pending"\|"active"\|"rejected"\|"disabled", query? }` — mod. Deleted accounts are left out |
-| `admin.users.list.result` | S→C | `{ users: [AdminUser] }` — `PublicUser` plus `status`, `created_at`, `note`, `muted_until`, `last_ip`, `last_seen`, `device_count` |
+| `admin.users.list` | C→S | `{ status?: "pending"\|"active"\|"rejected"\|"disabled", query?, sort?: "joined"\|"seen"\|"name"\|"devices", order?: "asc"\|"desc", flags?: ["staff"\|"muted"\|"perks"\|"badges"\|"online"], seen?: "7d"\|"30d"\|"inactive30"\|"never", joined?: "7d"\|"30d" }` — mod. Deleted accounts are left out. Default order: oldest account first. Every flag narrows the list (`online` = connected right now, invisible included); `seen` filters on `last_seen` (`inactive30`: not seen in 30 days, or never); `joined` on `created_at`. Accounts never seen sort last either way. At most 200 |
+| `admin.users.list.result` | S→C | `{ users: [AdminUser] }` — `PublicUser` plus `status`, `created_at`, `note`, `muted_until`, `last_ip`, `last_seen`, `device_count`, `online`. `last_seen` is the latest of the account's sessions: updated at login, every few minutes while connected, and on disconnect |
 | `admin.users.set_status` | C→S | `{ user_id, status: "active"\|"rejected"\|"disabled" }` — mod. Approve (pending→active), reject (pending→rejected), disable (active→disabled; closes their connections), enable (disabled→active) |
 | `admin.users.set_status.result` | S→C | `{ user: AdminUser }` |
 | `admin.users.reset_password` | C→S | `{ user_id }` — admin. Sets a random password, revokes sessions |
@@ -782,6 +854,10 @@ target's server role to be strictly below the actor's.
 | `admin.audit_log.result` | S→C | `{ entries: [{ entry_id, actor: PublicUser, action, target_id, details, created_at }], has_more }` |
 | `admin.stats` | C→S | `{}` — admin |
 | `admin.stats.result` | S→C | `{ users, guilds, messages, attachments: { count, bytes }, media: { count, bytes } }` |
+| `admin.storage` | C→S | `{}` — owner |
+| `admin.storage.result` | S→C | `StorageUsage` (below) |
+| `admin.storage.action` | C→S | `{ action: "clear_previews"\|"vacuum"\|"purge_unclaimed" }` — owner. `clear_previews` empties the link preview cache and the proxied files (previews already on messages stay, and their media is fetched again when viewed); `vacuum` rebuilds the database file to hand free pages back to the disk; `purge_unclaimed` deletes uploads nobody attached to anything, older than five minutes. Each is written to the server audit log as `storage.<action>` |
+| `admin.storage.action.result` | S→C | `StorageUsage`, measured after the action |
 | `admin.legal.set` | C→S | `{ terms?: markdown \| null, privacy?: markdown \| null }` — owner. Empty or null removes a document |
 | `admin.legal.set.result` | S→C | `{ legal_version, has_terms, has_privacy }` |
 | `admin.guilds.list` | C→S | `{}` — admin |

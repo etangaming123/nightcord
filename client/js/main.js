@@ -6,22 +6,27 @@ import { ackCurrent, actions, loadAll, openInvite, restoreView, setSessionHooks 
 import { req } from "./api.js";
 import { Connection, NightcordError, certTrustUrl, normalizeServerUrl } from "./connection.js";
 import { resync, wireEvents } from "./events.js";
-import { applyPrefs, getPrefs } from "./prefs.js";
+import { applyPrefs, getPrefs, setPrefs } from "./prefs.js";
 import { restoreReminders } from "./reminders.js";
 import { ERR, LIMITS, PROTOCOL_VERSION, T } from "./protocol.js";
-import { checkForUpdate } from "./update-check.js";
+import { checkForUpdate, getUpdateInfo, onUpdateInfo, RELEASES_URL } from "./update-check.js";
 import { handleShortcut, shouldFocusComposer } from "./shortcuts.js";
 import { flush, invalidate, setActions } from "./render.js";
-import { currentChannel, resetServerState, state } from "./state.js";
+import { currentChannel, isThisServer, resetServerState, state } from "./state.js";
 import * as store from "./storage.js";
-import { $, add, clear, h, setAvatarBase } from "./ui/dom.js";
+import { $, add, clear, h, setAvatarBase, setStampPrefs, setUrlResolver } from "./ui/dom.js";
+import { render as renderMarkdown } from "./ui/markdown.js";
 import { clearPending } from "./uploads.js";
 import { focusComposer, setupDropZone } from "./ui/composer.js";
 import { legalLinks, legalUpdateModal, renderLegalTabs, showLegalModal } from "./ui/legal.js";
 import { closeSearch, searchOpen } from "./ui/search.js";
-import { parseMessageLink, setMessageLinkHandler, setupLinkGuard } from "./ui/links.js";
+import { decodeInvite, parseMessageLink, setInviteLinkHandler, setMessageLinkHandler, setupLinkGuard } from "./ui/links.js";
+import { setupGestures } from "./ui/gestures.js";
+import * as router from "./router.js";
+import { setFaviconBadge } from "./ui/favicon.js";
 import { closeFullscreen, closeModal, closePopover, confirmAction, fullscreenOpen, modalOpen, openModal, popoverOpen, toast } from "./ui/modals.js";
 import { loadStrings, scopedT } from "./strings.js";
+import { icon } from "./ui/icons.js";
 
 const t = scopedT("main");
 const tc = scopedT("common");
@@ -35,6 +40,7 @@ const BANNED_CLOSE = 4003;
 
 let pendingInvite = null; // ?invite=CODE, opened once logged in
 let pendingJump = null; // ?jump=…/…/…, a message link opened once logged in
+let pendingRoute = null; // the address the page opened on (router.js), shown once logged in
 let addingAccount = false; // on the login screen to add another account (not replace one)
 
 setActions(actions);
@@ -42,10 +48,19 @@ setActions(actions);
 // ---------------------------------------------------------------------------
 // Screens
 
+let currentScreen = "connect";
+let updateFloatDismissed = false; // this session only, like the Inbox card
+
 function showScreen(which) {
   for (const id of ["connect", "setup", "legal", "auth"]) $(`#screen-${id}`).hidden = which !== id;
   $("#app").hidden = which !== "app";
-  if (which !== "app") document.title = t("brand");
+  currentScreen = which;
+  renderUpdateFloat();
+  if (which !== "app") {
+    document.title = t("brand");
+    setFaviconBadge(0);
+    router.clear();
+  }
 }
 
 // prefill: what to put back in the address box (only after a real failure,
@@ -168,6 +183,7 @@ let connecting = false;
 // putting back there; a saved card or a boot-time reconnect never rewrites it.
 async function connectTo(input, { addAccount = false, fromForm = false } = {}) {
   if (connecting) return;
+  if (preview && input === PREVIEW_URL) { connectPreview({ addAccount }); return; }
   let url;
   try {
     url = normalizeServerUrl(input);
@@ -195,7 +211,7 @@ async function connectTo(input, { addAccount = false, fromForm = false } = {}) {
   button.disabled = true;
   button.textContent = t("connecting");
   status.hidden = !button.hidden; // only show the status text when the Connect button itself is on the other tab
-  status.textContent = t("connecting");
+  status.textContent = t("connecting_to", { host: new URL(url).host });
   cancelBtn.hidden = false;
   cancelBtn.onclick = onCancel; // assigned, not added: never stacks up
   const hintTimer = setTimeout(() => { hint.hidden = false; }, 6000);
@@ -226,10 +242,16 @@ async function connectTo(input, { addAccount = false, fromForm = false } = {}) {
     toast(t("protocol_mismatch", { server: state.info.protocol_version, client: PROTOCOL_VERSION }), { error: true, ms: 8000 });
   }
   setAvatarBase(url);
+  await joinServer(conn, url, { addAccount });
+}
+
+// After the socket is up and server.info is in: log in (or show the screens
+// that come first). Shared by real servers and the preview.
+async function joinServer(conn, url, { addAccount = false } = {}) {
   wireEvents(conn);
   wireConnection(conn);
   store.saveServer(url, state.info.server_name, state.info.max_accounts_per_client);
-  store.setLastServer(url);
+  if (!preview) store.setLastServer(url);
 
   if (state.info.setup_required) {
     showSetup();
@@ -249,6 +271,103 @@ async function connectTo(input, { addAccount = false, fromForm = false } = {}) {
   addingAccount = addAccount;
   if (needsLegal()) showLegal();
   else showAuth();
+}
+
+// --- preview (client/js/preview): the app against a pretend server in this tab ---
+
+// The standalone build leaves the preview out (scripts/build-standalone.mjs).
+const PREVIEW_AVAILABLE = !globalThis.__NIGHTCORD_LANG__;
+const PREVIEW_URL = "wss://preview.nightcord.invalid/ws";
+let preview = null; // { server, activity, resolveUrl, sessionFor, connect } while it runs
+
+function choosePreview() {
+  const tp = scopedT("ui/preview");
+  const option = (role, iconName) => h("button", {
+    class: "preview-role", type: "button",
+    on: { click: () => { closeModal(); startPreview(role); } },
+  }, icon(iconName), h("span", { class: "preview-role-text" },
+    h("strong", {}, tp(`role_${role}`)), h("span", { class: "muted small" }, tp(`role_${role}_hint`))));
+  openModal({
+    title: tp("picker_title"),
+    subtitle: tp("picker_subtitle"),
+    content: h("div", { class: "preview-roles" }, option("owner", "crown"), option("member", "user")),
+    actions: [h("button", { class: "btn", type: "button", on: { click: closeModal } }, tc("cancel"))],
+  });
+}
+
+async function startPreview(role) {
+  if (preview || connecting) return;
+  disconnect();
+  store.setVolatile(true);
+  const mod = await import("./preview/index.js");
+  preview = mod.createPreview();
+  // Both sample accounts are signed in, so the account switcher can hop
+  // between the owner's view and a member's. The chosen one goes last: it's
+  // the active account.
+  for (const r of role === "owner" ? ["member", "owner"] : ["owner", "member"]) {
+    const { token, user } = preview.sessionFor(r);
+    store.saveAccount(PREVIEW_URL, user, token);
+  }
+  store.setLegalAccepted(PREVIEW_URL, "preview1");
+  store.setLast(PREVIEW_URL, { view: "home" }); // open on the Home page
+  store.setTrusted(PREVIEW_URL);
+  preview.activity.start();
+  await connectPreview();
+}
+
+async function connectPreview({ addAccount = false } = {}) {
+  disconnect();
+  const conn = preview.connect();
+  await conn.open();
+  state.conn = conn;
+  state.url = PREVIEW_URL;
+  state.info = await conn.request(T.SERVER_INFO);
+  setUrlResolver(preview.resolveUrl);
+  renderPreviewBar();
+  await joinServer(conn, PREVIEW_URL, { addAccount });
+}
+
+// Leaving throws everything away: a reload without ?preview.
+function exitPreview() {
+  location.href = router.APP_BASE;
+}
+
+function renderPreviewBar() {
+  const bar = $("#preview-bar");
+  bar.hidden = !preview;
+  document.body.classList.toggle("has-preview-bar", !!preview);
+  if (!preview) return;
+  const tp = scopedT("ui/preview");
+  const activity = h("input", {
+    type: "checkbox", class: "switch", checked: preview.activity.on,
+    on: { change: (e) => (e.target.checked ? preview.activity.start() : preview.activity.stop()) },
+  });
+  const roleBtn = (role, iconName) => {
+    const account = store.getAccounts(PREVIEW_URL).find((a) => a.username === (role === "owner" ? "you" : "guest"));
+    const current = !!account && account.user_id === state.user?.user_id;
+    return h("button", {
+      class: `preview-seg ${current ? "on" : ""}`, type: "button", "aria-pressed": String(current),
+      title: tp(`view_as_${role}`),
+      on: { click: () => { if (account && !current) switchAccount(PREVIEW_URL, account.user_id); } },
+    }, icon(iconName), h("span", { class: "preview-bar-label" }, tp(`role_${role}`)));
+  };
+  clear(bar);
+  add(bar,
+    h("span", { class: "preview-tag" }, icon("eye"), tp("tag")),
+    h("span", { class: "preview-note" }, tp("note")),
+    h("span", { class: "preview-spacer" }),
+    h("span", { class: "preview-segs", role: "group", "aria-label": tp("view_as") }, roleBtn("owner", "crown"), roleBtn("member", "user")),
+    h("label", { class: "preview-toggle", title: tp("activity_hint") }, activity, h("span", { class: "preview-bar-label" }, tp("activity"))),
+    h("button", {
+      class: "btn small", type: "button", title: tp("reset_hint"),
+      on: {
+        click: (e) => confirmAction(e, {
+          title: tp("reset_title"), message: tp("reset_body"), confirmLabel: tp("reset"),
+          onConfirm: () => { location.href = `${router.APP_BASE}?preview=${state.user?.is_server_owner ? "owner" : "member"}`; },
+        }),
+      },
+    }, icon("refresh-cw"), h("span", { class: "preview-bar-label" }, tp("reset"))),
+    h("button", { class: "btn small primary", type: "button", on: { click: exitPreview } }, icon("log-out"), h("span", { class: "preview-bar-label" }, tp("exit"))));
 }
 
 // --- server rules (before creating an account) ---
@@ -279,6 +398,7 @@ function disconnect() {
   clearPending();
   resetServerState();
   setAvatarBase(null);
+  setUrlResolver(null);
   closeModal();
   closePopover();
   closeFullscreen();
@@ -358,6 +478,9 @@ function showAuth({ message = null, info = false } = {}) {
   showScreen("auth");
   $("#auth-server-name").textContent = state.info.server_name;
   $("#auth-server-url").textContent = state.url;
+  const desc = state.info.server_description || "";
+  clear($("#auth-server-desc"), desc ? renderMarkdown(desc, { plainLinks: true }) : null);
+  $("#auth-server-desc").hidden = !desc;
   const policy = state.info.account_creation;
   const modes = [["login", t("auth_login_tab")]];
   if (policy === "on") modes.push(["register", t("auth_register_tab")]);
@@ -372,10 +495,25 @@ function showAuth({ message = null, info = false } = {}) {
       on: { click: () => { authMode = mode; showAuth(); } },
     }, label));
   }
+  const notice = clear($("#auth-notice"));
+  add(notice, t({ login: "auth_notice_login", register: "auth_notice_register", request: "auth_notice_request" }[authMode], { server: state.info.server_name }));
+  const other = modes.find(([m]) => m !== authMode);
+  if (other) {
+    add(notice, " ", h("button", {
+      class: "btn link", type: "button",
+      on: { click: () => { authMode = other[0]; showAuth(); } },
+    }, t({ login: "auth_switch_login", register: "auth_switch_register", request: "auth_switch_request" }[other[0]])));
+  }
   const form = $("#auth-form");
   form.password.autocomplete = authMode === "login" ? "current-password" : "new-password";
   form.password.maxLength = LIMITS.PASSWORD_MAX_BYTES;
   $("#auth-note-field").hidden = authMode !== "request";
+  const confirmField = $("#auth-confirm-field");
+  confirmField.hidden = authMode !== "register";
+  form.password2.required = authMode === "register";
+  form.password2.maxLength = LIMITS.PASSWORD_MAX_BYTES;
+  if (confirmField.hidden) form.password2.value = "";
+  form.dispatchEvent(new Event("nightcord:authmode"));
   $("#auth-submit").textContent = { login: t("auth_submit_login"), register: t("auth_submit_register"), request: t("auth_submit_request") }[authMode];
 
   const links = legalLinks(state.info, openLegalDoc);
@@ -396,6 +534,35 @@ function showAuth({ message = null, info = false } = {}) {
   (form.username.value ? form.password : form.username).focus();
 }
 
+// Show/hide eyes on the password fields, plus live hints so mistakes show up
+// as you type rather than after Submit.
+function setupAuthFields(form) {
+  for (const input of form.querySelectorAll('input[type="password"]')) {
+    const eye = h("button", { class: "icon-btn pw-toggle", type: "button", title: t("show_password"), "aria-label": t("show_password"), "aria-pressed": "false" }, icon("eye"));
+    eye.addEventListener("click", () => {
+      const show = input.type === "password";
+      input.type = show ? "text" : "password";
+      const label = t(show ? "hide_password" : "show_password");
+      eye.title = label;
+      eye.setAttribute("aria-label", label);
+      eye.setAttribute("aria-pressed", String(show));
+    });
+    const wrap = h("span", { class: "pw-field" });
+    input.replaceWith(wrap);
+    add(wrap, input, eye);
+  }
+  const usernameHint = $("#auth-username-hint");
+  const confirmHint = $("#auth-confirm-hint");
+  const check = () => {
+    const name = form.username.value.trim();
+    usernameHint.hidden = authMode === "login";
+    usernameHint.classList.toggle("bad", !!name && !LIMITS.USERNAME_RE.test(name));
+    confirmHint.hidden = authMode !== "register" || !form.password2.value || form.password2.value === form.password.value;
+  };
+  for (const field of [form.username, form.password, form.password2]) field.addEventListener("input", check);
+  form.addEventListener("nightcord:authmode", check);
+}
+
 async function submitAuth(e) {
   e.preventDefault();
   const form = e.currentTarget;
@@ -406,6 +573,10 @@ async function submitAuth(e) {
   try {
     if (authMode !== "login" && !LIMITS.USERNAME_RE.test(username)) {
       throw new Error(t("username_requirements"));
+    }
+    if (authMode === "register" && password !== form.password2.value) {
+      form.password2.focus();
+      throw new Error(t("passwords_dont_match"));
     }
     const device_id = store.getDeviceId(state.url);
     const accept_legal_version = store.getLegalAccepted(state.url) || undefined;
@@ -420,6 +591,7 @@ async function submitAuth(e) {
       ? await req(T.AUTH_REGISTER, { username, password, device_id, accept_legal_version })
       : await req(T.AUTH_LOGIN, { username, password, device_id });
     form.password.value = "";
+    form.password2.value = "";
     await enterApp(ok);
   } catch (err) {
     if (err.code === ERR.LEGAL_REQUIRED) {
@@ -444,6 +616,7 @@ async function enterApp({ session_token, user, legal_update_required }) {
   state.user = user;
   state.users.set(user.user_id, user);
   state.connected = true;
+  if (preview) renderPreviewBar();
   applyPrefs(); // themes depend on this server's customisation settings
   restoreReminders(); // /remind survives a reload (client/js/reminders.js)
   showScreen("app");
@@ -451,10 +624,15 @@ async function enterApp({ session_token, user, legal_update_required }) {
   flush();
   try {
     await loadAll();
-    await restoreView();
+    const route = pendingRoute;
+    pendingRoute = null;
+    // User settings open over wherever you were last.
+    if (route?.kind === "settings") await restoreView();
+    if (!(await router.apply(route))) await restoreView();
   } catch (e) {
     toast(e.message, { error: true });
   }
+  router.start();
   if (legal_update_required) await promptLegalUpdate();
   if (pendingInvite) {
     const code = pendingInvite;
@@ -505,10 +683,12 @@ async function logout() {
   try { await req(T.AUTH_LOGOUT); } catch { /* the token dies with the session anyway */ }
   store.removeAccount(state.url, state.user?.user_id);
   if (store.getToken(state.url)) connectTo(state.url);
+  else if (preview) exitPreview();
   else toLogin();
 }
 
 function switchServer() {
+  if (preview) { exitPreview(); return; }
   disconnect();
   store.setLastServer(null);
   showConnect();
@@ -650,6 +830,38 @@ function checkGrass() {
 // ---------------------------------------------------------------------------
 // Boot
 
+// Connect and login already carry the big banner; everywhere else (chat,
+// setup, rules) gets this small floating reminder.
+function renderUpdateFloat() {
+  const box = $("#update-float");
+  const info = getUpdateInfo();
+  box.hidden = !info || updateFloatDismissed || currentScreen === "connect" || currentScreen === "auth";
+  document.body.classList.toggle("has-update-float", !box.hidden);
+  if (box.hidden) return;
+  const tn = scopedT("notify");
+  clear(box);
+  add(box,
+    h("span", {}, tn("update_float_text", { latest: info.latest })),
+    h("a", { class: "btn small primary", href: RELEASES_URL, target: "_blank", rel: "noopener" }, tn("update_banner_cta")),
+    h("button", { class: "icon-btn", type: "button", title: tn("update_float_dismiss"), "aria-label": tn("update_float_dismiss"),
+      on: { click: () => { updateFloatDismissed = true; renderUpdateFloat(); } } }, icon("x")));
+}
+
+function renderUpdateBanner() {
+  renderUpdateFloat();
+  const tn = scopedT("notify");
+  const info = getUpdateInfo();
+  for (const box of document.querySelectorAll(".update-banner")) {
+    box.hidden = !info;
+    if (!info) continue;
+    clear(box);
+    add(box,
+      h("strong", {}, tn("update_banner_title", { latest: info.latest })),
+      h("p", {}, tn("update_banner_body", { current: info.current })),
+      h("a", { class: "btn primary", href: RELEASES_URL, target: "_blank", rel: "noopener" }, tn("update_banner_cta")));
+  }
+}
+
 function hydrateStatic() {
   const ts = scopedT("shell");
   for (const el of document.querySelectorAll("[data-i18n]")) el.textContent = ts(el.dataset.i18n);
@@ -661,7 +873,9 @@ function hydrateStatic() {
 async function boot() {
   await loadStrings();
   hydrateStatic();
+  setStampPrefs(getPrefs);
   applyPrefs();
+  onUpdateInfo(renderUpdateBanner);
   checkForUpdate(); // standalone-only, local pref-gated; see update-check.js
   matchMedia("(prefers-color-scheme: light)").addEventListener?.("change", applyPrefs);
   $("#connect-form").addEventListener("submit", (e) => {
@@ -672,11 +886,17 @@ async function boot() {
   $("#tab-btn-new").addEventListener("click", () => setConnectTab("new"));
   $("#tab-btn-saved").addEventListener("click", () => setConnectTab("saved"));
   $("#saved-empty-cta").addEventListener("click", () => setConnectTab("new"));
+  const reconnect = $("#auto-reconnect");
+  reconnect.checked = getPrefs().autoReconnect;
+  reconnect.addEventListener("change", () => setPrefs({ autoReconnect: reconnect.checked }));
   $("#whats-this").addEventListener("click", () => {
     const ts = scopedT("shell");
     openModal({
       title: t("whats_this_title"),
-      content: h("p", {}, ts("whats_this_body")),
+      content: h("div", { class: "whats-this-body" },
+        h("p", {}, ts("whats_this_body")),
+        h("ul", {}, ["servers", "accounts", "data", "start"].map((k) => h("li", {}, ts(`whats_this_point_${k}`)))),
+        h("p", {}, h("a", { href: "https://github.com/etangaming123/nightcord#readme", target: "_blank", rel: "noopener" }, ts("whats_this_more")))),
       actions: [h("button", { class: "btn primary", type: "button", on: { click: closeModal } }, tc("close"))],
     });
   });
@@ -697,12 +917,14 @@ async function boot() {
     showConnect({ error: t("must_accept_rules"), tab: "saved" });
   });
   $("#auth-form").addEventListener("submit", submitAuth);
+  setupAuthFields($("#auth-form"));
   $("#setup-form").addEventListener("submit", submitSetup);
   $("#setup-back").addEventListener("click", () => { setupStep = Math.max(0, setupStep - 1); showSetup(); });
   for (const id of ["#auth-back", "#setup-cancel", "#legal-back"]) {
     $(id).addEventListener("click", () => {
       // Backing out of "add account": return to the account you were using.
       if (addingAccount && store.getToken(state.url)) { connectTo(state.url); return; }
+      if (preview) { exitPreview(); return; }
       disconnect();
       store.setLastServer(null);
       showConnect();
@@ -737,26 +959,53 @@ async function boot() {
   });
   setupDropZone();
   setupLinkGuard();
-  // A message link pasted into a message opens in place, if it's this server.
+  setupGestures(actions);
+  router.setupRouter(actions, { invalidate });
+  // Message and invite links pasted into a message open in place, if they're
+  // for this server.
   setMessageLinkHandler((jump) => {
-    if (!state.user) return false;
-    if (jump.server && state.url && jump.server !== new URL(state.url).host) return false;
+    if (!state.user || !isThisServer(jump.server)) return false;
     actions.jumpTo(jump.messageId, jump.channelId, jump.guildId);
+    return true;
+  });
+  setInviteLinkHandler((invite) => {
+    if (!state.user || !isThisServer(invite.server)) return false;
+    actions.openInvite(invite.code);
     return true;
   });
 
   // ?server=host:port lets a server operator share a direct link;
-  // &invite=CODE opens that guild invite once logged in;
+  // &invite=CODE (or /app/invite/…) opens that guild invite once logged in;
   // &jump=<guild|@me>/<channel>/<message> opens a message link.
+  // ?preview opens the preview (the homepage links here); ?preview=owner or
+  // ?preview=member skips the question.
   const params = new URLSearchParams(location.search);
-  const param = params.get("server");
+  let param = params.get("server");
+  const previewParam = PREVIEW_AVAILABLE && params.has("preview") ? params.get("preview") : null;
   pendingInvite = params.get("invite");
   pendingJump = parseMessageLink(location.href);
-  if (param || pendingInvite || pendingJump) history.replaceState(null, "", location.pathname);
+  // /app/servers/…, /app/invite/CODE and friends (router.js).
+  pendingRoute = router.initialRoute();
+  if (pendingRoute?.kind === "invite") {
+    // /app/invite/<token> carries the server too (ui/links.js encodeInvite).
+    const token = param ? null : decodeInvite(pendingRoute.code);
+    pendingInvite = token ? token.code : pendingRoute.code;
+    if (token) param = token.server;
+    pendingRoute = null;
+  }
+  if (pendingJump) pendingRoute = null;
+  if (param || pendingInvite || pendingJump || previewParam !== null || location.pathname !== router.APP_BASE) {
+    history.replaceState(null, "", router.ENABLED ? router.APP_BASE : location.pathname);
+  }
+  $("#connect-preview-box").hidden = !PREVIEW_AVAILABLE;
+  $("#connect-preview").addEventListener("click", () => choosePreview());
   const last = store.getLastServer();
   showConnect();
-  if (param) connectTo(param);
-  else if (last) connectTo(last);
+  if (previewParam !== null) {
+    if (previewParam === "owner" || previewParam === "member") startPreview(previewParam);
+    else choosePreview();
+  } else if (param) connectTo(param);
+  else if (last && getPrefs().autoReconnect) connectTo(last);
 }
 
 boot();

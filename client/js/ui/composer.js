@@ -16,6 +16,7 @@ import { UNICODE_EMOJI, customOf, emojiGlyph, openEmojiPicker, unicodeByName } f
 import { toast } from "./modals.js";
 import { openStickerPicker } from "./stickers.js";
 import { scopedT } from "../strings.js";
+import { icon } from "./icons.js";
 
 const t = scopedT("ui/composer");
 
@@ -32,7 +33,8 @@ function candidates() {
 }
 
 // Custom emoji are typed as :name: and sent as <:name:id> (PROTOCOL.md §4 Emoji).
-const EMOJI_NAME_TOKEN = /(?<![<\w]|<a):([A-Za-z0-9_]{2,32}):(?!\d)/g;
+// + and - for Discord's :+1: :-1: :e-mail: and friends.
+const EMOJI_NAME_TOKEN = /(?<![<\w]|<a):([A-Za-z0-9_+-]{2,32}):(?!\d)/g;
 // Channels are typed as #name and sent as <#channel_id> (§4 Message).
 const CHANNEL_TOKEN = /(?<![\w<#])#([a-z0-9_-]{1,32})/g;
 
@@ -128,11 +130,11 @@ function uploadTray(state) {
   return h("div", { class: "upload-tray", role: "list", "aria-label": t("attachments_aria") }, state.pending.map((p) => h("div", {
     class: `upload ${p.error ? "failed" : p.attachment ? "done" : "busy"}`, role: "listitem", dataset: { upload: String(p.id) },
   },
-  p.preview ? h("img", { class: "up-thumb", src: p.preview, alt: "" }) : h("span", { class: "up-thumb icon", "aria-hidden": "true" }, "📄"),
+  p.preview ? h("img", { class: "up-thumb", src: p.preview, alt: "" }) : h("span", { class: "up-thumb icon", "aria-hidden": "true" }, icon("file-text")),
   h("span", { class: "up-name", title: p.name }, p.name),
   h("span", { class: "up-size" }, p.error ? p.error : fmtBytes(p.size)),
   p.attachment || p.error ? null : h("span", { class: "up-bar", "aria-hidden": "true" }, h("i", { style: `width:${Math.round(p.progress * 100)}%` })),
-  h("button", { class: "icon-btn up-x", type: "button", title: t("remove_upload"), "aria-label": t("remove_upload_aria", { name: p.name }), on: { click: () => removePending(p.id) } }, "✕"))));
+  h("button", { class: "icon-btn up-x", type: "button", title: t("remove_upload"), "aria-label": t("remove_upload_aria", { name: p.name }), on: { click: () => removePending(p.id) } }, icon("x")))));
 }
 
 // 1:1 DMs that can't take a message right now (PROTOCOL.md §5 Message
@@ -210,7 +212,7 @@ export function renderComposer(state, actions) {
   const slow = channel.slowmode_seconds && !can("MANAGE_MESSAGES", channel) && !can("MANAGE_CHANNELS", channel);
   const waitFor = slow ? slowmodeLeft(channel) : 0;
   const slowNote = slow ? h("div", { class: "slowmode", title: t("slowmode_title", { seconds: channel.slowmode_seconds }) },
-    "🐢 ", waitFor ? t("slowmode_wait", { seconds: waitFor }) : t("slowmode_note", { seconds: channel.slowmode_seconds })) : null;
+    icon("turtle"), " ", waitFor ? t("slowmode_wait", { seconds: waitFor }) : t("slowmode_note", { seconds: channel.slowmode_seconds })) : null;
   clearTimeout(slowTimer);
   if (waitFor) slowTimer = setTimeout(() => actions.rerenderComposer(), 1000);
   const autosize = () => {
@@ -295,12 +297,18 @@ export function renderComposer(state, actions) {
       drawAc();
       return;
     }
-    const em = /(^|\s):([A-Za-z0-9_]{2,32})$/.exec(input.value.slice(0, pos));
+    const em = /(^|\s):([A-Za-z0-9_+-]{2,32})$/.exec(input.value.slice(0, pos));
     if (em) {
       const q = em[2].toLowerCase();
       const custom = searchEmojis(q, 8).map((e) => ({ ...e, custom: true }));
-      const unicode = UNICODE_EMOJI.filter((e) => e.words.split(" ").some((w) => w.startsWith(q)))
-        .slice(0, 10 - custom.length).map((e) => ({ emoji: e.emoji, name: e.words.split(" ")[0] }));
+      // Shortcode matches first (showing the alias that matched), then search words.
+      const byName = UNICODE_EMOJI.flatMap((e) => {
+        const name = e.names.find((n) => n.startsWith(q));
+        return name ? [{ emoji: e.emoji, name }] : [];
+      });
+      const byWord = UNICODE_EMOJI.filter((e) => !e.names.some((n) => n.startsWith(q)) && e.words.split(" ").some((w) => w.startsWith(q)))
+        .map((e) => ({ emoji: e.emoji, name: e.names[0] }));
+      const unicode = [...byName, ...byWord].slice(0, 10 - custom.length);
       ac = { kind: "emoji", query: em[2], start: pos - em[2].length - 1, items: [...custom, ...unicode], index: 0 };
       drawAc();
       return;
@@ -436,7 +444,7 @@ export function renderComposer(state, actions) {
         input.focus();
       }, { placement: "top", key: "composer-emoji" }),
     },
-  }, "☺");
+  }, icon("smile"));
   const stickerBtn = usableStickerGroups().length ? h("button", {
     class: "icon-btn sticker-btn", type: "button", title: t("send_sticker_title"), "aria-label": t("send_sticker_aria"),
     disabled: !state.connected,
@@ -446,20 +454,20 @@ export function renderComposer(state, actions) {
         try { await actions.sendSticker(sticker); } catch (err) { toast(err.message, { error: true }); }
       }, { key: "composer-stickers" }),
     },
-  }, "🗒") : null;
+  }, icon("sticker")) : null;
 
   const pollBtn = h("button", {
     class: "icon-btn poll-btn", type: "button", title: t("create_poll_title"), "aria-label": t("create_poll_aria"),
     disabled: !state.connected,
     on: { click: () => actions.composePoll() },
-  }, "📊");
+  }, icon("chart-bar-big"));
 
   const fileInput = h("input", { type: "file", multiple: true, hidden: true });
   fileInput.addEventListener("change", () => { addFiles([...fileInput.files]); fileInput.value = ""; input.focus(); });
   const attachBtn = canAttach(channel) ? h("button", {
     class: "icon-btn attach-btn", type: "button", title: t("upload_file_title"), "aria-label": t("upload_file_aria"),
     disabled: !state.connected, on: { click: () => fileInput.click() },
-  }, "＋") : null;
+  }, icon("plus")) : null;
 
   let replyBar = null;
   if (state.replyTo) {
@@ -473,7 +481,7 @@ export function renderComposer(state, actions) {
         title: state.replyPing ? t("ping_on_title") : t("ping_off_title"),
         on: { click: () => { state.replyPing = !state.replyPing; actions.rerenderComposer(); } },
       }, state.replyPing ? t("ping_on") : t("ping_off")),
-      h("button", { class: "icon-btn", type: "button", title: t("cancel_reply_title"), "aria-label": t("cancel_reply_aria"), on: { click: actions.cancelReply } }, "✕"));
+      h("button", { class: "icon-btn", type: "button", title: t("cancel_reply_title"), "aria-label": t("cancel_reply_aria"), on: { click: actions.cancelReply } }, icon("x")));
   }
 
   const tray = uploadTray(state);

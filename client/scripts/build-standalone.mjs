@@ -20,7 +20,7 @@ const outFile = path.join(clientDir, "dist", "nightcord-standalone.html");
 // Read by client/js/update-check.js to know its own version.
 const buildVersion = process.env.GITHUB_REF_NAME || "dev";
 
-const MIME = { ".png": "image/png", ".wav": "audio/wav" };
+const MIME = { ".png": "image/png", ".wav": "audio/wav", ".woff2": "font/woff2" };
 
 async function dataUri(relPath) {
   const bytes = await readFile(path.join(clientDir, relPath));
@@ -37,6 +37,17 @@ async function embeddedLang() {
   return { en: modules };
 }
 
+// The preview (js/preview/) is for the hosted client and the homepage; the
+// single file leaves it out and hides its button (main.js checks for
+// __NIGHTCORD_LANG__, which only this build sets).
+const noPreview = {
+  name: "no-preview",
+  setup(b) {
+    b.onResolve({ filter: /[\\/]preview[\\/]index\.js$/ }, (args) => ({ path: args.path, namespace: "no-preview" }));
+    b.onLoad({ filter: /.*/, namespace: "no-preview" }, () => ({ contents: "export const createPreview = null;" }));
+  },
+};
+
 async function main() {
   const [html, css, lang, result] = await Promise.all([
     readFile(path.join(clientDir, "index.html"), "utf8"),
@@ -47,16 +58,21 @@ async function main() {
       bundle: true,
       minify: true,
       format: "iife",
+      // The single file runs from file://, where router.js leaves the address
+      // bar alone; this tells it so (and keeps esbuild from warning).
+      define: { "import.meta.url": "undefined" },
       write: false,
+      plugins: [noPreview],
     }),
   ]);
 
-  const [logoUri, messageUri, mentionUri, voiceJoinUri, voiceLeaveUri] = await Promise.all([
+  const [logoUri, messageUri, mentionUri, voiceJoinUri, voiceLeaveUri, twemojiUri] = await Promise.all([
     dataUri("assets/logo.png"),
     dataUri("assets/sounds/message.wav"),
     dataUri("assets/sounds/mention.wav"),
     dataUri("assets/sounds/voice-join.wav"),
     dataUri("assets/sounds/voice-leave.wav"),
+    dataUri("assets/fonts/twemoji.woff2"),
   ]);
 
   let script = result.outputFiles[0].text;
@@ -70,7 +86,7 @@ async function main() {
   let out = html
     .replace(
       '<link rel="stylesheet" href="css/styles.css">',
-      `<style>\n${css}\n</style>`
+      () => `<style>\n${css.replace("../assets/fonts/twemoji.woff2", twemojiUri)}\n</style>`
     )
     .replaceAll('href="assets/logo.png"', `href="${logoUri}"`)
     .replaceAll('src="assets/logo.png"', `src="${logoUri}"`)
@@ -79,7 +95,9 @@ async function main() {
       // The original is a module script, deferred until the DOM is parsed by
       // spec. This inline replacement sits in <head> too, so it needs the
       // same deferral or every document.getElementById() below runs too early.
-      `<script>window.__NIGHTCORD_LANG__ = ${JSON.stringify(lang)}; window.__NIGHTCORD_BUILD_VERSION__ = ${JSON.stringify(buildVersion)};</script>\n` +
+      // A function, not a string: minified code can contain "$&" (a variable
+      // named $ before &&), which a replacement string would expand.
+      () => `<script>window.__NIGHTCORD_LANG__ = ${JSON.stringify(lang)}; window.__NIGHTCORD_BUILD_VERSION__ = ${JSON.stringify(buildVersion)};</script>\n` +
         `<script>document.addEventListener("DOMContentLoaded", function () {\n${script}\n});</script>`
     );
 

@@ -3,10 +3,11 @@
 
 import { T } from "../protocol.js";
 import { currentChannel, currentGuild, isDm, nameOf, state, userById } from "../state.js";
-import { add, avatar, clear, fmtDateTime, h, iconBtn } from "./dom.js";
+import { add, avatar, clear, fmtStamp, h, iconBtn } from "./dom.js";
 import { mdContext } from "./chat.js";
 import { render as renderMarkdown } from "./markdown.js";
 import { scopedT } from "../strings.js";
+import { icon } from "./icons.js";
 
 const t = scopedT("ui/search");
 
@@ -100,7 +101,7 @@ export function openSearch(actions, initial = "") {
   });
   more.addEventListener("click", () => run(true));
   panel = h("aside", { class: "side-panel search-panel", "aria-label": t("search_aside_aria") },
-    h("div", { class: "side-head" }, h("span", { class: "search-icon", "aria-hidden": "true" }, "🔍"), input, iconBtn("✕", t("close_search"), closeSearch)),
+    h("div", { class: "side-head" }, h("span", { class: "search-icon", "aria-hidden": "true" }, icon("search")), input, iconBtn("x", t("close_search"), closeSearch)),
     hint, results, more);
   document.body.append(panel);
   input.focus();
@@ -123,7 +124,7 @@ function resultRow(m, actions) {
   h("div", { class: "hit-main" },
     avatar(author, { size: "sm" }),
     h("div", { class: "hit-body" },
-      h("div", { class: "pin-head" }, h("strong", {}, nameOf(author)), h("span", { class: "muted small" }, fmtDateTime(m.sent_at)), m.pinned ? h("span", { class: "muted small" }, "📌") : null),
+      h("div", { class: "pin-head" }, h("strong", {}, nameOf(author)), h("span", { class: "muted small" }, fmtStamp(m.sent_at)), m.pinned ? h("span", { class: "muted small" }, icon("pin")) : null),
       h("div", { class: "pin-body" }, renderMarkdown(m.content, mdContext(state, actions)),
         m.attachments?.length ? h("div", { class: "muted small" }, t("attachment_list", { names: m.attachments.map((a) => a.filename).join(", ") })) : null))));
 }

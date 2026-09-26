@@ -35,7 +35,7 @@ import zipfile
 from pathlib import Path
 
 from nightcord.config import Config, load_config
-from nightcord.db import Database
+from nightcord.db import Database, snapshot_db
 from nightcord.handlers.auth import hash_password_sync
 
 
@@ -57,7 +57,7 @@ def cmd_run(cfg: Config) -> None:
     from nightcord.app import create_app, new_setup_code
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
-    db = Database(cfg.db_path)
+    db = Database(cfg.db_path, backup_dir=cfg.data_dir.parent / "backups")
     db.purge_expired_sessions()
     setup_code = None
     if db.get_server_owner_row() is None:
@@ -171,10 +171,17 @@ def cmd_config(db: Database, cfg: Config, action: str, key: str | None, value: s
         "user_search": {"off", "staff", "on"},
         "announcements_admins": {"true", "false"},
         "link_embeds": {"true", "false"},
+        "fx_links": {"true", "false"},
     }
     if key == "server_name" and value and value.strip():
         db.set_server_config({"server_name": value.strip()[:64]})
         print(f"server_name = {value.strip()[:64]}")
+        return 0
+    if key == "server_description" and value is not None:
+        # "\n" in the shell argument becomes a line break.
+        text = value.replace("\\n", "\n").strip()[:2000]
+        db.set_server_config({"server_description": text})
+        print(f"server_description = {text!r}")
         return 0
     if key == "max_upload_mb" and value and value.isdigit() and 1 <= int(value) <= 1024:
         db.set_server_config({"max_upload_bytes": int(value) * 1024 * 1024})
@@ -186,7 +193,7 @@ def cmd_config(db: Database, cfg: Config, action: str, key: str | None, value: s
         return 0
     if key not in allowed or value not in allowed[key]:
         print(
-            "Usage: config set <key> <value>; keys: server_name, max_upload_mb (1-1024), "
+            "Usage: config set <key> <value>; keys: server_name, server_description, max_upload_mb (1-1024), "
             f"max_accounts_per_client (0-20, 0 = no limit), {allowed}",
             file=sys.stderr,
         )
@@ -215,11 +222,9 @@ def cmd_backup(cfg: Config, out_dir: Path | None) -> int:
     with tempfile.TemporaryDirectory() as tmp:
         snapshot = Path(tmp) / "nightcord.db"
         src = sqlite3.connect(str(cfg.db_path))
-        dst = sqlite3.connect(str(snapshot))
         try:
-            src.backup(dst)
+            snapshot_db(src, snapshot)
         finally:
-            dst.close()
             src.close()
         with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.write(snapshot, "nightcord.db")
@@ -385,7 +390,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "backup":
         return cmd_backup(cfg, args.out)
-    db = Database(cfg.db_path)
+    db = Database(cfg.db_path, backup_dir=cfg.data_dir.parent / "backups")
     try:
         if args.command == "pending":
             return cmd_pending(db, args.action, args.username)

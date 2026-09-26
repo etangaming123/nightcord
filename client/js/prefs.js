@@ -2,6 +2,7 @@
 // server-synced preferences live in notify.prefs (PROTOCOL.md §5).
 
 import { DEFAULT_CUSTOM, applyTheme } from "./themes.js";
+import { rawGet, rawSet } from "./storage.js";
 
 const KEY = "nightcord.prefs";
 
@@ -14,17 +15,23 @@ const DEFAULTS = {
   frequentEmoji: [],
   themePreset: "default", // themes.js PRESETS id (needs the server's client_themes perk)
   customTheme: DEFAULT_CUSTOM,
+  autoReconnect: true, // open the last server again on startup (main.js boot)
   autoUpdateCheck: true, // standalone-only: ping GitHub's release API on load
   updateNotifier: true, // standalone-only: toast when an update is found
   trustedDomains: [], // link hosts that skip the leaving-site dialog (ui/links.js)
   touchGrass: true, // the parody nudge after hours of unbroken use (main.js)
+  dateFormat: "dmy", // message dates: dmy 13/11/26 | mdy 11/13/26 | ymd 26/11/13 (ui/dom.js fmtStamp)
+  clock: "12h", // message times: 12h 3:18pm | 24h 15:18
+  lastSeenFormat: "datetime", // how "last seen" times read: datetime | date | relative | both (ui/dom.js fmtSeen)
+  homeServerReveal: "hidden", // Home page server line: hidden | name | address (ui/home.js)
+  twemoji: true, // Discord-style emoji font instead of the OS one (styles.css)
 };
 
 let prefs = load();
 
 function load() {
   try {
-    const raw = JSON.parse(localStorage.getItem(KEY) || "{}");
+    const raw = JSON.parse(rawGet(KEY) || "{}");
     return { ...DEFAULTS, ...(raw && typeof raw === "object" ? raw : {}) };
   } catch {
     return { ...DEFAULTS };
@@ -35,11 +42,7 @@ export const getPrefs = () => prefs;
 
 export function setPrefs(patch) {
   prefs = { ...prefs, ...patch };
-  try {
-    localStorage.setItem(KEY, JSON.stringify(prefs));
-  } catch {
-    /* storage unavailable; prefs last for this page load only */
-  }
+  rawSet(KEY, JSON.stringify(prefs));
   applyPrefs();
 }
 
@@ -51,6 +54,7 @@ export function applyPrefs() {
   root.dataset.theme = theme;
   root.style.setProperty("--font-size", `${prefs.fontSize}px`);
   root.classList.toggle("compact", !!prefs.compact);
+  root.classList.toggle("native-emoji", !prefs.twemoji);
   document.querySelector('meta[name="color-scheme"]')?.setAttribute("content", theme);
 }
 

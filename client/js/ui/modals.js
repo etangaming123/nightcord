@@ -2,6 +2,7 @@
 // No window.alert/confirm/prompt anywhere.
 
 import { $, add, clear, h } from "./dom.js";
+import { hasIcon, icon } from "./icons.js";
 import { scopedT } from "../strings.js";
 
 const t = scopedT("ui/modals");
@@ -24,6 +25,7 @@ export const modalOpen = () => !!current;
 export function openModal({ title, subtitle, content, actions = [], onClose, wide = false, dismissable = true, cls = "" }) {
   closeModal();
   closePopover();
+  closeSheet(); // it would sit on top of the modal
   const modal = h(
     "div",
     { class: `modal ${wide ? "wide" : ""} ${cls}`, role: "dialog", "aria-modal": "true", "aria-label": title },
@@ -221,22 +223,31 @@ export function openPopover(anchor, content, { cls = "", placement = "right", on
 export const repositionPopover = () => stack[stack.length - 1]?.place();
 
 // items: [{ label, onClick, danger?, checked?, disabled?, hint? } | "-" | { heading }]
-export function openMenu(anchor, items, opts = {}) {
+// close: shuts whatever the list sits in before the item runs.
+function menuList(items, close) {
   const list = h("div", { class: "menu", role: "menu" });
+  let sep = false;
   for (const item of items) {
     if (!item) continue;
-    if (item === "-") { add(list, h("div", { class: "menu-sep", role: "separator" })); continue; }
+    // No separator first, last or twice in a row when items around it drop out.
+    if (item === "-") { sep = list.childElementCount > 0; continue; }
+    if (sep) { add(list, h("div", { class: "menu-sep", role: "separator" })); sep = false; }
     if (item.heading) { add(list, h("div", { class: "menu-heading" }, item.heading)); continue; }
     add(list, h("button", {
       class: `menu-item ${item.danger ? "danger" : ""}`, type: "button", role: "menuitem",
       disabled: item.disabled,
-      on: { click: (e) => { closePopover(); item.onClick?.(e); } },
+      on: { click: (e) => { close(); item.onClick?.(e); } },
     },
-    item.icon ? h("span", { class: "menu-icon", "aria-hidden": "true" }, item.icon) : null,
+    item.icon ? h("span", { class: "menu-icon", "aria-hidden": "true" }, hasIcon(item.icon) ? icon(item.icon) : item.icon) : null,
     h("span", { class: "menu-label" }, item.label),
-    item.checked !== undefined ? h("span", { class: "menu-check", "aria-hidden": "true" }, item.checked ? "●" : "○") : null,
+    item.checked !== undefined ? h("span", { class: "menu-check", "aria-hidden": "true" }, item.checked ? icon("status-online") : icon("status-invisible")) : null,
     item.hint ? h("span", { class: "menu-hint" }, item.hint) : null));
   }
+  return list;
+}
+
+export function openMenu(anchor, items, opts = {}) {
+  const list = menuList(items, () => closePopover());
   const el = openPopover(anchor, list, { placement: "bottom", ...opts, cls: `menu-pop ${opts.cls || ""}` });
   if (!el) return null;
   el.querySelector(".menu-item:not([disabled])")?.focus();
@@ -250,22 +261,94 @@ export function openMenu(anchor, items, opts = {}) {
   return el;
 }
 
+// --- bottom sheets (touch) ----------------------------------------------------
+// What a long-press opens on a phone: a panel that slides up from the bottom,
+// Discord-mobile style. Closes on the scrim, a drag down, Escape or Back.
+
+let sheet = null;
+const SHEET_DRAG_CLOSE_PX = 80;
+
+export const sheetOpen = () => !!sheet;
+
+// A phone: touch only and narrow. Profiles open as a sheet there, not a popover.
+export const phoneUi = () => matchMedia("(hover: none) and (pointer: coarse) and (max-width: 720px)").matches;
+
+export function closeSheet() {
+  if (!sheet) return;
+  const { el, onKey, onClose } = sheet;
+  sheet = null;
+  overlayListener("sheet", false);
+  document.removeEventListener("keydown", onKey, true);
+  el.classList.remove("open");
+  const gone = () => el.remove();
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) gone();
+  else { el.addEventListener("transitionend", gone, { once: true }); setTimeout(gone, 300); }
+  onClose?.();
+}
+
+// top: an optional row above the items (e.g. quick reactions).
+// content: something else to show instead of a list of items (a profile).
+export function openSheet({ label, top = null, items = [], content = null, cls = "", onClose } = {}) {
+  closeSheet();
+  closePopover();
+  const panel = h("div", { class: `sheet ${cls}`, role: "dialog", "aria-modal": "true", "aria-label": label },
+    h("div", { class: "sheet-handle", "aria-hidden": "true" }),
+    top,
+    content || menuList(items, closeSheet));
+  const el = h("div", { class: "sheet-root", on: { click: (e) => { if (e.target === el) closeSheet(); } } }, panel);
+  // Drag the panel down to dismiss it (only from its top, so lists can scroll).
+  let startY = null;
+  panel.addEventListener("touchstart", (e) => {
+    startY = panel.scrollTop <= 0 && e.touches.length === 1 ? e.touches[0].clientY : null;
+  }, { passive: true });
+  panel.addEventListener("touchmove", (e) => {
+    if (startY === null) return;
+    const dy = Math.max(0, e.touches[0].clientY - startY);
+    panel.style.transform = dy ? `translateY(${dy}px)` : "";
+  }, { passive: true });
+  panel.addEventListener("touchend", (e) => {
+    if (startY === null) return;
+    const dy = e.changedTouches[0].clientY - startY;
+    startY = null;
+    panel.style.transform = "";
+    if (dy > SHEET_DRAG_CLOSE_PX) closeSheet();
+  });
+  const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); closeSheet(); } };
+  document.addEventListener("keydown", onKey, true);
+  sheet = { el, onKey, onClose };
+  $("#popover-root").append(el);
+  overlayListener("sheet", true);
+  void el.offsetHeight; // lay it out closed first, so opening slides
+  el.classList.add("open");
+  return panel;
+}
+
 // --- full-screen pages (User Settings, Guild Settings, …) ---------------------
 
 let page = null;
 
-export function closeFullscreen() {
+// router.js follows settings pages and the sheet, so they get an address
+// and Back closes them. Set from there to keep modals.js import-free of it.
+let overlayListener = () => {};
+export const setOverlayListener = (fn) => { overlayListener = fn; };
+
+// reopening: another page is replacing this one, so it isn't really closing.
+export function closeFullscreen({ reopening = false } = {}) {
   if (!page) return;
   page.el.remove();
   document.removeEventListener("keydown", page.onKey);
   page.onClose?.();
   page = null;
+  if (reopening !== true) overlayListener("fullscreen", null);
 }
 
 // sections: [{ id, label, render(container) } | { heading } | { label, onClick, danger }]
-export function openFullscreen({ sections, initial, onClose, title }) {
-  closeFullscreen();
+// route: what router.js puts in the address, e.g. { kind: "settings" }; the
+// open section is added to it.
+export function openFullscreen({ sections, initial, onClose, title, route = null }) {
+  closeFullscreen({ reopening: true });
   closePopover();
+  closeSheet();
   const nav = h("nav", { class: "fs-nav", "aria-label": title });
   const body = h("div", { class: "fs-body" });
   const content = h("div", { class: "fs-content" });
@@ -274,7 +357,7 @@ export function openFullscreen({ sections, initial, onClose, title }) {
     h("div", { class: "fs-side" }, nav),
     h("div", { class: "fs-main" },
       body,
-      h("button", { class: "fs-close", type: "button", title: t("close_esc_title"), "aria-label": tc("close"), on: { click: closeFullscreen } }, "✕")));
+      h("button", { class: "fs-close", type: "button", title: t("close_esc_title"), "aria-label": tc("close"), on: { click: closeFullscreen } }, icon("x"))));
   let active = null;
   // Named form controls the user has touched since this section was drawn.
   // A re-render (an upload finishing, an event arriving) must not wipe them.
@@ -315,6 +398,7 @@ export function openFullscreen({ sections, initial, onClose, title }) {
     const inner = h("div", { class: "fs-section" });
     add(content, inner);
     el.classList.remove("nav-open");
+    if (route) overlayListener("fullscreen", { ...route, section: id });
     Promise.resolve(section.render(inner, { show })).then(
       () => saved && restore(saved),
       (e) => add(inner, h("div", { class: "error-box" }, e.message || String(e))),
@@ -340,7 +424,8 @@ export function openFullscreen({ sections, initial, onClose, title }) {
   document.addEventListener("keydown", onKey);
   $("#fullscreen-root").append(el);
   page = { el, onKey, onClose, show, active: () => active };
-  show(initial || sections.find((s) => s?.id)?.id);
+  // initial may come from the address bar, so it might not exist here.
+  show(sections.some((s) => s?.id && s.id === initial) ? initial : sections.find((s) => s?.id)?.id);
   return page;
 }
 

@@ -7,6 +7,8 @@ import { renderComposer } from "./ui/composer.js";
 import { renderMembers } from "./ui/members.js";
 import { renderChannelSidebar, renderRail } from "./ui/sidebar.js";
 import { scopedT } from "./strings.js";
+import { sync as syncAddress } from "./router.js";
+import { setFaviconBadge } from "./ui/favicon.js";
 
 const t = scopedT("render");
 
@@ -50,6 +52,7 @@ export function flush() {
   for (const p of ALL) if (parts.includes(p)) PARTS[p]();
   // A taller composer (reply bar) mustn't hide the newest message.
   if (stick && !parts.includes("chat")) box.scrollTop = box.scrollHeight;
+  syncAddress();
 }
 
 function renderTitle() {
@@ -59,4 +62,5 @@ function renderTitle() {
   const g = currentGuild();
   const where = ch ? `${channelTitle(ch)}${g ? ` · ${g.name}` : ""}` : g ? g.name : state.view === "home" ? t("direct_messages") : "";
   document.title = `${unread ? `(${unread}) ` : ""}${where ? `${where} — ` : ""}${t("brand")}`;
+  setFaviconBadge(unread);
 }

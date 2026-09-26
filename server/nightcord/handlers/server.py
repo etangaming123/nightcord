@@ -26,7 +26,7 @@ def apply_config_updates(ctx, payload: dict) -> dict:
         if key in _CONFIG_ENUMS:
             if val not in _CONFIG_ENUMS[key]:
                 raise ProtocolError(P.BAD_REQUEST, f"'{key}' must be one of {_CONFIG_ENUMS[key]}")
-        elif key in ("guild_list_visible", "voice_enabled", "announcements_admins", "link_embeds"):
+        elif key in ("guild_list_visible", "voice_enabled", "announcements_admins", "link_embeds", "fx_links"):
             if not isinstance(val, bool):
                 raise ProtocolError(P.BAD_REQUEST, f"'{key}' must be a boolean")
         elif key == "max_upload_bytes":
@@ -37,6 +37,8 @@ def apply_config_updates(ctx, payload: dict) -> dict:
                 raise ProtocolError(P.BAD_REQUEST, f"'{key}' must be 0 (no limit) to {P.MAX_ACCOUNTS_PER_CLIENT}")
         elif key == "server_name":
             val = P.validate_server_name(val)
+        elif key == "server_description":
+            val = P.validate_server_description(val)
         elif key == "customization_mode":
             if val not in P.CUSTOMIZATION_MODES:
                 raise ProtocolError(P.BAD_REQUEST, f"'{key}' must be one of {P.CUSTOMIZATION_MODES}")
