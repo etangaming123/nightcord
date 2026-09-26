@@ -2,7 +2,7 @@
 
 A web-based messaging app, built for selfhosting. A parody of Discord.
 
-[Website](https://nightcord.etangaming.xyz/) · [Open the client](https://nightcord.etangaming.xyz/app/) · [Protocol spec](docs/PROTOCOL.md)
+[Website](https://nightcord.etangaming.xyz/) · [Open the client](https://nightcord.etangaming.xyz/app/) · [Try the preview](https://nightcord.etangaming.xyz/app/?preview) · [Protocol spec](docs/PROTOCOL.md)
 
 > [!WARNING]
 > **This is vibecoded by Claude, have fun :)**
@@ -85,6 +85,13 @@ address (`host:port`) and make an account. That's it. Registering asks for the p
 the client can reconnect to your last server on startup (a checkbox on the server select screen,
 also in *Settings → Appearance*; switch it off if you'd rather pick each time).
 
+To **look around** first, [try the preview](https://nightcord.etangaming.xyz/app/?preview) (or press
+*Try a preview* on the server select screen). It's the whole client on a pretend server with sample
+people, running entirely in your browser tab: pick owner or member, send messages, make a guild, poke
+at the owner settings. Nothing you do is sent anywhere, your real settings and saved servers aren't
+touched, and a reload puts it all back. With *Simulated activity* on, the sample people chat, react,
+come and go and answer you. One of them has a song they really want you to hear.
+
 To **host** one, keep reading.
 
 ### Standalone client
@@ -93,7 +100,8 @@ Prefer not to depend on the hosted client being up? Grab `nightcord-standalone.h
 [latest release](../../releases/latest) — one self-contained file with everything (JS, CSS, the
 logo, sounds and UI text) inlined. Double-click it to open it from disk and connect to any server,
 same as the hosted client. The server you connect to needs `allow_file_origin` turned on (see
-below), since a page opened from disk sends `Origin: null`, which servers reject by default.
+below), since a page opened from disk sends `Origin: null`, which servers reject by default. The
+preview isn't in the standalone file; use the hosted client for that.
 
 On load, the standalone client checks GitHub's release API (`api.github.com`) once to see if a newer
 standalone build exists, and shows a big banner on the server select and login screens (and a dismissible notice in the Inbox) if so — this is the only network
