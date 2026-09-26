@@ -39,7 +39,13 @@ A web-based messaging app, built for selfhosting. A parody of Discord.
   `/coinflip` and `/choose` are rolled by the server so nobody can type a lucky result, while `/shrug`, `/me`,
   `/spoiler`, `/remind` and friends stay in the client
 - **Forward** a message anywhere, **Save** one for later in a private list, and **Mark Unread** to come back to it.
-  Every message has a right-click (or long-press) menu, and a Copy Link that opens in the app rather than a new tab.
+  Every message has a right-click menu, and a Copy Link that opens in the app rather than a new tab.
+- **On your phone**, long-press a message for a sheet of quick reactions and actions (with a little buzz on
+  Android), swipe a message left to reply, swipe right for the channel list and in from the right edge for members
+- Short timestamps like Discord's: *Today at 3:18pm*, *Yesterday at 3:00am*, *13/11/26 at 12:00pm*. Pick
+  dd/mm/yy, mm/dd/yy or yy/mm/dd and 12- or 24-hour time in *Settings → Appearance*.
+- **Real URLs**: the address bar says where you are (`/app/servers/…/…`, `/app/dms/…`, `/app/friends/pending`,
+  `/app/settings/appearance`), so Back and Forward work and you can bookmark a channel
 - **Twemoji**, the emoji Discord uses, on every OS (country flags on Windows too), with every emoji in the picker
   under Discord's names: `:thumbsup:`, `:+1:`, `:slight_smile:`, `:flag_us:`. Buttons use proper icons, not emoji.
 - A formatting toolbar over the message box, and keyboard shortcuts with a cheat sheet on Ctrl+/
@@ -155,6 +161,11 @@ other things that send no useful origin, so only turn it on if you're fine with 
 Fork this repo, then go to *Settings → Pages → Source: GitHub Actions*. Every push to `main` publishes the homepage
 at `/` and the client at `/app/`. The client is plain files with no build step, so any static host works too:
 serve `site/` at the root and `client/` at `/app/`.
+
+> [!NOTE]
+> Deep links like `/app/servers/…` don't exist as files. GitHub Pages serves `site/404.html` for them, which bounces
+> to `/app/?route=…` and the client puts the address back. On another host, point unknown paths under `/app/` at that
+> 404 page (or just at `/app/?route=<the rest>`); without it, links and reloads land on `/app/` instead.
 
 ## Customising
 
