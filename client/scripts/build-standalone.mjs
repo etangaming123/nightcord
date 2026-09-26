@@ -37,6 +37,17 @@ async function embeddedLang() {
   return { en: modules };
 }
 
+// The preview (js/preview/) is for the hosted client and the homepage; the
+// single file leaves it out and hides its button (main.js checks for
+// __NIGHTCORD_LANG__, which only this build sets).
+const noPreview = {
+  name: "no-preview",
+  setup(b) {
+    b.onResolve({ filter: /[\\/]preview[\\/]index\.js$/ }, (args) => ({ path: args.path, namespace: "no-preview" }));
+    b.onLoad({ filter: /.*/, namespace: "no-preview" }, () => ({ contents: "export const createPreview = null;" }));
+  },
+};
+
 async function main() {
   const [html, css, lang, result] = await Promise.all([
     readFile(path.join(clientDir, "index.html"), "utf8"),
@@ -48,6 +59,7 @@ async function main() {
       minify: true,
       format: "iife",
       write: false,
+      plugins: [noPreview],
     }),
   ]);
 

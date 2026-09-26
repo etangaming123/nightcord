@@ -56,5 +56,9 @@
   "note_optional": "(optional)",
   "guilds_aria": "Guilds",
   "channels_aria": "Channels",
-  "members_aria": "Members"
+  "members_aria": "Members",
+  "preview_or": "or",
+  "preview_button": "Try a preview",
+  "preview_hint": "No server needed: a pretend one runs in this tab, and nothing you do leaves it.",
+  "preview_bar_aria": "Preview"
 }

@@ -24,8 +24,10 @@ jobs:
         with:
           node-version: "22"
       - name: Syntax check
-        run: for f in client/js/*.js client/js/ui/*.js client/js/ui/emojiData/*.js; do node --check "$f"; done
+        run: for f in client/js/*.js client/js/ui/*.js client/js/ui/emojiData/*.js client/js/preview/*.js client/js/preview/handlers/*.js; do node --check "$f"; done
       - name: Markdown tokenizer
         run: node client/tests/markdown.test.mjs
       - name: UI strings
         run: node client/tests/lang-keys.mjs
+      - name: Preview's pretend server
+        run: node client/tests/preview.test.mjs

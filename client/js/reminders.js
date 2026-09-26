@@ -4,6 +4,7 @@
 
 import { playSound, showDesktopNotification } from "./notify.js";
 import { state } from "./state.js";
+import { rawGet, rawSet } from "./storage.js";
 import { toast } from "./ui/modals.js";
 import { scopedT } from "./strings.js";
 
@@ -16,7 +17,7 @@ let timers = new Map(); // id -> timeout handle
 
 function load() {
   try {
-    const raw = JSON.parse(localStorage.getItem(KEY) || "[]");
+    const raw = JSON.parse(rawGet(KEY) || "[]");
     return Array.isArray(raw) ? raw.filter((r) => r && typeof r.text === "string" && typeof r.at === "number") : [];
   } catch {
     return [];
@@ -24,11 +25,7 @@ function load() {
 }
 
 function save(list) {
-  try {
-    localStorage.setItem(KEY, JSON.stringify(list.slice(-MAX)));
-  } catch {
-    /* storage unavailable: the reminder lasts for this page load only */
-  }
+  rawSet(KEY, JSON.stringify(list.slice(-MAX)));
 }
 
 // Reminders belong to the account that set them, on the server it set them on.

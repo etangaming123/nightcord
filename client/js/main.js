@@ -14,7 +14,7 @@ import { handleShortcut, shouldFocusComposer } from "./shortcuts.js";
 import { flush, invalidate, setActions } from "./render.js";
 import { currentChannel, resetServerState, state } from "./state.js";
 import * as store from "./storage.js";
-import { $, add, clear, h, setAvatarBase } from "./ui/dom.js";
+import { $, add, clear, h, setAvatarBase, setUrlResolver } from "./ui/dom.js";
 import { render as renderMarkdown } from "./ui/markdown.js";
 import { clearPending } from "./uploads.js";
 import { focusComposer, setupDropZone } from "./ui/composer.js";
@@ -175,6 +175,7 @@ let connecting = false;
 // putting back there; a saved card or a boot-time reconnect never rewrites it.
 async function connectTo(input, { addAccount = false, fromForm = false } = {}) {
   if (connecting) return;
+  if (preview && input === PREVIEW_URL) { connectPreview({ addAccount }); return; }
   let url;
   try {
     url = normalizeServerUrl(input);
@@ -233,10 +234,16 @@ async function connectTo(input, { addAccount = false, fromForm = false } = {}) {
     toast(t("protocol_mismatch", { server: state.info.protocol_version, client: PROTOCOL_VERSION }), { error: true, ms: 8000 });
   }
   setAvatarBase(url);
+  await joinServer(conn, url, { addAccount });
+}
+
+// After the socket is up and server.info is in: log in (or show the screens
+// that come first). Shared by real servers and the preview.
+async function joinServer(conn, url, { addAccount = false } = {}) {
   wireEvents(conn);
   wireConnection(conn);
   store.saveServer(url, state.info.server_name, state.info.max_accounts_per_client);
-  store.setLastServer(url);
+  if (!preview) store.setLastServer(url);
 
   if (state.info.setup_required) {
     showSetup();
@@ -256,6 +263,103 @@ async function connectTo(input, { addAccount = false, fromForm = false } = {}) {
   addingAccount = addAccount;
   if (needsLegal()) showLegal();
   else showAuth();
+}
+
+// --- preview (client/js/preview): the app against a pretend server in this tab ---
+
+// The standalone build leaves the preview out (scripts/build-standalone.mjs).
+const PREVIEW_AVAILABLE = !globalThis.__NIGHTCORD_LANG__;
+const PREVIEW_URL = "wss://preview.nightcord.invalid/ws";
+let preview = null; // { server, activity, resolveUrl, sessionFor, connect } while it runs
+
+function choosePreview() {
+  const tp = scopedT("ui/preview");
+  const option = (role, iconName) => h("button", {
+    class: "preview-role", type: "button",
+    on: { click: () => { closeModal(); startPreview(role); } },
+  }, icon(iconName), h("span", { class: "preview-role-text" },
+    h("strong", {}, tp(`role_${role}`)), h("span", { class: "muted small" }, tp(`role_${role}_hint`))));
+  openModal({
+    title: tp("picker_title"),
+    subtitle: tp("picker_subtitle"),
+    content: h("div", { class: "preview-roles" }, option("owner", "crown"), option("member", "user")),
+    actions: [h("button", { class: "btn", type: "button", on: { click: closeModal } }, tc("cancel"))],
+  });
+}
+
+async function startPreview(role) {
+  if (preview || connecting) return;
+  disconnect();
+  store.setVolatile(true);
+  const mod = await import("./preview/index.js");
+  preview = mod.createPreview();
+  // Both sample accounts are signed in, so the account switcher can hop
+  // between the owner's view and a member's. The chosen one goes last: it's
+  // the active account.
+  for (const r of role === "owner" ? ["member", "owner"] : ["owner", "member"]) {
+    const { token, user } = preview.sessionFor(r);
+    store.saveAccount(PREVIEW_URL, user, token);
+  }
+  store.setLegalAccepted(PREVIEW_URL, "preview1");
+  store.setLast(PREVIEW_URL, { view: "home" }); // open on the Home page
+  store.setTrusted(PREVIEW_URL);
+  preview.activity.start();
+  await connectPreview();
+}
+
+async function connectPreview({ addAccount = false } = {}) {
+  disconnect();
+  const conn = preview.connect();
+  await conn.open();
+  state.conn = conn;
+  state.url = PREVIEW_URL;
+  state.info = await conn.request(T.SERVER_INFO);
+  setUrlResolver(preview.resolveUrl);
+  renderPreviewBar();
+  await joinServer(conn, PREVIEW_URL, { addAccount });
+}
+
+// Leaving throws everything away: a reload without ?preview.
+function exitPreview() {
+  location.href = location.pathname;
+}
+
+function renderPreviewBar() {
+  const bar = $("#preview-bar");
+  bar.hidden = !preview;
+  document.body.classList.toggle("has-preview-bar", !!preview);
+  if (!preview) return;
+  const tp = scopedT("ui/preview");
+  const activity = h("input", {
+    type: "checkbox", class: "switch", checked: preview.activity.on,
+    on: { change: (e) => (e.target.checked ? preview.activity.start() : preview.activity.stop()) },
+  });
+  const roleBtn = (role, iconName) => {
+    const account = store.getAccounts(PREVIEW_URL).find((a) => a.username === (role === "owner" ? "you" : "guest"));
+    const current = !!account && account.user_id === state.user?.user_id;
+    return h("button", {
+      class: `preview-seg ${current ? "on" : ""}`, type: "button", "aria-pressed": String(current),
+      title: tp(`view_as_${role}`),
+      on: { click: () => { if (account && !current) switchAccount(PREVIEW_URL, account.user_id); } },
+    }, icon(iconName), h("span", { class: "preview-bar-label" }, tp(`role_${role}`)));
+  };
+  clear(bar);
+  add(bar,
+    h("span", { class: "preview-tag" }, icon("eye"), tp("tag")),
+    h("span", { class: "preview-note" }, tp("note")),
+    h("span", { class: "preview-spacer" }),
+    h("span", { class: "preview-segs", role: "group", "aria-label": tp("view_as") }, roleBtn("owner", "crown"), roleBtn("member", "user")),
+    h("label", { class: "preview-toggle", title: tp("activity_hint") }, activity, h("span", { class: "preview-bar-label" }, tp("activity"))),
+    h("button", {
+      class: "btn small", type: "button", title: tp("reset_hint"),
+      on: {
+        click: (e) => confirmAction(e, {
+          title: tp("reset_title"), message: tp("reset_body"), confirmLabel: tp("reset"),
+          onConfirm: () => { location.href = `${location.pathname}?preview=${state.user?.is_server_owner ? "owner" : "member"}`; },
+        }),
+      },
+    }, icon("refresh-cw"), h("span", { class: "preview-bar-label" }, tp("reset"))),
+    h("button", { class: "btn small primary", type: "button", on: { click: exitPreview } }, icon("log-out"), h("span", { class: "preview-bar-label" }, tp("exit"))));
 }
 
 // --- server rules (before creating an account) ---
@@ -286,6 +390,7 @@ function disconnect() {
   clearPending();
   resetServerState();
   setAvatarBase(null);
+  setUrlResolver(null);
   closeModal();
   closePopover();
   closeFullscreen();
@@ -503,6 +608,7 @@ async function enterApp({ session_token, user, legal_update_required }) {
   state.user = user;
   state.users.set(user.user_id, user);
   state.connected = true;
+  if (preview) renderPreviewBar();
   applyPrefs(); // themes depend on this server's customisation settings
   restoreReminders(); // /remind survives a reload (client/js/reminders.js)
   showScreen("app");
@@ -564,10 +670,12 @@ async function logout() {
   try { await req(T.AUTH_LOGOUT); } catch { /* the token dies with the session anyway */ }
   store.removeAccount(state.url, state.user?.user_id);
   if (store.getToken(state.url)) connectTo(state.url);
+  else if (preview) exitPreview();
   else toLogin();
 }
 
 function switchServer() {
+  if (preview) { exitPreview(); return; }
   disconnect();
   store.setLastServer(null);
   showConnect();
@@ -802,6 +910,7 @@ async function boot() {
     $(id).addEventListener("click", () => {
       // Backing out of "add account": return to the account you were using.
       if (addingAccount && store.getToken(state.url)) { connectTo(state.url); return; }
+      if (preview) { exitPreview(); return; }
       disconnect();
       store.setLastServer(null);
       showConnect();
@@ -847,14 +956,22 @@ async function boot() {
   // ?server=host:port lets a server operator share a direct link;
   // &invite=CODE opens that guild invite once logged in;
   // &jump=<guild|@me>/<channel>/<message> opens a message link.
+  // ?preview opens the preview (the homepage links here); ?preview=owner or
+  // ?preview=member skips the question.
   const params = new URLSearchParams(location.search);
   const param = params.get("server");
+  const previewParam = PREVIEW_AVAILABLE && params.has("preview") ? params.get("preview") : null;
   pendingInvite = params.get("invite");
   pendingJump = parseMessageLink(location.href);
-  if (param || pendingInvite || pendingJump) history.replaceState(null, "", location.pathname);
+  if (param || pendingInvite || pendingJump || previewParam !== null) history.replaceState(null, "", location.pathname);
+  $("#connect-preview-box").hidden = !PREVIEW_AVAILABLE;
+  $("#connect-preview").addEventListener("click", () => choosePreview());
   const last = store.getLastServer();
   showConnect();
-  if (param) connectTo(param);
+  if (previewParam !== null) {
+    if (previewParam === "owner" || previewParam === "member") startPreview(previewParam);
+    else choosePreview();
+  } else if (param) connectTo(param);
   else if (last && getPrefs().autoReconnect) connectTo(last);
 }
 

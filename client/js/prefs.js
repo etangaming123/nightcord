@@ -2,6 +2,7 @@
 // server-synced preferences live in notify.prefs (PROTOCOL.md §5).
 
 import { DEFAULT_CUSTOM, applyTheme } from "./themes.js";
+import { rawGet, rawSet } from "./storage.js";
 
 const KEY = "nightcord.prefs";
 
@@ -28,7 +29,7 @@ let prefs = load();
 
 function load() {
   try {
-    const raw = JSON.parse(localStorage.getItem(KEY) || "{}");
+    const raw = JSON.parse(rawGet(KEY) || "{}");
     return { ...DEFAULTS, ...(raw && typeof raw === "object" ? raw : {}) };
   } catch {
     return { ...DEFAULTS };
@@ -39,11 +40,7 @@ export const getPrefs = () => prefs;
 
 export function setPrefs(patch) {
   prefs = { ...prefs, ...patch };
-  try {
-    localStorage.setItem(KEY, JSON.stringify(prefs));
-  } catch {
-    /* storage unavailable; prefs last for this page load only */
-  }
+  rawSet(KEY, JSON.stringify(prefs));
   applyPrefs();
 }
 

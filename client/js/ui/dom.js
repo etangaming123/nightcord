@@ -59,6 +59,10 @@ export function displayName(user) {
 // Where avatar images and files live: the server's https origin (same host as /ws).
 let avatarBase = null;
 let httpBase = null;
+// The preview (client/js/preview) has no https origin: it answers server
+// paths like /media/123 or /files/… itself, with data: and blob: URLs.
+let resolveUrl = null;
+export const setUrlResolver = (fn) => { resolveUrl = fn; };
 export function setAvatarBase(wsUrl) {
   if (!wsUrl) { avatarBase = null; httpBase = null; return; }
   const u = new URL(wsUrl);
@@ -70,12 +74,17 @@ export function setAvatarBase(wsUrl) {
 // Image references (PROTOCOL.md §4 User): "123.png" is a small upload under
 // /avatars/, "123" a /media upload and "a_123" an animated one.
 const MEDIA_REF = /^(a_)?(\d{1,20})$/;
-export const mediaUrl = (mediaId) => (httpBase && mediaId ? `${httpBase}/media/${encodeURIComponent(mediaId)}` : null);
+export const mediaUrl = (mediaId) => {
+  if (!mediaId) return null;
+  if (resolveUrl) return resolveUrl(`/media/${mediaId}`);
+  return httpBase ? `${httpBase}/media/${encodeURIComponent(mediaId)}` : null;
+};
 export const isAnimatedRef = (ref) => typeof ref === "string" && ref.startsWith("a_");
 export function avatarUrl(ref) {
   if (!ref) return null;
   const m = MEDIA_REF.exec(ref);
   if (m) return mediaUrl(m[2]);
+  if (resolveUrl) return resolveUrl(`/avatars/${ref}`);
   return avatarBase ? avatarBase + encodeURIComponent(ref) : null;
 }
 export const imageUrl = avatarUrl;
@@ -104,7 +113,7 @@ export function imageEl(ref, { animate = true, alt = "", cls = "", lazy = true }
   return canvas;
 }
 // An absolute URL for a server path like /files/… or /upload.
-export const serverUrl = (path) => (httpBase ? httpBase + path : null);
+export const serverUrl = (path) => (resolveUrl ? resolveUrl(path) : httpBase ? httpBase + path : null);
 
 export function fmtBytes(n) {
   if (n < 1024) return `${n} B`;

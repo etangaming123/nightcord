@@ -59,6 +59,11 @@
       <label class="check connect-option"><input type="checkbox" id="auto-reconnect"><span data-i18n="auto_reconnect_label">Reconnect to my last server on startup</span></label>
       <p id="connect-hint" class="muted small" hidden data-i18n="still_trying">Still trying…</p>
       <div id="connect-error" class="error-box" hidden></div>
+      <div id="connect-preview-box" class="connect-preview" hidden>
+        <span class="connect-or" data-i18n="preview_or">or</span>
+        <button type="button" class="btn block" id="connect-preview" data-i18n="preview_button">Try a preview</button>
+        <p class="muted small" data-i18n="preview_hint">No server needed: a pretend one runs in this tab, and nothing you do leaves it.</p>
+      </div>
     </div>
   </section>
 
@@ -167,6 +172,7 @@
 
   <!-- Slim update reminder for every screen that has no big banner -->
   <div id="update-float" class="update-float" role="status" hidden></div>
+  <div id="preview-bar" class="preview-bar" role="region" data-i18n-aria-label="preview_bar_aria" aria-label="Preview" hidden></div>
 
   <!-- Main app -->
   <div id="app" hidden>

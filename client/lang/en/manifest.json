@@ -32,6 +32,7 @@
   "ui/channelSettings",
   "ui/invites",
   "ui/settings",
+  "ui/preview",
   "ui/profile",
   "ui/expressionSettings",
   "ui/cropper",

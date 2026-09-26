@@ -1,0 +1,20 @@
+{
+  "picker_title": "Try Nightcord",
+  "picker_subtitle": "A pretend server with sample people, running entirely in this tab.",
+  "role_owner": "Owner",
+  "role_owner_hint": "Run the server: every setting, the owner panel, moderation.",
+  "role_member": "Member",
+  "role_member_hint": "What everyone else sees. No admin tools.",
+  "tag": "Preview",
+  "note": "Nothing here leaves this tab.",
+  "view_as": "View as",
+  "view_as_owner": "Switch to the server owner's account",
+  "view_as_member": "Switch to a regular member's account",
+  "activity": "Simulated activity",
+  "activity_hint": "Sample people chat, react, change status and answer when you talk to them",
+  "reset": "Reset",
+  "reset_hint": "Start the preview over",
+  "reset_title": "Start the preview over?",
+  "reset_body": "Everything you did in the preview goes away and the sample server comes back as new.",
+  "exit": "Exit preview"
+}
