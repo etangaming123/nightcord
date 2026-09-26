@@ -97,6 +97,8 @@ function closeNavDrawer() {
   $("#drawer-scrim").hidden = !$("#app").classList.contains("members-open");
 }
 
+// channelId: an id, or a function that picks one once the guild's channels
+// are loaded (router.js looks a channel up by name that way).
 export async function openGuild(guildId, channelId = null) {
   if (!state.guilds.has(guildId)) return;
   const sameGuild = state.view === "guild" && state.guildId === guildId && state.channels.length;
@@ -118,7 +120,8 @@ export async function openGuild(guildId, channelId = null) {
     }
     if (state.guildId !== guildId || state.view !== "guild") return;
   }
-  const remembered = channelId || (store.getLast(state.url).channels || {})[guildId];
+  const wanted = typeof channelId === "function" ? channelId() : channelId;
+  const remembered = wanted || (store.getLast(state.url).channels || {})[guildId];
   const texts = state.channels.filter((c) => c.kind === "text");
   const target = texts.find((c) => c.channel_id === remembered) || firstText() || texts[0];
   if (target) await openChannel(target.channel_id);
