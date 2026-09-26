@@ -498,7 +498,9 @@ body.has-preview-bar.has-update-float #app { height: calc(100% - 84px); }
   position: absolute; right: 16px; top: -14px; display: none; gap: 2px; padding: 2px;
   background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,.2); z-index: 2;
 }
-.msg:hover > .msg-toolbar, .msg:focus-within > .msg-toolbar { display: flex; }
+@media (hover: hover) {
+  .msg:hover > .msg-toolbar, .msg:focus-within > .msg-toolbar { display: flex; }
+}
 .msg-toolbar .icon-btn { width: 30px; height: 30px; font-size: 16px; }
 .msg-toolbar .quick { font-size: 15px; }
 
@@ -513,6 +515,21 @@ body.has-preview-bar.has-update-float #app { height: calc(100% - 84px); }
 .reaction.mine .count { color: var(--pill-text); }
 .reaction.add { color: var(--muted); font-size: 12px; opacity: 0; }
 .msg:hover .reaction.add { opacity: 1; }
+/* Touch screens: no hover toolbar (a long-press opens the sheet instead), the
+   add-reaction pill is always there, and holding a message doesn't select it. */
+@media (hover: none) and (pointer: coarse) {
+  .reaction.add { opacity: 1; }
+  #messages .msg { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  #messages .msg .edit-box { -webkit-user-select: text; user-select: text; }
+}
+#messages { overflow-x: hidden; }
+.msg.swiping { transition: none; }
+.msg:not(.swiping) { transition: transform .15s ease-out; }
+.swipe-reply-icon {
+  position: absolute; top: 50%; right: -52px; width: 32px; height: 32px; margin-top: -16px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--bg-3); color: var(--text-2); transition: background .1s, color .1s;
+}
+.msg.swipe-ready .swipe-reply-icon { background: var(--accent); color: var(--accent-ink); }
 .reaction:disabled { cursor: default; }
 
 .edit-box { margin: 4px 0; }
@@ -881,6 +898,30 @@ a.embed-title:hover { text-decoration: underline; }
 .menu-hint { font-size: 11px; opacity: .7; }
 .menu-sep { height: 1px; background: var(--line); margin: 4px 6px; }
 .menu-heading { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 6px 10px 2px; }
+
+/* Bottom sheet (touch long-press) */
+.sheet-root { position: fixed; inset: 0; z-index: 85; display: flex; align-items: flex-end; background: rgba(0,0,0,0); transition: background .18s; }
+.sheet-root.open { background: rgba(0,0,0,.5); }
+.sheet {
+  width: 100%; max-height: 75vh; overflow-y: auto; overscroll-behavior: contain; background: var(--bg-1);
+  border-radius: 16px 16px 0 0; padding: 6px 8px calc(12px + env(safe-area-inset-bottom));
+  transform: translateY(100%); transition: transform .2s ease-out; box-shadow: var(--shadow);
+}
+.sheet-root.open .sheet { transform: none; }
+.sheet-handle { width: 40px; height: 4px; border-radius: 2px; background: var(--bg-4); margin: 4px auto 10px; }
+.sheet-reactions { display: flex; justify-content: space-between; gap: 6px; padding: 0 4px 10px; }
+.sheet-reaction {
+  flex: 1; max-width: 52px; aspect-ratio: 1; display: grid; place-items: center; border-radius: 50%;
+  border: 1px solid transparent; background: var(--bg-3); font-size: 22px; cursor: pointer; color: var(--text-2);
+}
+.sheet-reaction.mine { background: var(--pill-bg); border-color: var(--accent); }
+.sheet-reaction.more .ico { width: 22px; height: 22px; }
+.sheet .menu { min-width: 0; padding: 0; background: var(--bg-2); border-radius: 10px; }
+.sheet .menu-item { padding: 13px 14px; font-size: 16px; }
+.sheet .menu-icon { width: 22px; }
+@media (prefers-reduced-motion: reduce) {
+  .sheet-root, .sheet, .msg:not(.swiping) { transition: none; }
+}
 
 .emoji-pop { width: 340px; }
 .emoji-picker { display: grid; grid-template-rows: auto 1fr; height: 360px; }

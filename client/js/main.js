@@ -21,6 +21,7 @@ import { focusComposer, setupDropZone } from "./ui/composer.js";
 import { legalLinks, legalUpdateModal, renderLegalTabs, showLegalModal } from "./ui/legal.js";
 import { closeSearch, searchOpen } from "./ui/search.js";
 import { parseMessageLink, setMessageLinkHandler, setupLinkGuard } from "./ui/links.js";
+import { setupGestures } from "./ui/gestures.js";
 import { closeFullscreen, closeModal, closePopover, confirmAction, fullscreenOpen, modalOpen, openModal, popoverOpen, toast } from "./ui/modals.js";
 import { loadStrings, scopedT } from "./strings.js";
 import { icon } from "./ui/icons.js";
@@ -946,6 +947,7 @@ async function boot() {
   });
   setupDropZone();
   setupLinkGuard();
+  setupGestures(actions);
   // A message link pasted into a message opens in place, if it's this server.
   setMessageLinkHandler((jump) => {
     if (!state.user) return false;

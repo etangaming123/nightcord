@@ -222,22 +222,31 @@ export function openPopover(anchor, content, { cls = "", placement = "right", on
 export const repositionPopover = () => stack[stack.length - 1]?.place();
 
 // items: [{ label, onClick, danger?, checked?, disabled?, hint? } | "-" | { heading }]
-export function openMenu(anchor, items, opts = {}) {
+// close: shuts whatever the list sits in before the item runs.
+function menuList(items, close) {
   const list = h("div", { class: "menu", role: "menu" });
+  let sep = false;
   for (const item of items) {
     if (!item) continue;
-    if (item === "-") { add(list, h("div", { class: "menu-sep", role: "separator" })); continue; }
+    // No separator first, last or twice in a row when items around it drop out.
+    if (item === "-") { sep = list.childElementCount > 0; continue; }
+    if (sep) { add(list, h("div", { class: "menu-sep", role: "separator" })); sep = false; }
     if (item.heading) { add(list, h("div", { class: "menu-heading" }, item.heading)); continue; }
     add(list, h("button", {
       class: `menu-item ${item.danger ? "danger" : ""}`, type: "button", role: "menuitem",
       disabled: item.disabled,
-      on: { click: (e) => { closePopover(); item.onClick?.(e); } },
+      on: { click: (e) => { close(); item.onClick?.(e); } },
     },
     item.icon ? h("span", { class: "menu-icon", "aria-hidden": "true" }, hasIcon(item.icon) ? icon(item.icon) : item.icon) : null,
     h("span", { class: "menu-label" }, item.label),
     item.checked !== undefined ? h("span", { class: "menu-check", "aria-hidden": "true" }, item.checked ? icon("status-online") : icon("status-invisible")) : null,
     item.hint ? h("span", { class: "menu-hint" }, item.hint) : null));
   }
+  return list;
+}
+
+export function openMenu(anchor, items, opts = {}) {
+  const list = menuList(items, () => closePopover());
   const el = openPopover(anchor, list, { placement: "bottom", ...opts, cls: `menu-pop ${opts.cls || ""}` });
   if (!el) return null;
   el.querySelector(".menu-item:not([disabled])")?.focus();
@@ -249,6 +258,62 @@ export function openMenu(anchor, items, opts = {}) {
     btns[(i + (e.key === "ArrowDown" ? 1 : -1) + btns.length) % btns.length]?.focus();
   });
   return el;
+}
+
+// --- bottom sheets (touch) ----------------------------------------------------
+// What a long-press opens on a phone: a panel that slides up from the bottom,
+// Discord-mobile style. Closes on the scrim, a drag down, Escape or Back.
+
+let sheet = null;
+const SHEET_DRAG_CLOSE_PX = 80;
+
+export const sheetOpen = () => !!sheet;
+
+export function closeSheet() {
+  if (!sheet) return;
+  const { el, onKey, onClose } = sheet;
+  sheet = null;
+  document.removeEventListener("keydown", onKey, true);
+  el.classList.remove("open");
+  const gone = () => el.remove();
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) gone();
+  else { el.addEventListener("transitionend", gone, { once: true }); setTimeout(gone, 300); }
+  onClose?.();
+}
+
+// top: an optional row above the items (e.g. quick reactions).
+export function openSheet({ label, top = null, items = [], onClose } = {}) {
+  closeSheet();
+  closePopover();
+  const panel = h("div", { class: "sheet", role: "dialog", "aria-modal": "true", "aria-label": label },
+    h("div", { class: "sheet-handle", "aria-hidden": "true" }),
+    top,
+    menuList(items, closeSheet));
+  const el = h("div", { class: "sheet-root", on: { click: (e) => { if (e.target === el) closeSheet(); } } }, panel);
+  // Drag the panel down to dismiss it (only from its top, so lists can scroll).
+  let startY = null;
+  panel.addEventListener("touchstart", (e) => {
+    startY = panel.scrollTop <= 0 && e.touches.length === 1 ? e.touches[0].clientY : null;
+  }, { passive: true });
+  panel.addEventListener("touchmove", (e) => {
+    if (startY === null) return;
+    const dy = Math.max(0, e.touches[0].clientY - startY);
+    panel.style.transform = dy ? `translateY(${dy}px)` : "";
+  }, { passive: true });
+  panel.addEventListener("touchend", (e) => {
+    if (startY === null) return;
+    const dy = e.changedTouches[0].clientY - startY;
+    startY = null;
+    panel.style.transform = "";
+    if (dy > SHEET_DRAG_CLOSE_PX) closeSheet();
+  });
+  const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); closeSheet(); } };
+  document.addEventListener("keydown", onKey, true);
+  sheet = { el, onKey, onClose };
+  $("#popover-root").append(el);
+  void el.offsetHeight; // lay it out closed first, so opening slides
+  el.classList.add("open");
+  return panel;
 }
 
 // --- full-screen pages (User Settings, Guild Settings, …) ---------------------

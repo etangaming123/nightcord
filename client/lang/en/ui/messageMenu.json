@@ -27,5 +27,7 @@
   "forward_sent": "Forwarded to {name}",
   "forward_none": "Nothing matches.",
   "group_conversation": "Group conversation",
-  "direct_message": "Direct message"
+  "direct_message": "Direct message",
+  "sheet_label": "Message actions",
+  "react_with": "React with {emoji}"
 }

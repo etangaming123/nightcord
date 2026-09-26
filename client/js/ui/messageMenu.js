@@ -1,17 +1,16 @@
-// Everything you can do to one message, in one place: the right-click and
-// long-press menu, and the same functions the hover toolbar calls.
+// Everything you can do to one message, in one place: the right-click menu,
+// the long-press sheet, and the same functions the hover toolbar calls.
 
 import { can, currentChannel, currentGuild, isDm, nameOf, state, userById } from "../state.js";
 import { fmtStamp, h } from "./dom.js";
-import { openMenu } from "./modals.js";
+import { closeSheet, openMenu, openSheet } from "./modals.js";
+import { QUICK_REACTIONS, emojiGlyph } from "./emoji.js";
 import { plainText } from "./markdown.js";
 import { mdContext } from "./chat.js";
 import { scopedT } from "../strings.js";
 import { icon } from "./icons.js";
 
 const t = scopedT("ui/messageMenu");
-
-const LONG_PRESS_MS = 500;
 
 // What this viewer may do to this message, in one object so the toolbar and
 // the menu can never disagree.
@@ -48,11 +47,13 @@ export function messageLink(m, serverParam) {
   return `${base}?server=${encodeURIComponent(server)}&jump=${encodeURIComponent(jump)}`;
 }
 
-export function messageMenu(m, anchor, actions) {
+// The menu's entries. anchor is what a follow-up popover (the reaction
+// picker) opens against.
+function messageMenuItems(m, anchor, actions) {
   const a = messageAbilities(m, actions);
   const saved = actions.isSaved(m);
-  openMenu(anchor, [
-    a.react ? { label: t("add_reaction"), icon: "smile-plus", onClick: () => actions.pickReaction(m, anchor) } : null,
+  return [
+    a.react ? { label: t("add_reaction"), icon: "smile-plus", onClick: () => actions.pickReaction(m, anchor()) } : null,
     a.reply ? { label: t("reply"), icon: "reply", onClick: () => actions.reply(m) } : null,
     a.forward ? { label: t("forward"), icon: "forward", onClick: () => actions.forwardMessage(m) } : null,
     "-",
@@ -64,37 +65,51 @@ export function messageMenu(m, anchor, actions) {
     a.pin ? { label: m.pinned ? t("unpin") : t("pin"), icon: "pin", onClick: (e) => (m.pinned ? actions.unpinMessage(m, e?.shiftKey) : actions.pinMessage(m, e?.shiftKey)) } : null,
     a.unread ? { label: t("mark_unread"), icon: "eye", onClick: () => actions.markUnreadFrom(m) } : null,
     a.suppress ? { label: t("hide_previews"), icon: "image", onClick: () => actions.suppressEmbeds(m) } : null,
-    a.edit || a.remove ? "-" : null,
+    "-",
     a.edit ? { label: t("edit"), icon: "pencil", onClick: () => actions.startEdit(m) } : null,
     a.remove ? { label: t("delete"), icon: "trash-2", danger: true, onClick: (e) => actions.deleteMessage(m, e?.shiftKey) } : null,
-  ], { placement: anchor instanceof Element ? "bottom" : "right", key: `message:${m.message_id}` });
+  ];
 }
 
-// Right-click, and long-press for touch. Returns the handlers to spread onto
-// a message element's `on`.
+export function messageMenu(m, anchor, actions) {
+  openMenu(anchor, messageMenuItems(m, () => anchor, actions),
+    { placement: anchor instanceof Element ? "bottom" : "right", key: `message:${m.message_id}` });
+}
+
+// The long-press sheet on touch screens: quick reactions on top, then the
+// same entries as the right-click menu, finger-sized.
+export function messageSheet(m, actions) {
+  const a = messageAbilities(m, actions);
+  const msgEl = () => document.querySelector(`.msg[data-id="${m.message_id}"]`) || document.body;
+  const me = state.user?.user_id;
+  const top = a.react ? h("div", { class: "sheet-reactions" },
+    QUICK_REACTIONS.map((emoji) => {
+      const mine = m.reactions?.find((r) => r.emoji === emoji)?.user_ids.includes(me);
+      return h("button", {
+        class: `sheet-reaction ${mine ? "mine" : ""}`, type: "button", "aria-label": t("react_with", { emoji }), "aria-pressed": String(!!mine),
+        on: { click: () => { closeSheet(); if (mine) actions.unreact(m, emoji); else actions.react(m, emoji); } },
+      }, emojiGlyph(emoji));
+    }),
+    h("button", {
+      class: "sheet-reaction more", type: "button", "aria-label": t("add_reaction"),
+      on: { click: () => { closeSheet(); actions.pickReaction(m, msgEl()); } },
+    }, icon("smile-plus"))) : null;
+  openSheet({ label: t("sheet_label"), top, items: messageMenuItems(m, msgEl, actions) });
+}
+
+const touchScreen = () => matchMedia("(hover: none) and (pointer: coarse)").matches;
+
+// Right-click opens the menu. On touch screens a long-press opens the sheet
+// instead (ui/gestures.js), so the browser's own long-press menu is skipped.
 export function messageMenuHandlers(m, actions) {
-  let timer = null;
-  let moved = false;
-  const cancel = () => { clearTimeout(timer); timer = null; };
   return {
     contextmenu: (e) => {
+      if (touchScreen()) { e.preventDefault(); return; }
       // Let the browser's own menu win on links, images and selected text.
       if (e.target.closest("a, img, input, textarea") || !window.getSelection().isCollapsed) return;
       e.preventDefault();
       messageMenu(m, { x: e.clientX, y: e.clientY }, actions);
     },
-    touchstart: (e) => {
-      if (e.touches.length !== 1) return;
-      moved = false;
-      const { clientX: x, clientY: y } = e.touches[0];
-      timer = setTimeout(() => {
-        timer = null;
-        if (!moved) messageMenu(m, { x, y }, actions);
-      }, LONG_PRESS_MS);
-    },
-    touchmove: () => { moved = true; cancel(); },
-    touchend: cancel,
-    touchcancel: cancel,
   };
 }
 
