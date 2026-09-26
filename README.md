@@ -41,11 +41,16 @@ A web-based messaging app, built for selfhosting. A parody of Discord.
 - **Forward** a message anywhere, **Save** one for later in a private list, and **Mark Unread** to come back to it.
   Every message has a right-click menu, and a Copy Link that opens in the app rather than a new tab.
 - **On your phone**, long-press a message for a sheet of quick reactions and actions (with a little buzz on
-  Android), swipe a message left to reply, swipe right for the channel list and in from the right edge for members
+  Android), swipe a message left to reply, swipe right for the channel list and in from the right edge for members.
+  Profiles slide up from the bottom too.
 - Short timestamps like Discord's: *Today at 3:18pm*, *Yesterday at 3:00am*, *13/11/26 at 12:00pm*. Pick
   dd/mm/yy, mm/dd/yy or yy/mm/dd and 12- or 24-hour time in *Settings → Appearance*.
-- **Real URLs**: the address bar says where you are (`/app/servers/…/…`, `/app/dms/…`, `/app/friends/pending`,
-  `/app/settings/appearance`), so Back and Forward work and you can bookmark a channel
+- **Real URLs**: the address bar says where you are (`/app/servers/night-owls/general`, `/app/dms/luna`,
+  `/app/friends/pending`, `/app/settings/appearance`), so Back and Forward work and you can bookmark a channel.
+  The tab icon gets a red badge with your unread mentions.
+- **Invites**: pick how long one lasts and how many uses it gets, then generate it (no code until you ask). The link
+  folds the server's address into a base64 token, and the dialog tells you it's in there: scrambled, not secret.
+  Post one in chat and it shows up as a card with a Join button.
 - **Twemoji**, the emoji Discord uses, on every OS (country flags on Windows too), with every emoji in the picker
   under Discord's names: `:thumbsup:`, `:+1:`, `:slight_smile:`, `:flag_us:`. Buttons use proper icons, not emoji.
 - A formatting toolbar over the message box, and keyboard shortcuts with a cheat sheet on Ctrl+/
