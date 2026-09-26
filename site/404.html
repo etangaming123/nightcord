@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Not found — Nightcord</title>
+  <meta name="theme-color" content="#884499">
+  <link rel="icon" type="image/png" href="/app/assets/logo.png">
+  <link rel="stylesheet" href="/style.css">
+  <style>.hero { min-height: calc(100vh - 48px); display: grid; place-content: center; }</style>
+  <script>
+    // GitHub Pages only has /app/index.html, so a deep link into the client
+    // (/app/servers/…, /app/settings/…, /app/invite/…) lands here. Hand the
+    // path to the client, which puts it back in the address bar (router.js).
+    // Keep in step with tools/localhost.py.
+    if (location.pathname.startsWith("/app/")) {
+      const params = new URLSearchParams(location.search);
+      params.set("route", location.pathname.slice("/app/".length));
+      location.replace(`/app/?${params}${location.hash}`);
+    }
+  </script>
+</head>
+<body>
+  <header class="hero">
+    <img class="hero-logo" src="/app/assets/logo.png" alt="Nightcord logo" width="112" height="112">
+    <h1>404</h1>
+    <p class="lede">This channel doesn't exist. Or it got deleted. Or it never existed and you made it up.</p>
+    <div class="cta">
+      <a class="btn primary" href="/">Home page</a>
+      <a class="btn ghost" href="/app/">Open Nightcord</a>
+    </div>
+  </header>
+</body>
+</html>

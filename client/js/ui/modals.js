@@ -273,6 +273,7 @@ export function closeSheet() {
   if (!sheet) return;
   const { el, onKey, onClose } = sheet;
   sheet = null;
+  overlayListener("sheet", false);
   document.removeEventListener("keydown", onKey, true);
   el.classList.remove("open");
   const gone = () => el.remove();
@@ -311,6 +312,7 @@ export function openSheet({ label, top = null, items = [], onClose } = {}) {
   document.addEventListener("keydown", onKey, true);
   sheet = { el, onKey, onClose };
   $("#popover-root").append(el);
+  overlayListener("sheet", true);
   void el.offsetHeight; // lay it out closed first, so opening slides
   el.classList.add("open");
   return panel;
@@ -320,17 +322,26 @@ export function openSheet({ label, top = null, items = [], onClose } = {}) {
 
 let page = null;
 
-export function closeFullscreen() {
+// router.js follows settings pages and the sheet, so they get an address
+// and Back closes them. Set from there to keep modals.js import-free of it.
+let overlayListener = () => {};
+export const setOverlayListener = (fn) => { overlayListener = fn; };
+
+// reopening: another page is replacing this one, so it isn't really closing.
+export function closeFullscreen({ reopening = false } = {}) {
   if (!page) return;
   page.el.remove();
   document.removeEventListener("keydown", page.onKey);
   page.onClose?.();
   page = null;
+  if (reopening !== true) overlayListener("fullscreen", null);
 }
 
 // sections: [{ id, label, render(container) } | { heading } | { label, onClick, danger }]
-export function openFullscreen({ sections, initial, onClose, title }) {
-  closeFullscreen();
+// route: what router.js puts in the address, e.g. { kind: "settings" }; the
+// open section is added to it.
+export function openFullscreen({ sections, initial, onClose, title, route = null }) {
+  closeFullscreen({ reopening: true });
   closePopover();
   const nav = h("nav", { class: "fs-nav", "aria-label": title });
   const body = h("div", { class: "fs-body" });
@@ -381,6 +392,7 @@ export function openFullscreen({ sections, initial, onClose, title }) {
     const inner = h("div", { class: "fs-section" });
     add(content, inner);
     el.classList.remove("nav-open");
+    if (route) overlayListener("fullscreen", { ...route, section: id });
     Promise.resolve(section.render(inner, { show })).then(
       () => saved && restore(saved),
       (e) => add(inner, h("div", { class: "error-box" }, e.message || String(e))),
@@ -406,7 +418,8 @@ export function openFullscreen({ sections, initial, onClose, title }) {
   document.addEventListener("keydown", onKey);
   $("#fullscreen-root").append(el);
   page = { el, onKey, onClose, show, active: () => active };
-  show(initial || sections.find((s) => s?.id)?.id);
+  // initial may come from the address bar, so it might not exist here.
+  show(sections.some((s) => s?.id && s.id === initial) ? initial : sections.find((s) => s?.id)?.id);
   return page;
 }
 

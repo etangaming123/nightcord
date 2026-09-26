@@ -22,6 +22,7 @@ import { legalLinks, legalUpdateModal, renderLegalTabs, showLegalModal } from ".
 import { closeSearch, searchOpen } from "./ui/search.js";
 import { parseMessageLink, setMessageLinkHandler, setupLinkGuard } from "./ui/links.js";
 import { setupGestures } from "./ui/gestures.js";
+import * as router from "./router.js";
 import { closeFullscreen, closeModal, closePopover, confirmAction, fullscreenOpen, modalOpen, openModal, popoverOpen, toast } from "./ui/modals.js";
 import { loadStrings, scopedT } from "./strings.js";
 import { icon } from "./ui/icons.js";
@@ -38,6 +39,7 @@ const BANNED_CLOSE = 4003;
 
 let pendingInvite = null; // ?invite=CODE, opened once logged in
 let pendingJump = null; // ?jump=…/…/…, a message link opened once logged in
+let pendingRoute = null; // the address the page opened on (router.js), shown once logged in
 let addingAccount = false; // on the login screen to add another account (not replace one)
 
 setActions(actions);
@@ -53,7 +55,10 @@ function showScreen(which) {
   $("#app").hidden = which !== "app";
   currentScreen = which;
   renderUpdateFloat();
-  if (which !== "app") document.title = t("brand");
+  if (which !== "app") {
+    document.title = t("brand");
+    router.clear();
+  }
 }
 
 // prefill: what to put back in the address box (only after a real failure,
@@ -322,7 +327,7 @@ async function connectPreview({ addAccount = false } = {}) {
 
 // Leaving throws everything away: a reload without ?preview.
 function exitPreview() {
-  location.href = location.pathname;
+  location.href = router.APP_BASE;
 }
 
 function renderPreviewBar() {
@@ -356,7 +361,7 @@ function renderPreviewBar() {
       on: {
         click: (e) => confirmAction(e, {
           title: tp("reset_title"), message: tp("reset_body"), confirmLabel: tp("reset"),
-          onConfirm: () => { location.href = `${location.pathname}?preview=${state.user?.is_server_owner ? "owner" : "member"}`; },
+          onConfirm: () => { location.href = `${router.APP_BASE}?preview=${state.user?.is_server_owner ? "owner" : "member"}`; },
         }),
       },
     }, icon("refresh-cw"), h("span", { class: "preview-bar-label" }, tp("reset"))),
@@ -617,10 +622,15 @@ async function enterApp({ session_token, user, legal_update_required }) {
   flush();
   try {
     await loadAll();
-    await restoreView();
+    const route = pendingRoute;
+    pendingRoute = null;
+    // User settings open over wherever you were last.
+    if (route?.kind === "settings") await restoreView();
+    if (!(await router.apply(route))) await restoreView();
   } catch (e) {
     toast(e.message, { error: true });
   }
+  router.start();
   if (legal_update_required) await promptLegalUpdate();
   if (pendingInvite) {
     const code = pendingInvite;
@@ -948,6 +958,7 @@ async function boot() {
   setupDropZone();
   setupLinkGuard();
   setupGestures(actions);
+  router.setupRouter(actions, { invalidate });
   // A message link pasted into a message opens in place, if it's this server.
   setMessageLinkHandler((jump) => {
     if (!state.user) return false;
@@ -966,7 +977,16 @@ async function boot() {
   const previewParam = PREVIEW_AVAILABLE && params.has("preview") ? params.get("preview") : null;
   pendingInvite = params.get("invite");
   pendingJump = parseMessageLink(location.href);
-  if (param || pendingInvite || pendingJump || previewParam !== null) history.replaceState(null, "", location.pathname);
+  // /app/servers/…, /app/invite/CODE and friends (router.js).
+  pendingRoute = router.initialRoute();
+  if (pendingRoute?.kind === "invite") {
+    pendingInvite = pendingRoute.code;
+    pendingRoute = null;
+  }
+  if (pendingJump) pendingRoute = null;
+  if (param || pendingInvite || pendingJump || previewParam !== null || location.pathname !== router.APP_BASE) {
+    history.replaceState(null, "", router.ENABLED ? router.APP_BASE : location.pathname);
+  }
   $("#connect-preview-box").hidden = !PREVIEW_AVAILABLE;
   $("#connect-preview").addEventListener("click", () => choosePreview());
   const last = store.getLastServer();

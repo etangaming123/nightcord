@@ -85,6 +85,7 @@ export function guildSettings(actions, initial) {
   openFullscreen({
     title: t("settings_title", { name: g.name }),
     initial,
+    route: { kind: "guild", guildId: g.guild_id },
     sections: [
       { heading: g.name },
       any("MANAGE_GUILD") ? { id: "overview", label: t("tab_overview"), render: (el) => overview(el, actions) } : null,

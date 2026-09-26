@@ -6,6 +6,7 @@ import { playSound } from "./notify.js";
 import { addReminder, cancelReminder, listReminders, restoreReminders } from "./reminders.js";
 import { ERR, LIMITS, PERMS, T } from "./protocol.js";
 import { invalidate } from "./render.js";
+import { appUrl } from "./router.js";
 import {
   can, channelTree, currentChannel, currentGuild, ensureReadState, isDm, isGuildOwner, isIncomingRequest, isStaff,
   isUnread, markRead, memberById, nameOf, pref, relationKind, rememberUser, resetMessages, sortChannels, sortDms,
@@ -976,7 +977,7 @@ export function serverParam() {
 
 // A link that opens this client, connects to this server and shows the invite.
 export function inviteLink(code) {
-  return `${location.origin}${location.pathname}?server=${encodeURIComponent(serverParam())}&invite=${encodeURIComponent(code)}`;
+  return appUrl(`invite/${encodeURIComponent(code)}?server=${encodeURIComponent(serverParam())}`);
 }
 
 export const openInviteDialog = () => inviteDialog(actions);
@@ -1123,7 +1124,7 @@ export function toggleCategory(id) {
 
 export const isCollapsed = (id) => (store.getLast(state.url).collapsed || []).includes(id);
 
-export const openChannelSettings = (channel) => channelSettings(channel, actions);
+export const openChannelSettings = (channel, section) => channelSettings(channel, actions, section);
 
 // Sidebar order as a flat list (top-level channels, then categories with their channels).
 export function sidebarOrder() {

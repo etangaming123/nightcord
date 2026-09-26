@@ -8,6 +8,7 @@ import { QUICK_REACTIONS, emojiGlyph } from "./emoji.js";
 import { plainText } from "./markdown.js";
 import { mdContext } from "./chat.js";
 import { scopedT } from "../strings.js";
+import { appUrl } from "../router.js";
 import { icon } from "./icons.js";
 
 const t = scopedT("ui/messageMenu");
@@ -35,16 +36,14 @@ export function messageAbilities(m, actions) {
 }
 
 // The client URL that opens this message: a real link people can paste
-// anywhere. Falls back to the hosted client when this page isn't on the web
-// (the standalone build runs from file://).
-const HOSTED = "https://nightcord.etangaming.xyz/app/";
+// anywhere (router.js appUrl).
 
 export function messageLink(m, serverParam) {
-  const base = /^https?:$/.test(location.protocol) ? `${location.origin}${location.pathname}` : HOSTED;
-  const server = serverParam();
-  const where = m.guild_id || currentGuild()?.guild_id || (isDm(currentChannel()) ? "@me" : "");
-  const jump = `${where || "@me"}/${m.channel_id || currentChannel()?.channel_id}/${m.message_id}`;
-  return `${base}?server=${encodeURIComponent(server)}&jump=${encodeURIComponent(jump)}`;
+  const channelId = m.channel_id || currentChannel()?.channel_id;
+  const guildId = m.guild_id || currentGuild()?.guild_id;
+  const dm = !guildId && state.dms.get(channelId);
+  const where = guildId ? `servers/${guildId}` : dm?.kind === "group_dm" ? "groups" : "dms";
+  return appUrl(`${where}/${channelId}/${m.message_id}?server=${encodeURIComponent(serverParam())}`);
 }
 
 // The menu's entries. anchor is what a follow-up popover (the reaction

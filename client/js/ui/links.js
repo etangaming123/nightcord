@@ -61,8 +61,12 @@ export function leavingDialog(href, label) {
     ],
   });
 }
-// A Nightcord message link: <client base>/?server=<host>&jump=<where>/<channel>/<message>
-// where <where> is a guild id or "@me". Returns null for anything else.
+// A Nightcord message link, either
+//   <client>/servers/<guild>/<channel>/<message>?server=<host>  (or dms|groups/<channel>/<message>)
+//   <client>/?server=<host>&jump=<guild|@me>/<channel>/<message>  (the older form)
+// Returns null for anything else.
+const MESSAGE_PATH = /\/(?:servers\/(\d{1,20})|dms|groups)\/(\d{1,20})\/(\d{1,20})\/?$/;
+
 export function parseMessageLink(href) {
   let url;
   try {
@@ -70,12 +74,17 @@ export function parseMessageLink(href) {
   } catch {
     return null;
   }
+  const server = url.searchParams.get("server") || null;
+  // The path form needs ?server= (or to be this very client) so an unrelated
+  // site's /servers/1/2/3 isn't mistaken for one.
+  const path = (server || url.origin === location.origin) && url.pathname.match(MESSAGE_PATH);
+  if (path) return { server, guildId: path[1] || null, channelId: path[2], messageId: path[3] };
   const jump = url.searchParams.get("jump");
   if (!jump) return null;
   const [where, channelId, messageId] = jump.split("/");
   if (!channelId || !messageId || !/^\d{1,20}$/.test(channelId) || !/^\d{1,20}$/.test(messageId)) return null;
   return {
-    server: url.searchParams.get("server") || null,
+    server,
     guildId: where && where !== "@me" && /^\d{1,20}$/.test(where) ? where : null,
     channelId,
     messageId,

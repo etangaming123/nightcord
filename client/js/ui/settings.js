@@ -30,6 +30,7 @@ export function userSettings(actions, initial) {
   openFullscreen({
     title: t("title_user_settings"),
     initial,
+    route: { kind: "settings" },
     sections: [
       { heading: t("title_user_settings") },
       { id: "account", label: t("section_my_account"), render: (el) => account(el, actions) },

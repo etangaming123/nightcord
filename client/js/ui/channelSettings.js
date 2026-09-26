@@ -24,6 +24,7 @@ export function channelSettings(channel, actions, initial) {
   openFullscreen({
     title: t("settings_title", { title: titleOf(channel) }),
     initial,
+    route: { kind: "channel", guildId: channel.guild_id, channelId: channel.channel_id },
     sections: [
       { heading: titleOf(channel) },
       { id: "overview", label: t("tab_overview"), render: (el) => overview(el, channel, actions) },
