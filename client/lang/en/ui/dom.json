@@ -5,5 +5,8 @@
   "status_idle": "Idle",
   "status_dnd": "Do Not Disturb",
   "status_offline": "Offline",
-  "status_invisible": "Invisible"
+  "status_invisible": "Invisible",
+  "today": "Today",
+  "yesterday": "Yesterday",
+  "stamp": "{day} at {time}"
 }

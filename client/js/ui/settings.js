@@ -7,7 +7,7 @@ import { STAFF_LABEL, state } from "../state.js";
 import { lockedReason, userCan } from "../perks.js";
 import { MAX_THEME_COLORS, PRESETS, gradientCss, normalizeCustom } from "../themes.js";
 import { adminSections } from "./admin.js";
-import { add, avatar, clear, displayName, fmtDate, fmtDateTime, fmtSeen, h } from "./dom.js";
+import { add, avatar, clear, displayName, fmtDate, fmtDateTime, fmtSeen, fmtStamp, h } from "./dom.js";
 import { cropImage } from "./cropper.js";
 import { pickImage, uploadImage } from "./images.js";
 import { renderInline } from "./markdown.js";
@@ -455,6 +455,7 @@ function appearance(el, actions) {
     h("label", { class: "check" }, h("input", {
       type: "checkbox", checked: p.compact, on: { change: (e) => setPrefs({ compact: e.currentTarget.checked }) },
     }), t("compact_message_layout")),
+    messageTimeFields(actions),
     h("label", {}, t("last_seen_format_label"), lastSeenSelect()),
     h("label", { class: "check" }, h("input", {
       type: "checkbox", checked: p.twemoji, on: { change: (e) => setPrefs({ twemoji: e.currentTarget.checked }) },
@@ -565,6 +566,22 @@ function reminderList(actions) {
           on: { click: () => { actions.cancelReminder(r.id); refreshFullscreen(); } },
         }, t("cancel_reminder")))))
       : h("p", { class: "muted small" }, t("reminders_none")));
+}
+
+// How message timestamps read ("13/11/26 at 3:18pm"), with a live example.
+function messageTimeFields(actions) {
+  const example = h("span", { class: "muted small" });
+  const sample = new Date(2026, 10, 13, 15, 18);
+  const drawExample = () => { example.textContent = t("message_time_example", { example: fmtStamp(sample) }); };
+  const select = (key, label, options) => h("label", {}, label, h("select", {
+    on: { change: (e) => { setPrefs({ [key]: e.currentTarget.value }); drawExample(); actions.refreshChat(); } },
+  }, options.map(([v, text]) => h("option", { value: v, selected: v === getPrefs()[key] }, text))));
+  drawExample();
+  return h("div", { class: "field" },
+    h("div", { class: "row wrap gap" },
+      select("dateFormat", t("date_format_label"), [["dmy", "13/11/26"], ["mdy", "11/13/26"], ["ymd", "26/11/13"]]),
+      select("clock", t("clock_label"), [["12h", "3:18pm"], ["24h", "15:18"]])),
+    example);
 }
 
 // "Last seen" style, shared by Appearance and the admin Accounts tab.

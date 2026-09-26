@@ -12,7 +12,7 @@ import { forwardCard, messageMenuHandlers } from "./messageMenu.js";
 import { isMediaOnly, renderEmbeds } from "./embeds.js";
 import { renderPoll } from "./polls.js";
 import { messageQuote } from "./quote.js";
-import { $, add, avatar, clear, h, iconBtn, idGt } from "./dom.js";
+import { $, add, avatar, clear, fmtClock, fmtStamp, h, iconBtn, idGt } from "./dom.js";
 import { renderFriendsHeader, renderFriendsPage } from "./friends.js";
 import { QUICK_REACTIONS, customOf, emojiGlyph } from "./emoji.js";
 import { jumboCount, plainText, render as renderMarkdown } from "./markdown.js";
@@ -31,7 +31,6 @@ const GROUP_GAP_MS = 7 * 60 * 1000;
 const NEAR_BOTTOM_PX = 120;
 const LOAD_OLDER_PX = 240;
 
-const timeFmt = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 const dayFmt = new Intl.DateTimeFormat(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
 const fullFmt = new Intl.DateTimeFormat(undefined, { dateStyle: "full", timeStyle: "short" });
 
@@ -49,7 +48,7 @@ function relativeDay(d) {
 }
 
 function stamp(d, { short = false } = {}) {
-  const label = short ? timeFmt.format(d) : t("time_full", { day: relativeDay(d), time: timeFmt.format(d) });
+  const label = short ? fmtClock(d) : fmtStamp(d);
   return h("time", { class: "msg-time", datetime: d.toISOString(), title: fullFmt.format(d) }, label);
 }
 
@@ -435,7 +434,7 @@ function drawBars(state, actions, box) {
     const unread = state.messages.slice(first);
     const since = new Date(unread[0].sent_at);
     chat.append(h("div", { id: "new-bar", class: "new-bar" },
-      h("span", { class: "grow" }, t("new_since", { count: unread.length, time: timeFmt.format(since) })),
+      h("span", { class: "grow" }, t("new_since", { count: unread.length, time: fmtClock(since) })),
       h("button", {
         class: "btn link", type: "button",
         on: { click: () => actions.markChannelRead(state.channelId) },

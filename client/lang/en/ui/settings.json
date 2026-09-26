@@ -137,5 +137,8 @@
   "last_seen_datetime": "Date and time (25 Sept 2026, 9:40 am)",
   "last_seen_date": "Date (25 Sept 2026)",
   "last_seen_relative": "Relative (3 hours ago)",
-  "last_seen_both": "Both (3 hours ago, with the date)"
+  "last_seen_both": "Both (3 hours ago, with the date)",
+  "date_format_label": "Message dates",
+  "clock_label": "Message times",
+  "message_time_example": "Older messages look like: {example}"
 }

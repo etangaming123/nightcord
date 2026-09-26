@@ -169,6 +169,39 @@ const fullFmt = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeSt
 export const fmtDate = (iso) => (iso ? shortFmt.format(new Date(iso)) : "");
 export const fmtDateTime = (iso) => (iso ? fullFmt.format(new Date(iso)) : "");
 
+// Message times, Discord-style and the same on every browser: "Today at
+// 3:18pm", "Yesterday at 3:00am", "13/11/26 at 12:00pm". The date order and
+// clock come from Appearance (prefs.dateFormat / prefs.clock), handed in by
+// main.js — importing prefs.js here would make an import cycle.
+let stampPrefs = () => ({});
+export const setStampPrefs = (get) => { stampPrefs = get; };
+const pad = (n) => String(n).padStart(2, "0");
+const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+export function fmtClock(date, { clock = stampPrefs().clock } = {}) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (clock === "24h") return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getHours() % 12 || 12}:${pad(d.getMinutes())}${d.getHours() < 12 ? "am" : "pm"}`;
+}
+
+export function fmtShortDate(date, { dateFormat = stampPrefs().dateFormat } = {}) {
+  const d = date instanceof Date ? date : new Date(date);
+  const [dd, mm, yy] = [pad(d.getDate()), pad(d.getMonth() + 1), pad(d.getFullYear() % 100)];
+  if (dateFormat === "mdy") return `${mm}/${dd}/${yy}`;
+  if (dateFormat === "ymd") return `${yy}/${mm}/${dd}`;
+  return `${dd}/${mm}/${yy}`;
+}
+
+export function fmtStamp(date, opts = {}) {
+  if (!date) return "";
+  const d = date instanceof Date ? date : new Date(date);
+  const now = new Date();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const day = sameDay(d, now) ? t("today") : sameDay(d, yesterday) ? t("yesterday") : fmtShortDate(d, opts);
+  return t("stamp", { day, time: fmtClock(d, opts) });
+}
+
 const RELATIVE_UNITS = [
   ["year", 31536000], ["month", 2592000], ["week", 604800], ["day", 86400],
   ["hour", 3600], ["minute", 60], ["second", 1],

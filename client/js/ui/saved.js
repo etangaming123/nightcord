@@ -4,7 +4,7 @@
 
 import { T } from "../protocol.js";
 import { nameOf, state, userById } from "../state.js";
-import { add, avatar, clear, fmtDateTime, h, iconBtn } from "./dom.js";
+import { add, avatar, clear, fmtStamp, h, iconBtn } from "./dom.js";
 import { mdContext } from "./chat.js";
 import { render as renderMarkdown } from "./markdown.js";
 import { closePopover, openPopover, toast } from "./modals.js";
@@ -35,7 +35,7 @@ export async function openSaved(anchor, actions) {
       add(list, h("div", { class: "pin" },
         avatar(author, { size: "sm" }),
         h("div", { class: "pin-main" },
-          h("div", { class: "pin-head" }, h("strong", {}, nameOf(author)), h("span", { class: "muted small" }, fmtDateTime(m.sent_at))),
+          h("div", { class: "pin-head" }, h("strong", {}, nameOf(author)), h("span", { class: "muted small" }, fmtStamp(m.sent_at))),
           h("div", { class: "pin-body" }, renderMarkdown(m.content, mdContext(state, actions)),
             m.attachments?.length ? h("div", { class: "muted small" }, t("attachment_count", { count: m.attachments.length })) : null)),
         h("div", { class: "pin-actions" },

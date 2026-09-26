@@ -7,7 +7,7 @@
 
 import { T } from "../protocol.js";
 import { nameOf, state, userById } from "../state.js";
-import { avatar, clear, fmtDateTime, h } from "./dom.js";
+import { avatar, clear, fmtStamp, h } from "./dom.js";
 import { parseMessageLink } from "./links.js";
 import { scopedT } from "../strings.js";
 
@@ -47,7 +47,7 @@ export function messageQuote(href, actions) {
       h("div", { class: "quote-main" },
         h("div", { class: "quote-head" },
           h("strong", {}, nameOf(author)),
-          h("span", { class: "muted small" }, fmtDateTime(m.sent_at))),
+          h("span", { class: "muted small" }, fmtStamp(m.sent_at))),
         h("div", { class: "quote-body" }, (m.content || t("no_text")).slice(0, 300))),
       h("button", {
         class: "btn link", type: "button",

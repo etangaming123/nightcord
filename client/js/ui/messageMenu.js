@@ -2,7 +2,7 @@
 // long-press menu, and the same functions the hover toolbar calls.
 
 import { can, currentChannel, currentGuild, isDm, nameOf, state, userById } from "../state.js";
-import { h } from "./dom.js";
+import { fmtStamp, h } from "./dom.js";
 import { openMenu } from "./modals.js";
 import { plainText } from "./markdown.js";
 import { mdContext } from "./chat.js";
@@ -152,7 +152,7 @@ export function forwardCard(m, actions) {
       t("forwarded_from", { source: f.source })),
     h("div", { class: "forward-body" },
       h("div", { class: "forward-author" }, nameOf(author), " ",
-        h("span", { class: "muted small" }, new Date(f.sent_at).toLocaleString())),
+        h("span", { class: "muted small" }, fmtStamp(f.sent_at))),
       f.content ? h("div", { class: "forward-content" }, f.content) : null,
       f.attachments?.length
         ? h("div", { class: "muted small" }, t("forward_attachments", { names: f.attachments.map((x) => x.filename).join(", ") }))

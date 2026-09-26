@@ -14,7 +14,7 @@ import { handleShortcut, shouldFocusComposer } from "./shortcuts.js";
 import { flush, invalidate, setActions } from "./render.js";
 import { currentChannel, resetServerState, state } from "./state.js";
 import * as store from "./storage.js";
-import { $, add, clear, h, setAvatarBase, setUrlResolver } from "./ui/dom.js";
+import { $, add, clear, h, setAvatarBase, setStampPrefs, setUrlResolver } from "./ui/dom.js";
 import { render as renderMarkdown } from "./ui/markdown.js";
 import { clearPending } from "./uploads.js";
 import { focusComposer, setupDropZone } from "./ui/composer.js";
@@ -860,6 +860,7 @@ function hydrateStatic() {
 async function boot() {
   await loadStrings();
   hydrateStatic();
+  setStampPrefs(getPrefs);
   applyPrefs();
   onUpdateInfo(renderUpdateBanner);
   checkForUpdate(); // standalone-only, local pref-gated; see update-check.js
