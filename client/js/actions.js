@@ -1355,8 +1355,18 @@ export function applyRelationship(rel) {
   rememberUser(rel.user);
   const before = relationKind(rel.user.user_id);
   state.relationships.set(rel.user.user_id, rel);
+  // New friends show up under Direct Messages, whichever side accepted.
+  if (rel.kind === "friend" && before !== "friend") showDm(rel.user.user_id);
   invalidate("rail", "sidebar", "chat", "header", "title");
   return before;
+}
+
+// Opens (or reopens) the 1:1 DM in the list without switching to it.
+function showDm(userId) {
+  req(T.DM_OPEN, { user_id: userId }).then(({ channel }) => {
+    addDm(channel);
+    invalidate("sidebar");
+  }).catch(() => {});
 }
 
 export function dropRelationship(userId) {
