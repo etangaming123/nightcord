@@ -1,0 +1,3 @@
+-r requirements.txt
+# Only for the optional Discord link (discord_token in nightcord.toml).
+discord.py>=2.4

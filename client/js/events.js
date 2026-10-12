@@ -16,6 +16,7 @@ import {
   currentChannel, ensureReadState, isIncomingRequest, mentionsMe, nameOf, rememberUser, sortChannels, state,
 } from "./state.js";
 import { renderTyping } from "./ui/chat.js";
+import { applyDiscordLink } from "./ui/connections.js";
 import { idGt } from "./ui/dom.js";
 import { fullscreenOpen, refreshFullscreen, toast } from "./ui/modals.js";
 import { scopedT } from "./strings.js";
@@ -367,6 +368,9 @@ export function wireEvents(conn) {
     toast(t("account_request_pending", { username: user.username }));
     invalidate("sidebar");
   });
+
+  // --- Discord link ---
+  on(T.DISCORD_LINK_UPDATED, ({ link }) => applyDiscordLink(link));
 }
 
 // Everything is reloaded after a reconnect (events may have been missed).

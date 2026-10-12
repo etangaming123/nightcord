@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-PROTOCOL_VERSION = "0.18"
+PROTOCOL_VERSION = "0.19"
 
 # --- Message types -----------------------------------------------------------
 
@@ -362,6 +362,21 @@ ANNOUNCEMENT_UPDATED = "announcement.updated"
 ANNOUNCEMENT_DELETED = "announcement.deleted"
 ANNOUNCEMENT_ACKED = "announcement.acked"
 
+# Discord link (optional; the server runs a Discord bot)
+DISCORD_GET = "discord.get"
+DISCORD_GET_RESULT = "discord.get.result"
+DISCORD_LINK_START = "discord.link.start"
+DISCORD_LINK_START_RESULT = "discord.link.start.result"
+DISCORD_UNLINK = "discord.unlink"
+DISCORD_UNLINK_RESULT = "discord.unlink.result"
+DISCORD_SETTINGS_SET = "discord.settings.set"
+DISCORD_SETTINGS_SET_RESULT = "discord.settings.set.result"
+DISCORD_SYNC = "discord.sync"
+DISCORD_SYNC_RESULT = "discord.sync.result"
+DISCORD_TEST = "discord.test"
+DISCORD_TEST_RESULT = "discord.test.result"
+DISCORD_LINK_UPDATED = "discord.link.updated"
+
 # Generic error for frames that can't be attributed to a request type
 ERROR = "error"
 
@@ -421,6 +436,7 @@ ALREADY_FRIENDS = "already_friends"
 NOT_FRIENDS = "not_friends"
 EMBEDS_DISABLED = "embeds_disabled"
 POLL_ENDED = "poll_ended"
+DISCORD_UNAVAILABLE = "discord_unavailable"
 
 ERROR_CODES = frozenset(
     {
@@ -434,7 +450,7 @@ ERROR_CODES = frozenset(
         INVALID_CURRENT_PASSWORD, FILE_TOO_LARGE, MUTED, IP_BANNED, DEVICE_BANNED,
         SLOWMODE, INVITE_EXPIRED, LEGAL_REQUIRED, VOICE_DISABLED, PIN_LIMIT,
         FEATURE_DISABLED, MEDIA_INVALID, BLOCKED, DM_NOT_ALLOWED, REQUEST_PENDING, ALREADY_FRIENDS,
-        NOT_FRIENDS, EMBEDS_DISABLED, POLL_ENDED,
+        NOT_FRIENDS, EMBEDS_DISABLED, POLL_ENDED, DISCORD_UNAVAILABLE,
     }
 )
 
@@ -601,6 +617,13 @@ USER_NOTE_MAX = 256
 FORWARD_CONTENT_MAX = 2000
 FORWARD_ATTACHMENTS_MAX = 10
 MAX_ACCOUNTS_PER_CLIENT = 20
+
+# Discord link (§5 Discord link): what the bot can DM you about, and what a
+# sync copies from your Discord profile.
+DISCORD_NOTIFY_KINDS = ("mentions", "dms", "message_requests", "friend_requests", "announcements")
+DISCORD_SYNC_FIELDS = ("display_name", "avatar", "banner")
+DISCORD_CODE_SECONDS = 600
+DISCORD_APP_URL_MAX = 512
 
 
 class ProtocolError(Exception):

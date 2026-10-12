@@ -1,9 +1,12 @@
 """Admin CLI commands that touch files (nightcord_server.py)."""
 
+import dataclasses
+import re
 import zipfile
+from pathlib import Path
 
 import nightcord_server as cli
-from nightcord.config import Config
+from nightcord.config import Config, load_config
 from nightcord.db import Database
 
 
@@ -38,3 +41,11 @@ def test_config_set_new_keys(tmp_path):
     assert cli.cmd_config(db, cfg, "set", "max_accounts_per_client", "99") == 2
     got = db.get_server_config()
     assert (got["user_search"], got["announcements_admins"], got["max_accounts_per_client"]) == ("staff", True, 3)
+
+
+def test_example_config_covers_every_key():
+    example = Path(cli.__file__).parent / "nightcord.example.toml"
+    load_config(example)  # parses, and every key it sets is a real one
+    text = example.read_text()
+    for f in dataclasses.fields(Config):
+        assert re.search(rf"^#? ?{f.name} =", text, re.M), f"{f.name} missing from nightcord.example.toml"

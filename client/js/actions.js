@@ -1608,7 +1608,7 @@ export const actions = {
   changeNickname, staffItems, nameOf,
   sendSticker, emojiInfo, createEmoji, renameEmoji, deleteEmoji, listBadges, createBadge, updateBadge, deleteBadge, setUserBadges, createSticker, updateSticker, deleteSticker,
   toggleNav, toggleMembers, refreshChrome, refreshChat: () => invalidate("chat"),
-  req, rememberUser, setSelf, setServerInfo, messageUser, statusMenu,
+  req, rememberUser, setSelf, setServerInfo, messageUser, statusMenu, serverParam,
   openProfile: openProfileAction,
   userSettings: openUserSettings,
   addGuild, ghostJoin, updateGuild, leaveGuild, guildMenu, guildSettings: openGuildSettings,

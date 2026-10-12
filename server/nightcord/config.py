@@ -10,10 +10,12 @@ Example nightcord.toml:
     public_hostnames = ["chat.example.com", "203.0.113.7"]
     allowed_origins = ["https://you.github.io"]
     allow_file_origin = true  # let the standalone single-file HTML client connect
+    discord_token = "..."     # run a Discord bot people can link their accounts to
 """
 
 from __future__ import annotations
 
+import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -43,6 +45,12 @@ class Config:
     # Allow the standalone single-file HTML client, opened from disk as
     # file://, which browsers send as Origin: null. Off by default.
     allow_file_origin: bool = False
+    # A Discord bot token: people link their Nightcord account to their
+    # Discord account through it, get notifications as Discord DMs and copy
+    # their Discord profile over. Needs discord.py (requirements-discord.txt).
+    # NIGHTCORD_DISCORD_TOKEN in the environment works too, and keeps the
+    # token out of the file.
+    discord_token: str | None = None
 
     @property
     def db_path(self) -> Path:
@@ -69,8 +77,14 @@ class Config:
 
 def load_config(path: Path | None) -> Config:
     cfg = Config()
-    if path is None:
-        return cfg
+    if path is not None:
+        _load_file(cfg, path)
+    if os.environ.get("NIGHTCORD_DISCORD_TOKEN"):
+        cfg.discord_token = os.environ["NIGHTCORD_DISCORD_TOKEN"]
+    return cfg
+
+
+def _load_file(cfg: Config, path: Path) -> None:
     with open(path, "rb") as f:
         raw = tomllib.load(f)
     base = path.parent
@@ -80,4 +94,3 @@ def load_config(path: Path | None) -> Config:
         if key in ("data_dir", "cert_file", "key_file") and val is not None:
             val = (base / val) if not Path(val).is_absolute() else Path(val)
         setattr(cfg, key, val)
-    return cfg

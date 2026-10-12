@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
     from ..config import Config
     from ..db import Database
+    from ..discord_link import DiscordLink
     from ..hub import Connection, Hub
     from ..permissions import PermissionService
     from .auth import LoginThrottle
@@ -31,6 +32,8 @@ class Ctx:
     setup_code_hash: str | None = None
     # Shared outbound HTTP session for link embeds (app.py owns its lifetime).
     http: "aiohttp.ClientSession | None" = None
+    # The Discord link, when the config file has a discord_token (app.py).
+    discord: "DiscordLink | None" = None
 
 
 Handler = Callable[["Ctx", "Connection", dict], Awaitable[dict]]
@@ -49,8 +52,8 @@ def handles(type_: str):
 def load_all() -> dict[str, Handler]:
     # Importing registers handlers via @handles.
     from . import (  # noqa: F401
-        admin, announcements, auth, badges, channels, dms, expressions, friends, guilds, legal, members, messages, notify,
-        polls, presence, roles, saved, server, users, voice,
+        admin, announcements, auth, badges, channels, discord_link, dms, expressions, friends, guilds, legal, members,
+        messages, notify, polls, presence, roles, saved, server, users, voice,
     )
 
     return REGISTRY

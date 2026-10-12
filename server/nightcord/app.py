@@ -35,6 +35,7 @@ log = logging.getLogger("nightcord.app")
 
 CTX_KEY = web.AppKey("ctx", Ctx)
 SWEEPER_KEY = web.AppKey("sweepers", list)
+DISCORD_BOT_KEY = web.AppKey("discord_bot", tuple)
 
 LANDING_HTML = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -175,6 +176,30 @@ async def websocket(request: web.Request) -> web.StreamResponse:
     return ws
 
 
+async def start_discord(app: web.Application) -> None:
+    """Logs the Discord bot in, when the config has a token (discord_bot.py)."""
+    ctx = app[CTX_KEY]
+    if ctx.discord is None:
+        return
+    try:
+        from . import discord_bot
+    except ImportError:
+        log.error("discord_token is set but discord.py isn't installed: pip install -r requirements-discord.txt")
+        return
+    app[DISCORD_BOT_KEY] = discord_bot.start(ctx.discord, ctx.config.discord_token)
+
+
+async def stop_discord(app: web.Application) -> None:
+    ctx = app[CTX_KEY]
+    if ctx.discord is not None:
+        await ctx.discord.close()
+    running = app.get(DISCORD_BOT_KEY)
+    if running is not None:
+        from . import discord_bot
+
+        await discord_bot.stop(*running)
+
+
 def new_setup_code() -> str:
     alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
     raw = "".join(secrets.choice(alphabet) for _ in range(12))
@@ -190,6 +215,10 @@ def create_app(config: Config, db: Database | None = None, *, setup_code: str | 
     # Serialised PublicUsers hide the custom status of anyone who reads as
     # offline (really offline, or invisible) — §4 User.
     db.set_status_source(ctx.hub.status_of)
+    if config.discord_token:
+        from .discord_link import DiscordLink
+
+        ctx.discord = DiscordLink(ctx)
     if setup_required(ctx):
         if setup_code is None:
             setup_code = new_setup_code()
@@ -210,7 +239,7 @@ def create_app(config: Config, db: Database | None = None, *, setup_code: str | 
 
     async def on_startup(app: web.Application) -> None:
         # One outbound session for every link preview, with the SSRF-guarded
-        # resolver; nothing else in the server makes outbound requests.
+        # resolver. The only other outbound traffic is the optional Discord bot.
         app[CTX_KEY].http = embed_lib.make_session()
         app[SWEEPER_KEY] = [
             asyncio.create_task(file_routes.sweeper(app)),
@@ -219,8 +248,10 @@ def create_app(config: Config, db: Database | None = None, *, setup_code: str | 
             asyncio.create_task(poll_routes.sweeper(app)),
             asyncio.create_task(status_sweeper(app)),
         ]
+        await start_discord(app)
 
     async def on_shutdown(app: web.Application) -> None:
+        await stop_discord(app)
         for task in app.get(SWEEPER_KEY, []):
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):

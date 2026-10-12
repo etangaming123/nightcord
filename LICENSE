@@ -42,7 +42,8 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ---
 
-client/assets/fonts/twemoji.woff2 is Mozilla's Twemoji COLR font
+client/assets/fonts/twemoji.woff2 is Mozilla's Twemoji COLR font, and
+twemoji-svg.woff2 is the same artwork converted to OpenType-SVG for Safari
 (https://github.com/mozilla/twemoji-colr). The emoji graphics are
 Copyright 2020 Twitter, Inc and other contributors, licensed under CC-BY 4.0
 (https://creativecommons.org/licenses/by/4.0/); the font build is

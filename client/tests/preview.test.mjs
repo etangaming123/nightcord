@@ -88,6 +88,12 @@ await new Promise((r) => setTimeout(r, 500));
 const updated = take().find((e) => e.type === "message.updated");
 assert.equal(updated.payload.embeds[0].youtube_id, "dQw4w9WgXcQ");
 
+// Discord link: the pretend bot takes no real codes, so settings wait for a link.
+assert.equal(s.handle(T.DISCORD_GET).link, null);
+assert.match(s.handle(T.DISCORD_LINK_START).code, /^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+rejects(() => s.handle(T.DISCORD_SETTINGS_SET, { only_when_away: false }), "not_found");
+take();
+
 // 4. A regular member gets refused what a real server refuses them.
 const guest = preview.sessionFor("member");
 s.handle(T.AUTH_RESUME, { session_token: guest.token });

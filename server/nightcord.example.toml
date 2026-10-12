@@ -1,19 +1,46 @@
 # Copy to nightcord.toml and run: python nightcord_server.py --config nightcord.toml
-server_name = "My Nightcord"
-host = "0.0.0.0"
-port = 8765
-data_dir = "data"          # relative to this file
-tls = true                 # self-signed cert generated on first run
+# Every key is optional; anything left out keeps the default shown here.
 
-# Extra hostnames / IPs clients will use to reach you; baked into the cert.
+# Shown to clients until the owner names the server in the client (or with
+# `config set server_name`). After that, the owner's name wins.
+server_name = "My Nightcord"
+
+host = "0.0.0.0"           # listen on every interface; "127.0.0.1" for this machine only
+port = 8765
+data_dir = "data"          # database, uploads and cert; relative to this file
+
+# Serve wss:// (on by default). Turn off (or start with --no-tls) for local dev,
+# or behind a reverse proxy that handles TLS itself.
+tls = true
+
+# A real certificate instead of the self-signed one made in data_dir on first
+# run. Paths are relative to this file.
+# cert_file = "/etc/letsencrypt/live/chat.example.com/fullchain.pem"
+# key_file = "/etc/letsencrypt/live/chat.example.com/privkey.pem"
+
+# Extra hostnames / IPs clients will use to reach you; baked into the
+# self-signed cert. localhost is always included.
 public_hostnames = ["203.0.113.7"]
 
-# Browser origins allowed to connect. Add your GitHub Pages origin.
+# Browser origins allowed to connect (--allow-origin adds more). Add wherever
+# the client is hosted, e.g. your GitHub Pages origin. "*" allows any.
 allowed_origins = [
+  "https://nightcord.etangaming.xyz",
   "https://YOUR-USERNAME.github.io",
   "http://localhost:8000",
+  "http://127.0.0.1:8000",
 ]
 
+# Let the standalone single-file .html client connect when it's opened from
+# disk (it sends Origin: null). Same as --allow-local-client.
+allow_file_origin = false
+
 # Behind a reverse proxy (nginx, Caddy, Cloudflare Tunnel)? Take client IPs
-# from X-Forwarded-For so IP bans work. Leave false when clients connect directly.
+# from X-Forwarded-For so IP bans work. Leave false when clients connect
+# directly, or anyone can fake their address.
 trust_proxy = false
+
+# Optional: a Discord bot people can link their accounts to (README → Discord
+# bot). Needs `pip install -r requirements-discord.txt`. You can leave this out
+# and set NIGHTCORD_DISCORD_TOKEN in the environment instead.
+# discord_token = "your bot token"

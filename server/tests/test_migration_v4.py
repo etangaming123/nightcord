@@ -23,7 +23,7 @@ def test_v3_database_upgrades(tmp_path):
     conn.close()
 
     d = Database(path)
-    assert d.conn.execute("PRAGMA user_version").fetchone()[0] == len(dbmod.MIGRATIONS) == 12
+    assert d.conn.execute("PRAGMA user_version").fetchone()[0] == len(dbmod.MIGRATIONS) == 13
     user = d.public_user("1")
     assert user["perks"] is False and user["banner_id"] is None and user["profile_colors"] is None
     assert d.get_guild("10")["banner_id"] is None
@@ -41,10 +41,11 @@ def test_v11_database_gets_the_embed_cache(tmp_path):
     d = Database(path)
     uid = d.create_user("keeper", "x")["user_id"]
     d.conn.execute("DROP TABLE embed_cache")
+    d.conn.execute("DROP TABLE discord_links")
     d.conn.execute("PRAGMA user_version = 11")
     d.close()
     d = Database(path)
-    assert d.conn.execute("PRAGMA user_version").fetchone()[0] == 12
+    assert d.conn.execute("PRAGMA user_version").fetchone()[0] == 13
     assert d.public_user(uid)["username"] == "keeper"
     d.embed_cache_put("https://a.example", {"kind": "link"}, 2**31)
     assert d.embed_cache_get("https://a.example")[0] == {"kind": "link"}

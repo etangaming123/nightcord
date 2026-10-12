@@ -212,6 +212,11 @@ class Hub:
     def is_online(self, user_id: str) -> bool:
         return bool(self.conns_by_user.get(user_id))
 
+    def is_active(self, user_id: str) -> bool:
+        """Connected with at least one device that isn't away — whatever
+        status others are shown (invisible people are still here)."""
+        return any(not c.afk for c in self.conns_by_user.get(user_id, ()))
+
     def status_of(self, user_id: str) -> str:
         """Status as others see it: online | idle | dnd | offline."""
         conns = self.conns_by_user.get(user_id)
