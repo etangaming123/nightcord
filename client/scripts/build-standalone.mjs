@@ -66,13 +66,14 @@ async function main() {
     }),
   ]);
 
-  const [logoUri, messageUri, mentionUri, voiceJoinUri, voiceLeaveUri, twemojiUri] = await Promise.all([
+  const [logoUri, messageUri, mentionUri, voiceJoinUri, voiceLeaveUri, twemojiUri, twemojiSvgUri] = await Promise.all([
     dataUri("assets/logo.png"),
     dataUri("assets/sounds/message.wav"),
     dataUri("assets/sounds/mention.wav"),
     dataUri("assets/sounds/voice-join.wav"),
     dataUri("assets/sounds/voice-leave.wav"),
     dataUri("assets/fonts/twemoji.woff2"),
+    dataUri("assets/fonts/twemoji-svg.woff2"),
   ]);
 
   let script = result.outputFiles[0].text;
@@ -86,7 +87,9 @@ async function main() {
   let out = html
     .replace(
       '<link rel="stylesheet" href="css/styles.css">',
-      () => `<style>\n${css.replace("../assets/fonts/twemoji.woff2", twemojiUri)}\n</style>`
+      () => `<style>\n${css
+        .replace("../assets/fonts/twemoji.woff2", twemojiUri)
+        .replace("../assets/fonts/twemoji-svg.woff2", twemojiSvgUri)}\n</style>`
     )
     .replaceAll('href="assets/logo.png"', `href="${logoUri}"`)
     .replaceAll('src="assets/logo.png"', `src="${logoUri}"`)
